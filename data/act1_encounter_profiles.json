@@ -1,0 +1,27 @@
+{
+  "captured_at": "2026-09-04",
+  "scope": "Act 1 enemy-mechanics facts used by VEDA encounter verification. These are not strategy rules.",
+  "claims": [
+    {
+      "statement": "Acid Slime (M) has 28–32 HP at Ascension 0 and cannot Split. Its moves include Corrosive Spit for 7 damage plus a Slimed, Lick for 1 Weak, and Tackle for 10 damage.",
+      "kind": "game_fact",
+      "tags": ["act_1", "enemy", "acid_slime_m", "intent", "no_split"],
+      "confidence": 0.94,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Slimes", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Only Acid Slime (L), Spike Slime (L), and Slime Boss have Split; when at or below half HP they split into two smaller Slimes with their current HP.",
+      "kind": "game_fact",
+      "tags": ["act_1", "enemy", "slime", "split", "mechanic"],
+      "confidence": 0.94,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Buffs", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "The three Act 1 Elite encounters are Gremlin Nob, Lagavulin, and Sentries; elite reward confirmation includes a relic, 25–35 Gold, and a card reward.",
+      "kind": "game_fact",
+      "tags": ["act_1", "elite", "encounter_confirmation", "relic"],
+      "confidence": 0.93,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Elites", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "captured_at": "2026-09-02",
+  "scope": "Verified Slay the Spire 1 / Ironclad / Ascension 0 reference pack for Act 1. Strategy claims stay conditional; this file must not be used for Slay the Spire 2.",
+  "claims": [
+    {
+      "statement": "At Ascension 0, Ironclad starts with 80 maximum HP, Burning Blood, five Strikes, four Defends, and Bash; Burning Blood heals 6 HP after combat.",
+      "kind": "game_fact",
+      "tags": ["ironclad", "starting_loadout", "healing", "act_1"],
+      "confidence": 0.93,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Ironclad", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Pommel Strike costs 1 Energy, deals 9 damage, and draws 1 card; its upgrade deals 10 and draws 2.",
+      "kind": "game_fact",
+      "tags": ["ironclad", "card", "pommel_strike", "damage", "draw"],
+      "confidence": 0.9,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Pommel_Strike", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Shrug It Off costs 1 Energy, gains 8 Block, and draws 1 card; its upgrade gains 11 Block and still draws 1 card.",
+      "kind": "game_fact",
+      "tags": ["ironclad", "card", "shrug_it_off", "block", "draw"],
+      "confidence": 0.9,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Shrug_It_Off", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Combust costs 1 Energy and, at the end of each player turn, causes the player to lose 1 HP and deals 5 damage to all enemies; its upgrade deals 7 damage.",
+      "kind": "game_fact",
+      "tags": ["ironclad", "card", "combust", "power", "end_of_turn", "hp_loss", "aoe"],
+      "confidence": 0.82,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Combust", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}, {"url": "https://www.reddit.com/r/slaythespire/comments/1flg72y/im_bout_to_combust/", "publisher": "Slay the Spire community", "source_type": "community discussion", "reliability": 0.45}]
+    },
+    {
+      "statement": "Swift Potion draws 3 cards when used.",
+      "kind": "game_fact",
+      "tags": ["potion", "swift_potion", "draw", "combat"],
+      "confidence": 0.86,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Draw", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.75}]
+    },
+    {
+      "statement": "Normal Act 1 combat uses an easy pool for the first three monster encounters; the pool includes solo Cultist, solo Jaw Worm, two Louses, and small Slimes.",
+      "kind": "game_fact",
+      "tags": ["act_1", "encounter_pool", "normal_combat", "pathing"],
+      "confidence": 0.86,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Monsters", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.75}]
+    },
+    {
+      "statement": "After the first three Act 1 normal encounters, the hard pool can include Blue Slaver, Red Slaver, Looter, Gremlin Gang, larger slime encounters, louse/fungi groups, and mixed thugs or wildlife encounters.",
+      "kind": "game_fact",
+      "tags": ["act_1", "encounter_pool", "normal_combat", "enemy"],
+      "confidence": 0.82,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Monsters", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.75}]
+    },
+    {
+      "statement": "Cultist has 48–54 HP at base, begins with Incantation for 3 Ritual, then uses Dark Strike for 6 damage every turn.",
+      "kind": "game_fact",
+      "tags": ["act_1", "enemy", "cultist", "intent", "ritual"],
+      "confidence": 0.9,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Cultist", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Blue Slaver has 46–50 HP at base. Its Stab deals 12 damage; Rake deals 7 damage and applies 1 Weak. Its ordinary pattern is probabilistic, so current intent must be read rather than inferred from the previous turn alone.",
+      "kind": "game_fact",
+      "tags": ["act_1", "enemy", "blue_slaver", "intent", "weak"],
+      "confidence": 0.84,
+      "sources": [{"url": "https://slay-the-spire.fandom.com/wiki/Slavers", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.7}]
+    },
+    {
+      "statement": "Jaw Worm begins with Chomp for 11 damage at base; its other moves include Thrash for 7 damage plus 5 Block and Bellow for 3 Strength plus 6 Block.",
+      "kind": "game_fact",
+      "tags": ["act_1", "enemy", "jaw_worm", "intent", "strength", "block"],
+      "confidence": 0.82,
+      "sources": [{"url": "https://slaythespire.gg/monsters/Jaw_Worm", "publisher": "SlayTheSpire.gg", "source_type": "reference guide", "reliability": 0.65}]
+    },
+    {
+      "statement": "The possible Act 1 Elites are Gremlin Nob, Lagavulin, and Sentries. Defeating an Elite yields a random relic in addition to 25–35 Gold and a card reward.",
+      "kind": "game_fact",
+      "tags": ["act_1", "elite", "relic", "rewards"],
+      "confidence": 0.9,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Elites", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Gremlin Nob has 82–86 HP at base, gains Enrage when Skills are played, begins with Bellow, and then uses Skull Bash or Bull Rush according to its pattern.",
+      "kind": "game_fact",
+      "tags": ["act_1", "elite", "gremlin_nob", "skill", "strength", "intent"],
+      "confidence": 0.9,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Gremlin_Nob", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Lagavulin has 109–111 HP at base and begins asleep in its Act 1 Elite encounter. Damaging it causes a stunned turn before it begins its Attack, Attack, Siphon Soul pattern; waiting three turns wakes it instead.",
+      "kind": "game_fact",
+      "tags": ["act_1", "elite", "lagavulin", "intent", "strength", "dexterity"],
+      "confidence": 0.9,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Lagavulin", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "The Act 1 Sentries Elite consists of three Sentries. Sentries have Artifact 1; outer Sentries use Bolt then Beam, while the middle uses Beam then Bolt. Bolt adds Dazed cards to discard and Beam attacks for 9 damage at base.",
+      "kind": "game_fact",
+      "tags": ["act_1", "elite", "sentries", "artifact", "dazed", "intent"],
+      "confidence": 0.9,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Sentry", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Map rooms have distinct visual icon categories for monster, elite, event, merchant, rest site, treasure, and boss. Screen extraction must classify a node with sufficient confidence before risk-based path advice is issued.",
+      "kind": "situational_strategy",
+      "tags": ["map", "vision", "pathing", "uncertainty"],
+      "conditions": "The distinct icon categories are factual; the confidence gate is VEDA's safety policy.",
+      "confidence": 0.86,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Category:Map_Icons", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.75}, {"url": "workspace://data/teaching_run_2026-09-02.json", "publisher": "VEDA", "source_type": "own experience", "reliability": 0.6}]
+    }
+  ]
+}

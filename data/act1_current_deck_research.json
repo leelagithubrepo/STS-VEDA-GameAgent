@@ -1,0 +1,28 @@
+{
+  "captured_at": "2026-09-02",
+  "scope": "Slay the Spire 1 facts relevant to cards and potion visibly offered during the current guided Ironclad run. Recommendation claims remain conditional.",
+  "claims": [
+    {
+      "statement": "Fiend Fire costs 2 Energy, Exhausts all other cards in hand, deals 7 damage for each card Exhausted this way, and then Exhausts itself; its upgrade deals 10 damage per card.",
+      "kind": "game_fact",
+      "tags": ["ironclad", "card", "fiend_fire", "attack", "exhaust", "damage"],
+      "confidence": 0.95,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Fiend_Fire", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Perfected Strike costs 2 Energy and deals 6 damage plus 2 additional damage for every card in the deck whose name contains Strike. Cleave costs 1 Energy and deals 8 damage to all enemies.",
+      "kind": "game_fact",
+      "tags": ["ironclad", "card", "perfected_strike", "cleave", "attack", "aoe"],
+      "confidence": 0.92,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Cards_List", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Fiend Fire is a candidate finisher only when its expected damage, discarded hand, current energy, enemy intent, and any exhaust interactions are evaluated from the observed combat state; it is not an automatic play merely because it is in the deck.",
+      "kind": "situational_strategy",
+      "tags": ["fiend_fire", "combat", "energy", "hand", "uncertainty"],
+      "conditions": "Requires a current, legible hand and enemy intents.",
+      "confidence": 0.88,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Fiend_Fire", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}, {"url": "workspace://docs/veda-slay-the-spire-1-player-manual.md#combat", "publisher": "Leela", "source_type": "user-provided operating manual", "reliability": 0.7}]
+    }
+  ]
+}

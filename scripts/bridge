@@ -1,0 +1,20 @@
+#!/bin/zsh
+# VEDA-only PS5 Remote Play wrapper. Pairing material stays in .ps5rmtctl.
+set -euo pipefail
+
+project_root="${0:A:h:h}"
+bridge_python="$project_root/.bridge-venv/bin/python"
+if [[ ! -x "$bridge_python" ]]; then
+  print -u2 "VEDA bridge is not installed. Run: $project_root/scripts/setup_bridge.sh"
+  exit 1
+fi
+export PS5RMTCTL_HOME="$project_root/.ps5rmtctl"
+if [[ "${1:-}" == "--assume-on" ]]; then
+  # Discovery and the Remote Play TCP port can be reachable while pyremoteplay's
+  # status probe falsely reports an already-awake PS5 as off. This bypass is
+  # deliberately explicit and only skips that preliminary probe; the encrypted
+  # Remote Play session still has to authenticate and become ready.
+  export VEDA_ASSUME_PS5_ON=1
+  shift
+fi
+exec "$bridge_python" -m ps5rmtctl "$@"

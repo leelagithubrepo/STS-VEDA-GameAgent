@@ -1,0 +1,56 @@
+{
+  "captured_at": "2026-09-02",
+  "scope": "Verified Slay the Spire 1 / Ironclad / Ascension 0 threat facts used by VEDA's readiness assessment. These claims do not select a path or force an action.",
+  "claims": [
+    {
+      "statement": "Shockwave costs 2 Energy, applies 3 Weak and 3 Vulnerable to all enemies, and Exhausts; its upgrade applies 5 of each debuff.",
+      "kind": "game_fact",
+      "tags": ["ironclad", "card", "shockwave", "weak", "vulnerable", "exhaust"],
+      "confidence": 0.93,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Cards_List", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Ghostly Armor costs 1 Energy, gains 10 Block, and is Ethereal; an Ethereal card remaining in hand at end of turn Exhausts.",
+      "kind": "game_fact",
+      "tags": ["ironclad", "card", "ghostly_armor", "block", "ethereal", "exhaust"],
+      "confidence": 0.93,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Ghostly_Armor", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Weak reduces Attack damage by 25%; Vulnerable makes Attack damage received 50% greater; Frail reduces Block gained from cards by 25%. Rounding can matter for small or multi-hit attacks.",
+      "kind": "game_fact",
+      "tags": ["combat", "weak", "vulnerable", "frail", "damage", "block"],
+      "confidence": 0.92,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Weak", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}, {"url": "https://slaythespire.wiki.gg/wiki/Vulnerable", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}, {"url": "https://slaythespire.wiki.gg/wiki/Debuffs", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Gremlin Nob gains Strength whenever the player plays a Skill. At Ascension 0 it begins with Bellow for 2 Enrage, then can use Skull Bash for 6 damage plus 2 Vulnerable or Bull Rush for 14 damage.",
+      "kind": "game_fact",
+      "tags": ["act_1", "elite", "gremlin_nob", "skill", "strength", "intent"],
+      "confidence": 0.93,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Gremlin_Nob", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Lagavulin begins asleep with 8 Metallicize; damaging it gives one stunned turn, after which it repeats Attack for 18, Attack for 18, then Siphon Soul for -1 Strength and -1 Dexterity at Ascension 0.",
+      "kind": "game_fact",
+      "tags": ["act_1", "elite", "lagavulin", "metallicize", "strength", "dexterity"],
+      "confidence": 0.93,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Lagavulin", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "In the Act 1 Sentries Elite, each Sentry has Artifact 1. The outer Sentries alternate Bolt, which adds 2 Dazed, and Beam for 9 damage; the middle Sentry starts with Beam instead.",
+      "kind": "game_fact",
+      "tags": ["act_1", "elite", "sentries", "artifact", "dazed", "multi_enemy"],
+      "confidence": 0.93,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Sentry", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "The Act 1 boss is one of Slime Boss, The Guardian, or Hexaghost, and its portrait is shown at the top of the map. VEDA must observe the actual boss before converting boss-specific advice into a route or card decision.",
+      "kind": "situational_strategy",
+      "tags": ["act_1", "boss", "map", "vision", "pathing", "uncertainty"],
+      "conditions": "The possible boss set and portrait fact are sourced; the observation requirement is VEDA's safety policy.",
+      "confidence": 0.91,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Bosses", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}, {"url": "workspace://docs/veda-slay-the-spire-1-player-manual.md#map-progression", "publisher": "Leela", "source_type": "user-provided operating manual", "reliability": 0.7}]
+    }
+  ]
+}

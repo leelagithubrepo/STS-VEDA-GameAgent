@@ -1,0 +1,7 @@
+{
+  "provider": "ollama_local",
+  "model": "blaifa/InternVL3_5:4B",
+  "status": "provisional_default",
+  "selection_reason": "On the first two labeled VEDA screenshots, InternVL3.5 extracted 4 of 5 scored fields while Qwen3-VL returned fail-closed UNKNOWN states under this Ollama runtime.",
+  "re_evaluate_after": ["map", "combat", "card_reward", "shop", "rest_site", "event", "treasure", "boss_relic"]
+}

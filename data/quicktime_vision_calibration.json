@@ -1,0 +1,10 @@
+{
+  "captured_at": "2026-09-04",
+  "status": "not_authorized",
+  "purpose": "Real QuickTime frame labels required before local vision may drive a combat or map recommendation.",
+  "minimum_frames_per_domain": 12,
+  "field_threshold": 0.95,
+  "combat_required_fields": ["screen_type", "hp", "max_hp", "energy", "block", "hand", "enemies", "end_turn_damage"],
+  "map_required_fields": ["screen_type", "map_nodes"],
+  "frames": []
+}

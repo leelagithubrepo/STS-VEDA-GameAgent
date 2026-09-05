@@ -1,0 +1,93 @@
+{
+  "captured_at": "2026-09-02",
+  "scope": "Operational guidance extracted from the user-provided VEDA — Slay the Spire 1 Player Manual. It is kept distinct from externally verified mechanics and does not authorize fixed strategy.",
+  "source_document": {
+    "path": "docs/veda-slay-the-spire-1-player-manual.md",
+    "sha256": "8ebc008310556cf5c29cdc695c1cfd8e9acc05eab5c22b446fbe3d940b372d6b",
+    "publisher": "Leela (project owner)",
+    "source_type": "user-provided operating manual",
+    "reliability": 0.7
+  },
+  "claims": [
+    {
+      "statement": "Treat map pathing as a graph of reachable nodes, not as a flat set of room icons.",
+      "kind": "strategic_principle",
+      "tags": ["map", "pathing", "legal_actions"],
+      "conditions": "The visible connections and current position must be extracted with enough confidence before selecting a node.",
+      "confidence": 0.75,
+      "sources": [{"url": "workspace://docs/veda-slay-the-spire-1-player-manual.md#3", "publisher": "Leela (project owner)", "source_type": "user-provided operating manual", "reliability": 0.7}]
+    },
+    {
+      "statement": "Before an Elite, assess HP, immediate damage, defense, potions, plausible matchups, route aftermath, and alternatives rather than treating it as a normal fight.",
+      "kind": "situational_strategy",
+      "tags": ["elite", "pathing", "hp", "potions", "act_1"],
+      "conditions": "Requires a confident map-node classification and current run state.",
+      "confidence": 0.7,
+      "sources": [{"url": "workspace://docs/veda-slay-the-spire-1-player-manual.md#24", "publisher": "Leela (project owner)", "source_type": "user-provided operating manual", "reliability": 0.7}]
+    },
+    {
+      "statement": "At every combat turn, verify player state, every enemy identity/HP/intent/status, hand, and potions before choosing an action sequence.",
+      "kind": "strategic_principle",
+      "tags": ["combat", "observation", "enemy_intent", "potions"],
+      "conditions": "If a critical field remains uncertain, re-observe or require supervision instead of inventing it.",
+      "confidence": 0.82,
+      "sources": [{"url": "workspace://docs/veda-slay-the-spire-1-player-manual.md#33", "publisher": "Leela (project owner)", "source_type": "user-provided operating manual", "reliability": 0.7}]
+    },
+    {
+      "statement": "Evaluate combat as ordered legal actions with predicted intermediate states; do not evaluate a hand as an unordered collection of good cards.",
+      "kind": "strategic_principle",
+      "tags": ["combat", "sequencing", "energy", "prediction"],
+      "conditions": "Re-observe after consequential actions or an unexpected transition.",
+      "confidence": 0.8,
+      "sources": [{"url": "workspace://docs/veda-slay-the-spire-1-player-manual.md#13", "publisher": "Leela (project owner)", "source_type": "user-provided operating manual", "reliability": 0.7}]
+    },
+    {
+      "statement": "Before investing in defense, calculate whether lethal is available; include HP, block, energy, modifiers, multi-hit behavior, and triggered effects.",
+      "kind": "strategic_principle",
+      "tags": ["combat", "lethal", "block", "damage", "prediction"],
+      "conditions": "Only assert lethal when all relevant visible and verified mechanics have been accounted for.",
+      "confidence": 0.82,
+      "sources": [{"url": "workspace://docs/veda-slay-the-spire-1-player-manual.md#14", "publisher": "Leela (project owner)", "source_type": "user-provided operating manual", "reliability": 0.7}]
+    },
+    {
+      "statement": "Treat HP spending as a run-level tradeoff: accept damage only when it purchases meaningful tempo, safety, or future run strength.",
+      "kind": "situational_strategy",
+      "tags": ["hp", "combat", "resource_management"],
+      "conditions": "Compare damage taken, combat length, Burning Blood recovery, route, and future threats.",
+      "confidence": 0.72,
+      "sources": [{"url": "workspace://docs/veda-slay-the-spire-1-player-manual.md#16", "publisher": "Leela (project owner)", "source_type": "user-provided operating manual", "reliability": 0.7}]
+    },
+    {
+      "statement": "Card rewards are optional; add a card only when it solves a current or expected problem better than preserving draw consistency.",
+      "kind": "strategic_principle",
+      "tags": ["card_reward", "deckbuilding", "consistency"],
+      "conditions": "Evaluate current deck, relics, HP, route, and known future threats; skipping is a legal strategic action.",
+      "confidence": 0.78,
+      "sources": [{"url": "workspace://docs/veda-slay-the-spire-1-player-manual.md#18", "publisher": "Leela (project owner)", "source_type": "user-provided operating manual", "reliability": 0.7}]
+    },
+    {
+      "statement": "Do not force a deck archetype early; build toward the problems this run actually presents.",
+      "kind": "strategic_principle",
+      "tags": ["deckbuilding", "flexibility", "synergy"],
+      "conditions": "Emerging cards and relics can later justify a more specific direction.",
+      "confidence": 0.8,
+      "sources": [{"url": "workspace://docs/veda-slay-the-spire-1-player-manual.md#19", "publisher": "Leela (project owner)", "source_type": "user-provided operating manual", "reliability": 0.7}]
+    },
+    {
+      "statement": "When an unfamiliar card, relic, enemy, intent, potion, event, boss, status, or interaction matters, retrieve exact mechanics before inventing behavior.",
+      "kind": "strategic_principle",
+      "tags": ["research", "uncertainty", "observation", "safety"],
+      "conditions": "Use multiple reliable sources for externally verified mechanics where possible; retain disagreement in strategic advice.",
+      "confidence": 0.88,
+      "sources": [{"url": "workspace://docs/veda-slay-the-spire-1-player-manual.md#37", "publisher": "Leela (project owner)", "source_type": "user-provided operating manual", "reliability": 0.7}]
+    },
+    {
+      "statement": "Keep game facts, derived state facts, strategy, VEDA experience, and hypotheses distinct; a single run outcome does not prove a general rule.",
+      "kind": "strategic_principle",
+      "tags": ["knowledge", "experience", "hypothesis", "provenance"],
+      "conditions": "Future promotion of a hypothesis requires repeated evidence and an audit trail.",
+      "confidence": 0.9,
+      "sources": [{"url": "workspace://docs/veda-slay-the-spire-1-player-manual.md#35", "publisher": "Leela (project owner)", "source_type": "user-provided operating manual", "reliability": 0.7}]
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+[
+  {
+    "name": "title-screen-play-highlighted",
+    "image": "artifacts/observations/ps5_observation_20260902T030454Z.png",
+    "expected": {
+      "screen_type": "TITLE"
+    }
+  },
+  {
+    "name": "ironclad-character-selection",
+    "image": "artifacts/observations/ironclad_character_select.png",
+    "expected": {
+      "screen_type": "CHARACTER_SELECT",
+      "ascension": 1,
+      "hp": 80,
+      "max_hp": 80,
+      "gold": 99
+    }
+  },
+  {
+    "name": "floor-1-two-louse-combat",
+    "image": "artifacts/observations/floor1_two_louse_combat.png",
+    "expected": {
+      "screen_type": "COMBAT",
+      "floor": 1,
+      "hp": 67,
+      "max_hp": 80,
+      "energy": 3,
+      "gold": 199,
+      "hand": ["Defend", "Strike", "Defend", "Strike"]
+    }
+  }
+]

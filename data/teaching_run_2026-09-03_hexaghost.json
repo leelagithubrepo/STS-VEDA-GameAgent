@@ -1,0 +1,31 @@
+{
+  "captured_at": "2026-09-03",
+  "mode": "human_guided",
+  "scope": "A single Ascension 0 Ironclad teaching run. This is experience evidence, not an automatic strategy update.",
+  "outcome": "loss_to_hexaghost",
+  "verified_observations": [
+    "The displayed boss name was Hexaghost with 250 maximum HP.",
+    "Hexaghost used Inflame (12 Block and 2 Strength) and later produced Burn pressure.",
+    "At one point the hand contained three Burns, one Defend, and one Strike at 1 HP; a 5-Block Defend could not cover six visible Burn damage.",
+    "Fiend Fire+ was used successfully as burst damage after a draw card.",
+    "Shockwave+ and Bash applied debuffs visible on the boss."
+  ],
+  "agent_failures": [
+    {
+      "kind": "identity_error",
+      "statement": "The boss was initially identified from visual appearance as Slime Boss before readable name confirmation.",
+      "remediation": "Require readable boss name before retrieving or applying a boss profile."
+    },
+    {
+      "kind": "intent_error",
+      "statement": "Some move symbols were interpreted without using the expanded intent tooltip and total multi-hit arithmetic.",
+      "remediation": "Require confirmed total incoming damage, including every hit, before approving End Turn."
+    },
+    {
+      "kind": "status_damage_error",
+      "statement": "End-of-turn Burn damage was not consistently included in survival forecasts.",
+      "remediation": "Require visible end-of-turn status damage in the combat preflight when it is present."
+    }
+  ],
+  "confidence": "single-run experience; do not generalize without future corroboration"
+}

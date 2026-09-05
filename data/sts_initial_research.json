@@ -1,0 +1,68 @@
+{
+  "captured_at": "2026-09-02",
+  "scope": "Initial, source-attributed foundation for Slay the Spire (not Slay the Spire 2).",
+  "claims": [
+    {
+      "statement": "At the start of a normal player turn, base energy is set to 3 and 5 cards are drawn; cards with an energy cost spend energy when played.",
+      "kind": "game_fact",
+      "tags": ["combat", "energy", "turn"],
+      "confidence": 0.9,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Mechanics", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}, {"url": "https://slaythespire.wiki.gg/wiki/Keywords", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.75}]
+    },
+    {
+      "statement": "Enemy intents are displayed above enemies before their turn; in multi-enemy combat, enemy actions resolve from left to right.",
+      "kind": "game_fact",
+      "tags": ["combat", "enemy_intent", "ui"],
+      "confidence": 0.85,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Mechanics", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Block absorbs damage before HP loss and normally disappears at the end of the turn, unless modified by an effect such as Barricade or Blur.",
+      "kind": "game_fact",
+      "tags": ["combat", "block", "hp"],
+      "confidence": 0.9,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Block", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}, {"url": "https://slaythespire.wiki.gg/wiki/Keywords", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.75}]
+    },
+    {
+      "statement": "At Ascension 0, Ironclad begins with 80 maximum HP, Burning Blood, five Strikes, four Defends, and Bash. Burning Blood heals 6 HP after combat.",
+      "kind": "game_fact",
+      "tags": ["ironclad", "starting_loadout", "healing"],
+      "confidence": 0.9,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Ironclad", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}, {"url": "https://slaythespire.wiki.gg/wiki/Burning_Blood", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Ascension is an optional cumulative difficulty system; it is unlocked per character after defeating an Act 3 boss, and level 0 is the baseline with no Ascension modifiers.",
+      "kind": "game_fact",
+      "tags": ["ascension", "victory", "run_setup"],
+      "confidence": 0.85,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Ascension", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
+    },
+    {
+      "statement": "Avoid committing to a predetermined deck archetype early; assess additions by the deck's current needs and emerging synergies.",
+      "kind": "strategic_principle",
+      "tags": ["deckbuilding", "card_reward", "flexibility"],
+      "conditions": "General expert guidance; individual card rewards still depend on current deck, relics, HP, map, and upcoming fights.",
+      "rationale": "Early decks need immediate functional coverage before narrow payoffs.",
+      "confidence": 0.65,
+      "sources": [{"url": "https://www.slaythespire.gg/guides/strategy", "publisher": "SlayTheSpire.gg", "source_type": "expert guide", "reliability": 0.6}]
+    },
+    {
+      "statement": "In Act 1, early front-loaded damage is often valuable because the elite pool tests whether the deck can end fights quickly.",
+      "kind": "situational_strategy",
+      "tags": ["ironclad", "act_1", "elite", "damage", "pathing"],
+      "conditions": "Use only after evaluating current HP, potions, map route, campfire access, and plausible elite matchup; it is not a requirement to fight every elite.",
+      "rationale": "Act 1 elites create different pressure: Gremlin Nob punishes Skill use, Lagavulin offers setup turns, and Sentries reward solutions to multi-enemy/status pressure.",
+      "confidence": 0.6,
+      "sources": [{"url": "https://www.slaythespire.gg/guides/strategy", "publisher": "SlayTheSpire.gg", "source_type": "expert guide", "reliability": 0.6}]
+    },
+    {
+      "statement": "A run must balance damage, defense, scaling, and consistency across the full act rather than optimize only for the immediately visible fight.",
+      "kind": "strategic_principle",
+      "tags": ["deckbuilding", "pathing", "resource_management"],
+      "conditions": "The relative priority changes with the known act boss, future route, current HP, relics, and potions.",
+      "rationale": "Later encounters test different capabilities, so a locally strong choice can create a later weakness.",
+      "confidence": 0.6,
+      "sources": [{"url": "https://www.slaythespire.gg/guides/strategy", "publisher": "SlayTheSpire.gg", "source_type": "expert guide", "reliability": 0.6}]
+    }
+  ]
+}

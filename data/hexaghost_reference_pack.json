@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-09-03",
+  "scope": "Verified Slay the Spire 1 / Hexaghost boss facts. These claims are not Slay the Spire 2 facts and are not universal strategy rules.",
+  "claims": [
+    {
+      "statement": "Hexaghost is an Act 1 boss with 250 HP at base. It always starts with Activate followed by Divider, then repeats Sear, Tackle, Sear, Inflame, Tackle, Sear, Inferno.",
+      "kind": "game_fact",
+      "tags": ["act_1", "boss", "hexaghost", "pattern", "identity"],
+      "confidence": 0.92,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Hexaghost", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.85}]
+    },
+    {
+      "statement": "Hexaghost's Inflame gains 12 Block and 2 Strength at base. Inferno deals 2 times 6 damage and adds three upgraded Burns while upgrading existing Burns for the rest of combat.",
+      "kind": "game_fact",
+      "tags": ["act_1", "boss", "hexaghost", "block", "strength", "burn", "inferno"],
+      "confidence": 0.92,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Hexaghost", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.85}]
+    },
+    {
+      "statement": "Burn is unplayable and deals 2 damage at the end of the player's turn; Burn+ deals 4. VEDA must include each visible end-of-turn damage status in a survival forecast before recommending End Turn.",
+      "kind": "situational_strategy",
+      "conditions": "The card effects are verified facts; the survival-forecast requirement is VEDA policy.",
+      "tags": ["combat", "burn", "status", "lethal_risk", "end_turn"],
+      "confidence": 0.95,
+      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Burn", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.85}]
+    },
+    {
+      "statement": "VEDA may only use a boss profile after the boss's displayed name is readable in the current state. Visual resemblance or an expected boss from the map is insufficient.",
+      "kind": "situational_strategy",
+      "conditions": "Identity gate created after VEDA's own 2026-09-03 teaching-run misidentification; it is a safety policy, not a game rule.",
+      "tags": ["boss", "vision", "identity", "safety", "own_experience"],
+      "confidence": 0.97,
+      "sources": [{"url": "workspace://data/teaching_run_2026-09-02.json", "publisher": "VEDA", "source_type": "own experience", "reliability": 0.65}, {"url": "https://slaythespire.wiki.gg/wiki/Hexaghost", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.85}]
+    }
+  ]
+}

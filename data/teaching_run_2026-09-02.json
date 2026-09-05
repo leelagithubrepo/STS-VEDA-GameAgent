@@ -1,0 +1,76 @@
+{
+  "metadata": {
+    "run_id": "ironclad-a0-human-guided-2026-09-02",
+    "mode": "human_guided_quicktime",
+    "control_authority": "human_only",
+    "status": "paused_mid_combat",
+    "scope": "This is experience evidence, not a source of game facts or universal strategic rules. Screens were read from delayed QuickTime snapshots."
+  },
+  "records": [
+    {
+      "state_before": {"screen": "neow", "character": "Ironclad", "hp": 80, "max_hp": 80, "gold": 99},
+      "legal_actions": ["next three combats enemies have 1 HP", "max HP +8"],
+      "selected_action": "next three combats enemies have 1 HP",
+      "reasoning": "Three low-risk early combats can produce card rewards while preserving HP.",
+      "prediction": "The next three combats will be substantially safer.",
+      "actual_result": "The run displayed a three-combat counter and the first three observed enemies had 1 current HP.",
+      "confidence": 0.72
+    },
+    {
+      "state_before": {"screen": "combat", "enemy_count": 2, "enemy_hp": [1, 1], "enemy_intents": ["attack 5", "non-attack"], "energy": 3},
+      "legal_actions": ["Strike left", "Strike right", "Defend", "End Turn"],
+      "selected_action": ["Strike left", "Strike right"],
+      "reasoning": "Both enemies were lethal to one Strike; removing the attacker first prevented its damage.",
+      "prediction": "Both enemies die with no HP loss.",
+      "actual_result": "Combat reward screen appeared with player at 80/80.",
+      "confidence": 0.9
+    },
+    {
+      "state_before": {"screen": "card_reward", "options": ["Pommel Strike", "Cleave", "Warcry"], "deck_context": "starting deck"},
+      "legal_actions": ["take Pommel Strike", "take Cleave", "take Warcry", "skip"],
+      "selected_action": "take Pommel Strike",
+      "reasoning": "Immediate damage plus card draw was judged useful for the early deck.",
+      "prediction": "Improves early damage without reducing hand quality.",
+      "actual_result": "Pommel Strike entered the deck.",
+      "confidence": 0.62
+    },
+    {
+      "state_before": {"screen": "card_reward", "options": ["Anger", "Shrug It Off", "Clothesline"], "hp": 80},
+      "legal_actions": ["take Anger", "take Shrug It Off", "take Clothesline", "skip"],
+      "selected_action": "take Shrug It Off",
+      "reasoning": "Efficient block plus draw adds defense without sacrificing consistency.",
+      "prediction": "Adds useful defense for harder future combats.",
+      "actual_result": "Shrug It Off entered the deck.",
+      "confidence": 0.64
+    },
+    {
+      "state_before": {"screen": "card_reward", "options": ["Combust", "Shrug It Off", "Perfected Strike"], "hp": 80},
+      "legal_actions": ["take Combust", "take Shrug It Off", "take Perfected Strike", "skip"],
+      "selected_action": "take Combust",
+      "reasoning": "Persistent area damage was judged useful against future multi-enemy combats; the HP cost was considered manageable.",
+      "prediction": "Improves sustained damage at a controllable HP cost.",
+      "actual_result": "Combust entered the deck and later dealt visible end-of-turn damage.",
+      "confidence": 0.55
+    },
+    {
+      "state_before": {"screen": "map", "visual_classification": "likely elite", "classification_confidence": "low", "hp": 80, "potions": ["Swift Potion"]},
+      "legal_actions": ["select highlighted node", "select other reachable node"],
+      "selected_action": "select highlighted node",
+      "reasoning": "It was initially inferred to be an Elite and player HP was full.",
+      "prediction": "An Elite fight and relic reward would follow.",
+      "actual_result": "A normal 48-HP combat occurred with normal rewards and no relic.",
+      "discrepancy": "Map icon was misclassified from the delayed visual feed.",
+      "lesson": "Do not treat uncertain map-node classification as verified; re-observe or request human confirmation before risk-based path claims.",
+      "confidence": 0.95
+    },
+    {
+      "state_before": {"screen": "combat", "player_hp": 73, "enemy_hp": 30, "enemy_intent": "attack 12", "player_debuff": "Weak", "energy": 3, "hand": ["Defend", "Pommel Strike", "Defend", "Combust", "Defend"]},
+      "legal_actions": ["Combust + two Defends", "Pommel Strike + defense", "three Defends", "other legal sequences"],
+      "selected_action": ["Combust", "Defend", "Defend", "End Turn"],
+      "reasoning": "Set up persistent damage while reducing incoming 12 damage with 10 Block.",
+      "prediction": "Lose 1 HP to Combust and 2 HP through Block; enemy loses 5 HP at end of turn.",
+      "actual_result": "Player HP changed from 73 to 70 and enemy HP changed from 30 to 25.",
+      "confidence": 0.88
+    }
+  ]
+}
