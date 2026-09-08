@@ -83,6 +83,20 @@ class VedaTests(unittest.TestCase):
         self.assertEqual(document["metadata"]["mode"], "human_guided")
         self.assertEqual(document["records"][0]["selected_action"], {"type": "end_turn"})
 
+    def test_experience_store_write_through_persists_and_reloads_records(self):
+        with TemporaryDirectory() as directory:
+            destination = Path(directory) / "history" / "experience.json"
+            store = ExperienceStore(destination)
+            store.append(DecisionRecord(
+                {"hp": 80}, ({"type": "end_turn"},), {"type": "end_turn"},
+                "No safe card is available.", "The turn ends.", immediate_outcome="verified",
+            ))
+            document = json.loads(destination.read_text())
+            restored = ExperienceStore(destination)
+        self.assertEqual(document["metadata"]["schema"], "veda.experience.v1")
+        self.assertEqual(len(restored.records), 1)
+        self.assertEqual(restored.records[0].immediate_outcome, "verified")
+
     def test_research_intake_retains_each_selected_source(self):
         base = KnowledgeBase()
         intake = ResearchIntake(base)
@@ -213,6 +227,46 @@ class VedaTests(unittest.TestCase):
         self.assertEqual(ledger.deck, [])
         ledger.confirm("card", "Fiend Fire", "elite reward")
         self.assertEqual(ledger.deck, ["Fiend Fire"])
+
+    def test_ledger_preserves_duplicate_potions_and_audits_replacement(self):
+        ledger = RunLedger()
+        ledger.confirm("potion", "Distilled Chaos", "reward text")
+        ledger.confirm("potion", "Distilled Chaos", "reward text")
+        ledger.confirm("potion", "Fairy in a Bottle", "tooltip")
+        ledger.replace_potion(discard="Distilled Chaos", gain="Ancient Potion", source="boss loot")
+        self.assertEqual(ledger.potions, ["Distilled Chaos", "Fairy in a Bottle", "Ancient Potion"])
+        self.assertEqual(ledger.confirmed[-2].kind, "potion_discarded")
+
+    def test_combat_validator_rejects_cards_absent_from_confirmed_hand(self):
+        snapshot = CombatSnapshot(
+            energy=2, hand=("Strike",), enemies=(CombatEnemy("Slime", 20),),
+        )
+        unavailable = CardEffect("Bash", 2, "Attack", attack_damage=8, target="Slime")
+        result = validate_and_predict(snapshot, (unavailable,))
+        self.assertFalse(result.legal)
+        self.assertIn("Bash is not in the confirmed hand", result.reasons)
+
+    def test_combat_validator_cannot_play_one_confirmed_card_twice(self):
+        snapshot = CombatSnapshot(
+            energy=2, hand=("Strike",), enemies=(CombatEnemy("Slime", 20),),
+        )
+        strike = CardEffect("Strike", 1, "Attack", attack_damage=6, target="Slime")
+        result = validate_and_predict(snapshot, (strike, strike))
+        self.assertFalse(result.legal)
+        self.assertIn("Strike is not in the confirmed hand", result.reasons)
+
+    def test_preflight_rejects_a_card_that_is_not_visibly_in_hand(self):
+        observation = StructuredGameState(
+            "COMBAT", 0.95, hp=80, max_hp=80, energy=2, block=0, hand=("Strike",),
+            end_turn_damage=0, end_turn_damage_confidence=1.0,
+            enemies=(VisibleEnemy("Slime", 20, 20, "attack 4", block=0, intent_total_damage=4, intent_damage_confidence=1.0),),
+        )
+        result = preflight_combat(
+            observation, CombatSnapshot(2, enemies=(CombatEnemy("Slime", 20),)),
+            (CardEffect("Bash", 2, "Attack", attack_damage=8, target="Slime"),),
+        )
+        self.assertFalse(result.allowed)
+        self.assertIn("Bash is not in the observed hand", result.reasons)
 
     def test_map_reader_blocks_route_advice_without_boss_or_confident_nodes(self):
         assessment = assess_map(boss=None, boss_confidence=0.0, nodes=(MapNode("a", "elite", True, 0.7),))

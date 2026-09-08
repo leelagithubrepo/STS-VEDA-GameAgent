@@ -30,7 +30,16 @@ def preflight_combat(
     """Fail closed if either visual evidence or arithmetic is insufficient."""
     readiness = combat_action_readiness(observation)
     check = validate_and_predict(snapshot, sequence)
-    reasons = (*readiness.reasons, *check.reasons)
+    # The observation is the authoritative hand, not a remembered deck list.
+    # Preserve multiplicity: one visible Strike cannot support two plays.
+    visible_hand = list(observation.hand)
+    hand_reasons: list[str] = []
+    for card in sequence:
+        try:
+            visible_hand.remove(card.name)
+        except ValueError:
+            hand_reasons.append(f"{card.name} is not in the observed hand")
+    reasons = (*readiness.reasons, *check.reasons, *hand_reasons)
     if reasons:
         return RecommendationPreflight(False, tuple(dict.fromkeys(reasons)), "No action prediction: preflight failed.", check)
     enemies = ", ".join(f"{enemy.name}: {enemy.hp} HP" for enemy in check.enemies)

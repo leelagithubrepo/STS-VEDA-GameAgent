@@ -44,13 +44,45 @@ class DecisionRecord:
             "prediction_evaluation": self.prediction_evaluation,
         }
 
+    @classmethod
+    def from_dict(cls, document: dict[str, Any]) -> "DecisionRecord":
+        """Restore an exported record without turning it into new knowledge."""
+        recorded_at = document.get("recorded_at")
+        return cls(
+            state_before=document["state_before"],
+            legal_actions=tuple(document["legal_actions"]),
+            selected_action=document["selected_action"],
+            reasoning=document["reasoning"],
+            prediction=document["prediction"],
+            state_after=document.get("state_after"),
+            immediate_outcome=document.get("immediate_outcome"),
+            combat_outcome=document.get("combat_outcome"),
+            run_outcome=document.get("run_outcome"),
+            predicted_state=document.get("predicted_state"),
+            prediction_evaluation=document.get("prediction_evaluation"),
+            id=document.get("id", str(uuid4())),
+            recorded_at=datetime.fromisoformat(recorded_at) if recorded_at else datetime.now(timezone.utc),
+        )
+
 
 class ExperienceStore:
-    def __init__(self) -> None:
+    """Auditable local experience store with optional write-through persistence.
+
+    Persisting a verified record is deliberately different from learning a rule:
+    it only saves evidence for later, repeated evaluation.
+    """
+
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = path
         self._records: list[DecisionRecord] = []
+        if path is not None and path.exists():
+            document = json.loads(path.read_text(encoding="utf-8"))
+            self._records = [DecisionRecord.from_dict(record) for record in document.get("records", [])]
 
     def append(self, record: DecisionRecord) -> None:
         self._records.append(record)
+        if self.path is not None:
+            self.flush()
 
     def related(self, tags: set[str]) -> list[DecisionRecord]:
         return [r for r in self._records if tags & set(r.state_before.get("tags", []))]
@@ -66,6 +98,21 @@ class ExperienceStore:
             "records": [record.as_dict() for record in self._records],
         }
         path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def flush(self) -> None:
+        """Atomically save local evidence if this store was given a path."""
+        if self.path is None:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+        self.export_json(
+            temporary,
+            metadata={
+                "schema": "veda.experience.v1",
+                "purpose": "observed decision evidence; not automatic strategic knowledge",
+            },
+        )
+        temporary.replace(self.path)
 
 
 def evaluate_prediction(predicted: dict[str, Any] | None, observed: dict[str, Any]) -> dict[str, Any] | None:

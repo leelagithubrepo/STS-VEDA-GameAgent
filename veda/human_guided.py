@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from .combat import CardEffect, CombatSnapshot
 from .experience import DecisionRecord, ExperienceStore, evaluate_prediction
 from .preflight import RecommendationPreflight, preflight_combat, verify_recommendation
+from .run_ledger import RunLedger
 from .vision import StructuredGameState
 
 
@@ -33,8 +34,9 @@ class HumanGuidedRecommendation:
 class HumanGuidedSession:
     """One-decision-at-a-time coordinator with human-only execution authority."""
 
-    def __init__(self, experience: ExperienceStore) -> None:
+    def __init__(self, experience: ExperienceStore, ledger: RunLedger | None = None) -> None:
         self.experience = experience
+        self.ledger = ledger
         self._pending: HumanGuidedRecommendation | None = None
 
     def recommend(
@@ -50,6 +52,12 @@ class HumanGuidedSession:
             preflight_combat(observation, snapshot, cards), cards, reasoning, observation,
         )
         if recommendation.preflight.allowed:
+            if self.ledger is not None:
+                self.ledger.confirm_snapshot(hp=observation.hp, max_hp=observation.max_hp, gold=observation.gold)
+                self.ledger.confirm_location(act=observation.act, floor=observation.floor)
+                self.ledger.confirm_combat_snapshot(
+                    energy=observation.energy, hand=observation.hand, source="verified teaching-mode observation",
+                )
             self._pending = recommendation
         return recommendation
 

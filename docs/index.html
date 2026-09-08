@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="VEDA is a research-first autonomous Slay the Spire learning agent.">
+  <title>VEDA — Slay the Spire Learning Agent</title>
+  <style>
+    :root { --ink:#17202a; --muted:#5c6875; --paper:#fbf7ef; --panel:#fffdf8; --red:#b73535; --gold:#bd8c27; --line:#dfd6c4; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--paper); font:16px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    header { background:linear-gradient(135deg,#231d24,#512e31); color:#fff8e8; padding:76px 24px 64px; }
+    .wrap { width:min(980px,100%); margin:auto; }
+    .eyebrow { margin:0 0 12px; color:#edc65d; text-transform:uppercase; letter-spacing:.13em; font-size:.78rem; font-weight:700; }
+    h1 { margin:0; font-size:clamp(2.5rem,7vw,4.7rem); line-height:1; letter-spacing:-.055em; }
+    .tagline { max-width:680px; margin:20px 0 0; color:#f2e8d5; font-size:clamp(1.05rem,2vw,1.28rem); }
+    main { padding:42px 24px 64px; }
+    section { margin:0 0 44px; }
+    h2 { margin:0 0 14px; font-size:1.55rem; letter-spacing:-.02em; }
+    p { margin:0 0 12px; }
+    .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
+    .card { padding:20px; background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:0 3px 12px #442b1810; }
+    .card h3 { margin:0 0 8px; font-size:1rem; }
+    .card p { margin:0; color:var(--muted); font-size:.94rem; }
+    .ongoing { display:inline-block; margin-left:8px; padding:2px 8px; border-radius:999px; background:#fff0c2; color:#765000; vertical-align:middle; font-size:.73rem; letter-spacing:.03em; text-transform:uppercase; font-weight:700; }
+    .flow { padding:20px; background:#24242b; color:#f9f2e4; border-radius:12px; overflow-x:auto; white-space:nowrap; font:600 .95rem/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .flow span { color:#e8bc50; padding:0 5px; }
+    ul { padding-left:20px; margin:10px 0; }
+    li { margin:5px 0; }
+    a { color:#8b471e; font-weight:650; }
+    footer { padding:26px 24px; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <p class="eyebrow">Research-first game-playing agent</p>
+      <h1>VEDA</h1>
+      <p class="tagline">An agent learning <em>Slay the Spire</em> through research, structured knowledge, observed play, verification, and experience—not a fixed human strategy.</p>
+    </div>
+  </header>
+  <main class="wrap">
+    <section>
+      <h2>1. What is VEDA?</h2>
+      <p>VEDA is an autonomous-game-agent project. Before playing a new game, she researches how it works, stores attributable knowledge, studies decisions and outcomes, then learns from her own play. Slay the Spire is her first target; the underlying design is intended to transfer to other strategy games.</p>
+    </section>
+
+    <section>
+      <h2>2. Current level <span class="ongoing">Ongoing</span></h2>
+      <div class="grid">
+        <article class="card"><h3>Play mode</h3><p>Ironclad, Ascension 0. A human currently executes PS5 inputs while VEDA provides verified, one-step recommendations.</p></article>
+        <article class="card"><h3>Progress</h3><p>Act 1 completed. The Slime Boss was defeated with 79/80 HP remaining.</p></article>
+        <article class="card"><h3>Autonomy boundary</h3><p>Local vision is observation-only until it passes real QuickTime-frame calibration. Unknown or low-confidence states fail closed.</p></article>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. VEDA architecture</h2>
+      <div class="flow">Observe <span>→</span> Understand <span>→</span> Retrieve knowledge <span>→</span> Legal choices <span>→</span> Reason <span>→</span> Decide <span>→</span> Act <span>→</span> Verify <span>→</span> Learn</div>
+      <div class="grid" style="margin-top:16px">
+        <article class="card"><h3>Knowledge</h3><p>Source-linked facts, strategic principles, situational advice, and hypotheses remain distinct.</p></article>
+        <article class="card"><h3>Safety gates</h3><p>Fresh-state checks, card/energy legality, target validation, combat arithmetic, survival forecasts, and result comparison.</p></article>
+        <article class="card"><h3>Experience</h3><p>Decision records retain state, choices, prediction, result, and eventual outcome. A single result never becomes a rule.</p></article>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. VEDA vs. LLM <span class="ongoing">Ongoing</span></h2>
+      <div class="grid">
+        <article class="card"><h3>VEDA owns</h3><p>Structured knowledge and provenance; game-state ledger; action legality; arithmetic checks; predictions; verification; and durable experience records.</p></article>
+        <article class="card"><h3>LLM currently assists</h3><p>Live screenshot interpretation, ambiguous UI reading, and flexible reasoning where the local system is not yet calibrated.</p></article>
+        <article class="card"><h3>Direction of travel</h3><p>Move deterministic state, inventory, turn math, and verification into VEDA first. Retain the LLM as an auditor for uncertainty—not as hidden game logic.</p></article>
+      </div>
+    </section>
+
+    <section>
+      <h2>5. Source reference</h2>
+      <ul>
+        <li><a href="founding-intent.md">Founding Intent</a> — research and learning charter.</li>
+        <li><a href="architecture.md">Architecture</a> — boundaries, safeguards, and adapter contract.</li>
+        <li><a href="human-guided-operation.md">Human-guided operation</a> — current PS5 teaching mode.</li>
+        <li><a href="local-vision.md">Local vision</a> and <a href="vision-benchmark-results.md">benchmark results</a> — provider-neutral observation work.</li>
+        <li><a href="https://github.com/leelagithubrepo/STSAI-VEDA">GitHub repository</a> — source code, tests, and research data.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>6. Learnings so far</h2>
+      <ul>
+        <li>Focused decks outperform indiscriminate card collection.</li>
+        <li>Live screenshots are authoritative; plans must yield to observed state.</li>
+        <li>Potion identity and inventory must be tracked, not guessed from icons.</li>
+        <li>Every proposed turn needs legal cards, energy math, targets, and a predicted result.</li>
+        <li>A successful run is evidence—not a universal strategic rule.</li>
+      </ul>
+    </section>
+  </main>
+  <footer><div class="wrap">VEDA · Slay the Spire learning agent · Documentation is concise by design and will evolve with verified experience.</div></footer>
+</body>
+</html>

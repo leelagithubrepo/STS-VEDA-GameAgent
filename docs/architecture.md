@@ -29,6 +29,12 @@ available for post-action verification. It fails closed rather than guessing.
 to a person, permits no second move until a newer screenshot verifies or
 abandons the first, and appends the outcome to the experience store.
 
+`veda.run_ledger` is the confirmed-inventory boundary. It retains duplicate
+cards and potion slots, records explicit potion replacement/discard events, and
+can hold a confirmed combat hand and energy value. A recommendation using a
+named hand must consume only cards visible in that hand; deck membership alone
+is not enough.
+
 `veda.combat_state` is the transition from vision into arithmetic. It requires
 the visible player HP/Block/energy, every enemy's name/HP/Block, total intent
 damage (with confidence), and visible end-of-turn status damage. Its snapshot

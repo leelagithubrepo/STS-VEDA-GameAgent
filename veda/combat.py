@@ -52,6 +52,7 @@ class CombatSnapshot:
     incoming_damage: int | None = None
     end_turn_damage: int | None = None
     hand_size: int | None = None
+    hand: tuple[str, ...] | None = None
     enemies: tuple[CombatEnemy, ...] = ()
 
 
@@ -102,8 +103,19 @@ def validate_and_predict(snapshot: CombatSnapshot, cards: tuple[CardEffect, ...]
     block = snapshot.player_block
     spent = 0
     cards_in_hand = snapshot.hand_size
+    # A named hand is stronger evidence than a count. It prevents a plan from
+    # using a card that is merely in the deck, or using one copy twice.
+    available_cards = list(snapshot.hand) if snapshot.hand is not None else None
+    if available_cards is not None:
+        cards_in_hand = len(available_cards)
 
     for card in cards:
+        if available_cards is not None:
+            try:
+                available_cards.remove(card.name)
+            except ValueError:
+                reasons.append(f"{card.name} is not in the confirmed hand")
+                continue
         if card.cost < 0:
             reasons.append(f"{card.name} has an invalid negative cost")
             continue
