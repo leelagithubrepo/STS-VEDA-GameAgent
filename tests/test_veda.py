@@ -28,6 +28,7 @@ from veda.potion_safety import preflight_potion_replacement
 from veda.prediction_telemetry import summarize_prediction_telemetry
 from veda.calibration import COMBAT_CRITICAL_FIELDS, LabeledFrame, calibrate
 from veda.routine_combat import plan_routine_combat
+from veda.decision_protocol import build_decision_brief
 
 
 class FakeAdapter:
@@ -412,7 +413,34 @@ class VedaTests(unittest.TestCase):
         self.assertEqual(recommendation.instructions, ("Play Strike targeting Slime",))
         record = session.verify(after)
         self.assertIn("energy", record.immediate_outcome)
+        self.assertEqual(record.decision_brief["immediate_threat"], "confirmed incoming damage: 4")
         self.assertEqual(len(store.records), 1)
+
+    def test_decision_brief_keeps_missing_values_as_unknowns(self):
+        state = StructuredGameState(
+            "COMBAT", 0.95, hp=30, max_hp=80, energy=3, block=0, hand=("Strike",),
+            player_strength=None, player_weak=0, player_frail=0,
+            enemies=(VisibleEnemy("unknown enemy", None, 20, "unknown", block=None, intent_total_damage=None),),
+        )
+        brief = build_decision_brief(state, CombatSnapshot(3, incoming_damage=None))
+        self.assertIn("player Strength", brief.unknowns)
+        self.assertIn("unknown enemy HP/Block/intent total", brief.unknowns)
+        self.assertEqual(brief.immediate_threat, "incoming damage is unverified")
+
+    def test_human_guided_rejects_an_invalid_safe_alternative(self):
+        state = StructuredGameState(
+            "COMBAT", 0.95, hp=30, max_hp=80, energy=1, block=0, hand=("Strike",),
+            end_turn_damage=0, end_turn_damage_confidence=1.0,
+            enemies=(VisibleEnemy("Slime", 6, 6, "attack 4", block=0, intent_total_damage=4, intent_damage_confidence=1.0),),
+        )
+        session = HumanGuidedSession(ExperienceStore())
+        result = session.recommend(
+            state, CombatSnapshot(1, hand=("Strike",), enemies=(CombatEnemy("Slime", 6),)),
+            (CardEffect("Strike", 1, "Attack", attack_damage=6, target="Slime"),), "Lethal is visible.",
+            safe_alternative=(CardEffect("Bash", 2, "Attack", attack_damage=8, target="Slime"),),
+        )
+        self.assertFalse(result.preflight.allowed)
+        self.assertIn("safe alternative failed preflight", result.preflight.reasons)
 
     def test_local_provider_parses_provider_neutral_contract(self):
         payload = {

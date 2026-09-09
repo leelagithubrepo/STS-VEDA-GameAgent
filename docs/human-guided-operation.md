@@ -30,6 +30,17 @@ executed decision.
 This mode creates real experience data while retaining human supervision. It
 does not require a PS5 bridge, an API key, Pico hardware, or hidden control.
 
+## Evidence-first decision packet
+
+Before a recommendation, VEDA creates a decision brief containing only facts
+from the current frame: player state, visible hand, visible enemy state,
+immediate threat, confirmed ledger context, and a separate list of unknowns.
+Missing values are never inherited from a prior screenshot. When a safer
+alternative is provided, it must independently pass the same preflight; an
+invalid fallback is rejected rather than presented as safety. The brief is
+stored with the verified experience record. See
+[the decision-support protocol](decision-support-protocol.md).
+
 ## Potion choices
 
 Potion art and screen position are not sufficient evidence. Before replacing a

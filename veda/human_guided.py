@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from .combat import CardEffect, CombatSnapshot
 from .controller_verification import ControllerAttempt, verify_controller_attempt
+from .decision_protocol import DecisionBrief, build_decision_brief
 from .experience import DecisionRecord, ExperienceStore, evaluate_prediction
 from .preflight import RecommendationPreflight, preflight_combat, verify_recommendation
 from .run_ledger import RunLedger
@@ -23,12 +24,21 @@ class HumanGuidedRecommendation:
     cards: tuple[CardEffect, ...]
     reasoning: str
     state_before: StructuredGameState
+    brief: DecisionBrief
+    safe_alternative: tuple[CardEffect, ...] = ()
 
     @property
     def instructions(self) -> tuple[str, ...]:
         return tuple(
             f"Play {card.name}" + (f" targeting {card.target}" if card.target else "")
             for card in self.cards
+        )
+
+    @property
+    def safe_instructions(self) -> tuple[str, ...]:
+        return tuple(
+            f"Play {card.name}" + (f" targeting {card.target}" if card.target else "")
+            for card in self.safe_alternative
         )
 
 
@@ -46,12 +56,20 @@ class HumanGuidedSession:
         snapshot: CombatSnapshot,
         cards: tuple[CardEffect, ...],
         reasoning: str,
+        safe_alternative: tuple[CardEffect, ...] = (),
     ) -> HumanGuidedRecommendation:
         if self._pending is not None:
             raise RuntimeError("verify or abandon the pending recommendation before creating another")
-        recommendation = HumanGuidedRecommendation(
-            preflight_combat(observation, snapshot, cards), cards, reasoning, observation,
-        )
+        primary = preflight_combat(observation, snapshot, cards)
+        brief = build_decision_brief(observation, snapshot, self.ledger)
+        alternative = preflight_combat(observation, snapshot, safe_alternative) if safe_alternative else None
+        if alternative is not None and not alternative.allowed:
+            primary = RecommendationPreflight(
+                False,
+                ("safe alternative failed preflight", *alternative.reasons),
+                "No action prediction: safe alternative is invalid.",
+            )
+        recommendation = HumanGuidedRecommendation(primary, cards, reasoning, observation, brief, safe_alternative)
         if recommendation.preflight.allowed:
             if self.ledger is not None:
                 self.ledger.confirm_snapshot(hp=observation.hp, max_hp=observation.max_hp, gold=observation.gold)
@@ -89,6 +107,7 @@ class HumanGuidedSession:
             ),
             predicted_state=pending.preflight.predicted_state,
             prediction_evaluation=evaluate_prediction(pending.preflight.predicted_state, after_observation),
+            decision_brief=pending.brief.as_dict(),
         )
         self.experience.append(record)
         self._pending = None

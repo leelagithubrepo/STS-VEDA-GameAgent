@@ -61,20 +61,21 @@
       <h2>2. Current level <span class="ongoing">Ongoing</span></h2>
       <div class="grid">
         <article class="card"><h3>Play mode</h3><p>Ironclad, Ascension 0. A human currently executes PS5 inputs while VEDA provides verified, one-step recommendations.</p></article>
-        <article class="card"><h3>Verified progress</h3><p>Act 1 and Act 2 completed. Bronze Automaton was defeated; the Ironclad reached the Act 3 transition with 13/83 HP, 512 gold, Fairy in a Bottle, and a pending Black Blood relic choice.</p></article>
+        <article class="card"><h3>Verified progress</h3><p>Act 3 completed. Ironclad defeated Donu &amp; Deca at Ascension 0 and reached the standard Heart epilogue with 74/83 HP.</p></article>
         <article class="card"><h3>Autonomy boundary</h3><p>Local vision is observation-only until it passes real QuickTime-frame calibration. Unknown or low-confidence states fail closed.</p></article>
       </div>
     </section>
 
     <section>
-      <h2>Live run report <span class="ongoing">Ongoing</span></h2>
-      <p class="status">Act 3 unlocked · Ironclad · Ascension 0</p>
-      <p>This is a human-guided PS5 run: VEDA observes the visible screen, proposes one checked move, and waits for the following screen to establish what actually happened. The player remains the only controller.</p>
+      <h2>Latest run report</h2>
+      <p class="status">Act 3 cleared · Ironclad · Ascension 0</p>
+      <p>This was a human-guided PS5 run: VEDA observed the visible screen, proposed one checked move, and waited for the following screen to establish what actually happened. The player remained the only controller.</p>
       <div class="timeline">
         <article><strong>Act 1</strong><p>Defeated Slime Boss at 79/80 HP. Established an early Strength and multi-hit direction.</p></article>
         <article><strong>Act 2 route</strong><p>Won Slavers and Gremlin Leader Elites, used Feed for permanent maximum HP, bottled Whirlwind+, and upgraded Corruption+ and Flame Barrier+.</p></article>
         <article><strong>Act 2 boss</strong><p>Identified Bronze Automaton only after the combat screen appeared. Whirlwind+ cleared Orbs; Heavy Blade+ delivered the verified lethal hit.</p></article>
-        <article><strong>Act 3 setup</strong><p>Selected Limit Break for Strength scaling. Black Blood is the current recommended boss relic for 12 HP healing after each combat; the player has not yet confirmed that selection. The run continues from 13/83 HP.</p></article>
+        <article><strong>Act 3</strong><p>Rested before the final boss, assembled Corruption+, Dark Embrace, and Apotheosis, then defeated Deca before Donu. The final combat ended at 74/83 HP.</p></article>
+        <article><strong>Ending</strong><p>Completed the standard Heart epilogue and unlocked Omamori, Prayer Wheel, and Shovel for future runs.</p></article>
       </div>
     </section>
 
@@ -98,6 +99,7 @@
         <article class="card"><h3>Potion safety</h3><p>Full-inventory swaps require the named potion gained, named potion discarded, confirmed capacity, and a current ledger. Icons alone are never enough.</p></article>
         <article class="card"><h3>Route and boss safety</h3><p>Map symbols and boss identity are not assumed from memory. Ambiguous nodes are treated as uncertain until selection and encounter evidence agree.</p></article>
         <article class="card"><h3>Local learning evidence</h3><p>Each verified decision can retain its state, predicted result, observed result, and outcome without automatically turning one run into a strategic rule.</p></article>
+        <article class="card"><h3>Decision packet</h3><p>Before a human-guided combat move, VEDA separates current-frame facts from unknowns, states the immediate threat, checks the primary line, and validates an optional safer fallback independently.</p></article>
       </div>
     </section>
 
@@ -133,6 +135,7 @@
         <li><a href="founding-intent.md">Founding Intent</a> — research and learning charter.</li>
         <li><a href="architecture.md">Architecture</a> — boundaries, safeguards, and adapter contract.</li>
         <li><a href="human-guided-operation.md">Human-guided operation</a> — current PS5 teaching mode.</li>
+        <li><a href="decision-support-protocol.md">Decision-support protocol</a> — current-frame evidence, safer alternatives, and the LLM/VEDA boundary.</li>
         <li><a href="local-vision.md">Local vision</a> and <a href="vision-benchmark-results.md">benchmark results</a> — provider-neutral observation work.</li>
         <li><a href="https://github.com/leelagithubrepo/STS-VEDA-GameAgent">GitHub repository</a> — source code, tests, and research data.</li>
       </ul>
@@ -150,6 +153,7 @@
         <li>One missed potion target can invalidate a survival forecast. Recovery must begin with the next observed intent, not the original plan.</li>
         <li>Boss identification must wait for readable encounter evidence; Bronze Automaton's map icon alone was not enough.</li>
         <li>Prediction quality should be reported as checked outcomes and coverage, not as an unearned confidence percentage.</li>
+        <li>Recommendation quality improves when verified facts, unknown values, and a safer alternative are shown separately before any controller input.</li>
       </ul>
     </section>
   </main>

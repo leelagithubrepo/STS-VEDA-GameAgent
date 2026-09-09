@@ -4,6 +4,8 @@ VEDA is an autonomous game-playing agent designed to learn a game before and whi
 
 VEDA is not given a fixed winning script. She gathers attributed research, distinguishes rules from advice, studies decision examples, then learns from her own observed play.
 
+Read the live project report: [VEDA — Slay the Spire Learning Agent](https://leelagithubrepo.github.io/STS-VEDA-GameAgent/).
+
 ## Design
 
 ```text
@@ -49,6 +51,15 @@ explicitly escalate to human-guided, LLM-audited play.
 While a person provides physical PS5 inputs, `veda.human_guided` runs the same
 one-step observe → preflight → act → verify loop and stores the result as
 experience. See [human-guided-operation.md](docs/human-guided-operation.md).
+
+## Evidence-first decision support
+
+Every human-guided combat recommendation now receives a structured decision
+brief: facts verified on the current frame, values that remain unknown, the
+immediate threat, and confirmed ledger context. The primary line must pass
+preflight; an optional safer line is independently preflight-checked. The
+following observation records the forecast comparison and the decision brief
+as auditable experience. See [decision-support-protocol.md](docs/decision-support-protocol.md).
 
 ## Quick start
 

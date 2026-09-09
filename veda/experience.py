@@ -23,6 +23,7 @@ class DecisionRecord:
     run_outcome: str | None = None
     predicted_state: dict[str, Any] | None = None
     prediction_evaluation: dict[str, Any] | None = None
+    decision_brief: dict[str, Any] | None = None
     id: str = field(default_factory=lambda: str(uuid4()))
     recorded_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -42,6 +43,7 @@ class DecisionRecord:
             "run_outcome": self.run_outcome,
             "predicted_state": self.predicted_state,
             "prediction_evaluation": self.prediction_evaluation,
+            "decision_brief": self.decision_brief,
         }
 
     @classmethod
@@ -60,6 +62,7 @@ class DecisionRecord:
             run_outcome=document.get("run_outcome"),
             predicted_state=document.get("predicted_state"),
             prediction_evaluation=document.get("prediction_evaluation"),
+            decision_brief=document.get("decision_brief"),
             id=document.get("id", str(uuid4())),
             recorded_at=datetime.fromisoformat(recorded_at) if recorded_at else datetime.now(timezone.utc),
         )
