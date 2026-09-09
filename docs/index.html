@@ -6,7 +6,7 @@
   <meta name="description" content="VEDA is a research-first autonomous Slay the Spire learning agent.">
   <title>VEDA — Slay the Spire Learning Agent</title>
   <style>
-    :root { --ink:#17202a; --muted:#5c6875; --paper:#fbf7ef; --panel:#fffdf8; --red:#b73535; --gold:#bd8c27; --line:#dfd6c4; }
+    :root { --ink:#17202a; --muted:#5c6875; --paper:#fbf7ef; --panel:#fffdf8; --red:#b73535; --gold:#bd8c27; --line:#dfd6c4; --green:#24724f; --blue:#315b7d; }
     * { box-sizing:border-box; }
     body { margin:0; color:var(--ink); background:var(--paper); font:16px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     header { background:linear-gradient(135deg,#231d24,#512e31); color:#fff8e8; padding:76px 24px 64px; }
@@ -25,6 +25,18 @@
     .ongoing { display:inline-block; margin-left:8px; padding:2px 8px; border-radius:999px; background:#fff0c2; color:#765000; vertical-align:middle; font-size:.73rem; letter-spacing:.03em; text-transform:uppercase; font-weight:700; }
     .flow { padding:20px; background:#24242b; color:#f9f2e4; border-radius:12px; overflow-x:auto; white-space:nowrap; font:600 .95rem/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
     .flow span { color:#e8bc50; padding:0 5px; }
+    .status { display:inline-block; margin:0 0 10px; padding:3px 9px; border-radius:999px; background:#e8f5eb; color:#17633d; font-size:.78rem; font-weight:750; letter-spacing:.03em; text-transform:uppercase; }
+    .timeline { display:grid; gap:10px; margin-top:16px; }
+    .timeline article { display:grid; grid-template-columns:100px 1fr; gap:14px; padding:14px 16px; border-left:4px solid var(--gold); background:var(--panel); border-radius:0 10px 10px 0; }
+    .timeline strong { color:#6d4d12; font-size:.9rem; }
+    .timeline p { margin:0; color:var(--muted); }
+    .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
+    table { width:100%; min-width:650px; border-collapse:collapse; text-align:left; }
+    th, td { padding:13px 16px; border-bottom:1px solid var(--line); vertical-align:top; }
+    tr:last-child td { border-bottom:0; }
+    th { background:#f2eadc; color:#5c4221; font-size:.8rem; letter-spacing:.04em; text-transform:uppercase; }
+    .match { color:var(--green); font-weight:750; }
+    .partial { color:var(--blue); font-weight:750; }
     ul { padding-left:20px; margin:10px 0; }
     li { margin:5px 0; }
     a { color:#8b471e; font-weight:650; }
@@ -49,8 +61,20 @@
       <h2>2. Current level <span class="ongoing">Ongoing</span></h2>
       <div class="grid">
         <article class="card"><h3>Play mode</h3><p>Ironclad, Ascension 0. A human currently executes PS5 inputs while VEDA provides verified, one-step recommendations.</p></article>
-        <article class="card"><h3>Progress</h3><p>Act 1 completed. The Slime Boss was defeated with 79/80 HP remaining.</p></article>
+        <article class="card"><h3>Verified progress</h3><p>Act 1 and Act 2 completed. Bronze Automaton was defeated; the Ironclad reached the Act 3 transition with 13/83 HP, 512 gold, Fairy in a Bottle, and a pending Black Blood relic choice.</p></article>
         <article class="card"><h3>Autonomy boundary</h3><p>Local vision is observation-only until it passes real QuickTime-frame calibration. Unknown or low-confidence states fail closed.</p></article>
+      </div>
+    </section>
+
+    <section>
+      <h2>Live run report <span class="ongoing">Ongoing</span></h2>
+      <p class="status">Act 3 unlocked · Ironclad · Ascension 0</p>
+      <p>This is a human-guided PS5 run: VEDA observes the visible screen, proposes one checked move, and waits for the following screen to establish what actually happened. The player remains the only controller.</p>
+      <div class="timeline">
+        <article><strong>Act 1</strong><p>Defeated Slime Boss at 79/80 HP. Established an early Strength and multi-hit direction.</p></article>
+        <article><strong>Act 2 route</strong><p>Won Slavers and Gremlin Leader Elites, used Feed for permanent maximum HP, bottled Whirlwind+, and upgraded Corruption+ and Flame Barrier+.</p></article>
+        <article><strong>Act 2 boss</strong><p>Identified Bronze Automaton only after the combat screen appeared. Whirlwind+ cleared Orbs; Heavy Blade+ delivered the verified lethal hit.</p></article>
+        <article><strong>Act 3 setup</strong><p>Selected Limit Break for Strength scaling. Black Blood is the current recommended boss relic for 12 HP healing after each combat; the player has not yet confirmed that selection. The run continues from 13/83 HP.</p></article>
       </div>
     </section>
 
@@ -60,7 +84,37 @@
       <div class="grid" style="margin-top:16px">
         <article class="card"><h3>Knowledge</h3><p>Source-linked facts, strategic principles, situational advice, and hypotheses remain distinct.</p></article>
         <article class="card"><h3>Safety gates</h3><p>Fresh-state checks, card/energy legality, target validation, combat arithmetic, survival forecasts, and result comparison.</p></article>
+        <article class="card"><h3>Input verification</h3><p>A controller press is an attempt, not success. The next screenshot must confirm the expected transition before VEDA continues.</p></article>
         <article class="card"><h3>Experience</h3><p>Decision records retain state, choices, prediction, result, and eventual outcome. A single result never becomes a rule.</p></article>
+      </div>
+    </section>
+
+    <section>
+      <h2>What VEDA has automated so far</h2>
+      <div class="grid">
+        <article class="card"><h3>Screen-to-state discipline</h3><p>Each new screenshot replaces remembered state. HP, energy, enemy HP, intent, hand, map node, and reward screen are re-read before the next recommendation.</p></article>
+        <article class="card"><h3>Combat preflight</h3><p>Recommendations check visible cards, energy, explicit targets, Block, Weak, Vulnerable, Artifact, and—when fully observed—survival after enemy intent.</p></article>
+        <article class="card"><h3>Controller verification</h3><p>A PS controller instruction is only an attempted action. VEDA confirms it, flags an unexpected transition, or asks for a fresh screen rather than silently advancing.</p></article>
+        <article class="card"><h3>Potion safety</h3><p>Full-inventory swaps require the named potion gained, named potion discarded, confirmed capacity, and a current ledger. Icons alone are never enough.</p></article>
+        <article class="card"><h3>Route and boss safety</h3><p>Map symbols and boss identity are not assumed from memory. Ambiguous nodes are treated as uncertain until selection and encounter evidence agree.</p></article>
+        <article class="card"><h3>Local learning evidence</h3><p>Each verified decision can retain its state, predicted result, observed result, and outcome without automatically turning one run into a strategic rule.</p></article>
+      </div>
+    </section>
+
+    <section>
+      <h2>Prediction ledger: forecast vs. observation</h2>
+      <p>These are concrete examples from the current run. “Match” means the named, visible outcome agreed with the forecast; “partial” means the tactical conclusion was right but a numeric detail differed. This is calibration evidence, not a claim of perfect play.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Decision</th><th>VEDA forecast</th><th>Observed progress</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td>Bandits opening</td><td>Whirlwind+ with first-turn Strength and Vulnerable would clear all three.</td><td>All Bandits were defeated immediately; the run kept 352 gold.</td><td class="match">Match</td></tr>
+            <tr><td>Snake Plant</td><td>Whirlwind+ would deal about 48 and leave the enemy near 30 HP.</td><td>Snake Plant moved from 78 HP to 30 HP.</td><td class="match">Match</td></tr>
+            <tr><td>Automaton Hyper Beam</td><td>Weak Potion on the Automaton would reduce the 51-damage Hyper Beam.</td><td>The potion was accidentally thrown at an Orb. VEDA detected the unchanged 51 intent and switched to a survival line.</td><td class="partial">Unexpected input recovered</td></tr>
+            <tr><td>Automaton recovery</td><td>Reaper then Whirlwind+ would survive the beam and leave the boss in finishing range.</td><td>Ironclad survived at 7 HP; Bronze Automaton reached 16 HP.</td><td class="partial">Tactical match; numeric drift</td></tr>
+            <tr><td>Automaton finish</td><td>Heavy Blade+ exceeded the boss's visible 16 HP.</td><td>Bronze Automaton was defeated and Act 3 unlocked.</td><td class="match">Match</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
@@ -90,8 +144,12 @@
         <li>Focused decks outperform indiscriminate card collection.</li>
         <li>Live screenshots are authoritative; plans must yield to observed state.</li>
         <li>Potion identity and inventory must be tracked, not guessed from icons.</li>
-        <li>Every proposed turn needs legal cards, energy math, targets, and a predicted result.</li>
+        <li>Every proposed turn needs legal cards, energy math, targets, and a predicted result. Prediction telemetry scores only explicitly checked fields.</li>
+        <li>Controller inputs and potion icons are not proof: the next screen and named inventory are authoritative.</li>
         <li>A successful run is evidence—not a universal strategic rule.</li>
+        <li>One missed potion target can invalidate a survival forecast. Recovery must begin with the next observed intent, not the original plan.</li>
+        <li>Boss identification must wait for readable encounter evidence; Bronze Automaton's map icon alone was not enough.</li>
+        <li>Prediction quality should be reported as checked outcomes and coverage, not as an unearned confidence percentage.</li>
       </ul>
     </section>
   </main>

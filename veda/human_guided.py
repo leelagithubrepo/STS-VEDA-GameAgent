@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .combat import CardEffect, CombatSnapshot
+from .controller_verification import ControllerAttempt, verify_controller_attempt
 from .experience import DecisionRecord, ExperienceStore, evaluate_prediction
 from .preflight import RecommendationPreflight, preflight_combat, verify_recommendation
 from .run_ledger import RunLedger
@@ -68,6 +69,12 @@ class HumanGuidedSession:
         before = pending.state_before.as_observation()
         after_observation = after.as_observation()
         verification = verify_recommendation(before, after_observation)
+        controller = verify_controller_attempt(
+            ControllerAttempt(
+                action="; ".join(card.name for card in pending.cards),
+                expected=pending.preflight.predicted_state or {}, before=before,
+            ), after_observation,
+        )
         actions = tuple({"card": card.name, "target": card.target, "cost": card.cost} for card in pending.cards)
         record = DecisionRecord(
             state_before=before,
@@ -77,8 +84,8 @@ class HumanGuidedSession:
             prediction=pending.preflight.prediction,
             state_after=after_observation,
             immediate_outcome=(
-                "verified changes: " + ", ".join(change.field for change in verification.changes)
-                if verification.changes else "no tracked state change was visible"
+                f"controller {controller.status}; verified changes: " + ", ".join(change.field for change in verification.changes)
+                if verification.changes else f"controller {controller.status}; no tracked state change was visible"
             ),
             predicted_state=pending.preflight.predicted_state,
             prediction_evaluation=evaluate_prediction(pending.preflight.predicted_state, after_observation),

@@ -23,6 +23,9 @@ from veda.bosses import confirm_boss_identity
 from veda.combat_state import verify_combat_state
 from veda.encounters import check_encounter
 from veda.experience import evaluate_prediction
+from veda.controller_verification import ControllerAttempt, verify_controller_attempt
+from veda.potion_safety import preflight_potion_replacement
+from veda.prediction_telemetry import summarize_prediction_telemetry
 from veda.calibration import COMBAT_CRITICAL_FIELDS, LabeledFrame, calibrate
 from veda.routine_combat import plan_routine_combat
 
@@ -303,6 +306,37 @@ class VedaTests(unittest.TestCase):
     def test_prediction_evaluation_only_compares_explicit_fields(self):
         evaluation = evaluate_prediction({"energy": 2, "block": 5, "player_hp": None}, {"energy": 2, "block": 5})
         self.assertEqual(evaluation, {"checked": {"energy": True, "block": True}, "all_matched": True})
+
+    def test_prediction_evaluation_confirms_a_predicted_combat_win_after_reward_transition(self):
+        evaluation = evaluate_prediction({"enemies": {"Chosen": 0}}, {"enemies": []})
+        self.assertEqual(evaluation, {"checked": {"enemies": True}, "all_matched": True})
+
+    def test_controller_attempt_requires_observed_expected_transition(self):
+        attempt = ControllerAttempt("Play Strike", {"energy": 2, "enemies": {"Slime": 0}}, {"energy": 3})
+        confirmed = verify_controller_attempt(attempt, {"energy": 2, "enemies": [{"name": "Slime", "hp": 0}]})
+        mismatch = verify_controller_attempt(attempt, {"energy": 3, "enemies": {"Slime": 0}})
+        stale = verify_controller_attempt(attempt, {"energy": 2})
+        self.assertTrue(confirmed.confirmed)
+        self.assertEqual(mismatch.status, "unexpected_transition")
+        self.assertEqual(stale.status, "needs_fresh_observation")
+
+    def test_potion_replacement_requires_confirmed_full_named_inventory(self):
+        ledger = RunLedger(potions=["Fairy in a Bottle", "Ancient Potion", "Distilled Chaos"])
+        allowed = preflight_potion_replacement(ledger, discard="Distilled Chaos", gain="Weak Potion", capacity=3)
+        rejected = preflight_potion_replacement(ledger, discard="Blue Potion", gain="Weak Potion", capacity=3)
+        self.assertTrue(allowed.allowed)
+        self.assertFalse(rejected.allowed)
+        self.assertIn("Blue Potion is not in the confirmed potion inventory", rejected.reasons)
+
+    def test_prediction_telemetry_scores_only_checked_fields(self):
+        first = DecisionRecord({"tags": ["combat"]}, (), {}, "", "", prediction_evaluation={
+            "checked": {"energy": True, "player_hp": False}, "all_matched": False,
+        })
+        unscored = DecisionRecord({"tags": ["combat"]}, (), {}, "", "")
+        telemetry = summarize_prediction_telemetry((first, unscored))
+        self.assertEqual(telemetry.score, 33.3)
+        self.assertEqual(telemetry.coverage, 0.5)
+        self.assertEqual(ExperienceStore().prediction_telemetry()["score"], None)
 
     def test_local_vision_needs_real_labeled_frames_before_combat_authorization(self):
         class Perfect:

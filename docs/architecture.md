@@ -41,6 +41,13 @@ damage (with confidence), and visible end-of-turn status damage. Its snapshot
 may be passed through `preflight_verified_combat`; omitted or low-confidence
 values fail closed rather than becoming LLM assumptions.
 
+`veda.controller_verification` records a human controller press as an intent,
+not an achieved action. The next observation must match the preflight's
+explicit predicted fields before the attempt is confirmed. `veda.potion_safety`
+requires named, capacity-checked ledger slots before a full-inventory potion
+replacement. `veda.prediction_telemetry` aggregates exact-match-only forecast
+accuracy without promoting outcomes into game knowledge.
+
 ## Source and confidence policy
 
 Each claim has one or more sources. A source records URL, publisher, type, captured time, and a reliability assessment. Claims retain conditions and rationale. Contradictory claims coexist; retrieval returns each matching claim, never a forced consensus.

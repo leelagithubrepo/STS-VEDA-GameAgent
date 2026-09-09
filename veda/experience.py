@@ -114,6 +114,11 @@ class ExperienceStore:
         )
         temporary.replace(self.path)
 
+    def prediction_telemetry(self) -> dict[str, Any]:
+        """Return current forecast calibration without changing knowledge."""
+        from .prediction_telemetry import summarize_prediction_telemetry
+        return summarize_prediction_telemetry(self.records).as_dict()
+
 
 def evaluate_prediction(predicted: dict[str, Any] | None, observed: dict[str, Any]) -> dict[str, Any] | None:
     """Compare only explicit predictions; never manufacture a learning rule."""
@@ -125,4 +130,19 @@ def evaluate_prediction(predicted: dict[str, Any] | None, observed: dict[str, An
             checked[field] = predicted[field] == observed[field]
     if predicted.get("player_hp") is not None and observed.get("hp") is not None:
         checked["player_hp"] = predicted["player_hp"] == observed["hp"]
+    if predicted.get("enemies") is not None and observed.get("enemies") is not None:
+        observed_enemies = observed["enemies"]
+        if isinstance(observed_enemies, (tuple, list)):
+            observed_enemies = {
+                enemy.get("name"): enemy.get("hp") for enemy in observed_enemies
+                if isinstance(enemy, dict) and enemy.get("name") is not None
+            }
+        if isinstance(predicted["enemies"], dict) and isinstance(observed_enemies, dict):
+            # A combat-winning action commonly transitions to a reward screen,
+            # where the observed enemy list is empty. Treat that as a match only
+            # when every named enemy was explicitly predicted dead.
+            checked["enemies"] = (
+                predicted["enemies"] == observed_enemies
+                or (not observed_enemies and all(hp == 0 for hp in predicted["enemies"].values()))
+            )
     return {"checked": checked, "all_matched": all(checked.values()) if checked else None}
