@@ -9,6 +9,7 @@ from veda.experience import DecisionRecord, ExperienceStore
 from veda.knowledge import Claim, ClaimKind, KnowledgeBase, Source
 from veda.research import ResearchIntake, ResearchNote
 from veda.observation import capture_visible_ps5_feed
+from veda.standalone import observation_status, write_observation_status
 from veda.research_catalog import load_catalog
 from veda.vision import LocalOllamaVisionProvider, StructuredGameState, VisibleEnemy, combat_action_readiness
 from veda.benchmark import BenchmarkCase, run_benchmark, summarize
@@ -117,6 +118,17 @@ class VedaTests(unittest.TestCase):
         with TemporaryDirectory() as directory, patch("veda.observation.subprocess.run", fake_capture):
             path = capture_visible_ps5_feed(Path(directory))
         self.assertEqual(path.suffix, ".png")
+
+    def test_standalone_status_is_watch_only_and_persisted(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = root / "frame.png"
+            image.write_bytes(b"png")
+            status = write_observation_status(image, root / "status.json")
+            saved = json.loads((root / "status.json").read_text())
+        self.assertEqual(status["mode"], "watch_only")
+        self.assertEqual(status["controller_input"], "disabled")
+        self.assertEqual(saved["image"], str(image))
 
     def test_initial_catalog_loads_sourced_facts_and_advice(self):
         catalog = Path(__file__).parents[1] / "data" / "sts_initial_research.json"

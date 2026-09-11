@@ -89,3 +89,26 @@ fields (HP, Block, energy, hand, enemies, intent totals, and end-turn damage)
 and map-node fields. The current empty calibration manifest is
 [`data/quicktime_vision_calibration.json`](data/quicktime_vision_calibration.json).
 No OpenAI API key is required.
+
+## Run VEDA outside VS Code
+
+VEDA can run as a standalone **watch-only** macOS process. It captures the
+visible QuickTime PS5 feed, writes a timestamped image, and publishes the most
+recent observation to `artifacts/standalone-status.json`. It does not open the
+Remote Play bridge or send controller input.
+
+```zsh
+./scripts/veda_watch --once       # one passive capture
+./scripts/veda_watch --interval 20 # keep watching until Ctrl-C
+```
+
+To start this observer automatically when you sign in to the Mac:
+
+```zsh
+./scripts/manage_veda_watcher.sh install
+./scripts/manage_veda_watcher.sh status
+```
+
+Stop it with `stop`, or remove it completely with `uninstall`. The service is
+deliberately observation-only. An independent decision service requires a
+separate vision/agent approval gate; it is not silently enabled by this setup.

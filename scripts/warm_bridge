@@ -1,0 +1,13 @@
+#!/bin/zsh
+# Start VEDA's persistent controller process using only VEDA's bridge identity.
+set -euo pipefail
+
+project_root="${0:A:h:h}"
+bridge_python="$project_root/.bridge-venv/bin/python"
+if [[ ! -x "$bridge_python" ]]; then
+  print -u2 "VEDA bridge is not installed. Run: $project_root/scripts/setup_bridge.sh"
+  exit 1
+fi
+
+export PS5RMTCTL_HOME="$project_root/.ps5rmtctl"
+exec "$bridge_python" "$project_root/scripts/warm_bridge.py" "$@"
