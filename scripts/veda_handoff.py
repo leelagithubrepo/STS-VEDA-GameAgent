@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from veda.handoff import build_review_packet, write_json
 from veda.handoff_dashboard import append_handoff, newest_screenshot, render_handoff_dashboard
+from veda.floor_telemetry import load_floor_log
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,7 +42,10 @@ def main() -> int:
         log_path=log_path, asset_dir=ROOT / "docs" / "assets" / "handoffs", packet=packet, screenshot=screenshot,
     )
     dashboard = ROOT / "docs" / "handoffs.html"
-    render_handoff_dashboard(json.loads(log_path.read_text(encoding="utf-8")), dashboard)
+    render_handoff_dashboard(
+        json.loads(log_path.read_text(encoding="utf-8")), dashboard,
+        load_floor_log(ROOT / "data" / "floor_runs.json")["runs"],
+    )
     print(f"{args.output}\n{dashboard}")
     return 0
 

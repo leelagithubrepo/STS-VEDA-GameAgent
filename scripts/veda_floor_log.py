@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from veda.floor_telemetry import load_floor_log, record_floor, render_floor_dashboard
+from veda.handoff_dashboard import render_handoff_dashboard
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,8 +43,12 @@ def main() -> int:
         notes=tuple(args.note), telemetry=dict(args.metric),
     )
     dashboard = ROOT / "docs" / "floor-telemetry.html"
-    render_floor_dashboard(load_floor_log(ROOT / "data" / "floor_runs.json"), dashboard)
-    print(f"logged {entry['id']}\n{dashboard}")
+    floors = load_floor_log(ROOT / "data" / "floor_runs.json")
+    render_floor_dashboard(floors, dashboard)
+    handoff_log = ROOT / "data" / "handoff_runs.json"
+    if handoff_log.exists():
+        render_handoff_dashboard(json.loads(handoff_log.read_text(encoding="utf-8")), ROOT / "docs" / "handoffs.html", floors["runs"])
+    print(f"logged {entry['id']}\n{ROOT / 'docs' / 'handoffs.html'}")
     return 0
 
 

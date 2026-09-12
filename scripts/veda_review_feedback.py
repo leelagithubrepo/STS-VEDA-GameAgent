@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from veda.handoff_dashboard import record_review_feedback, render_handoff_dashboard
+from veda.floor_telemetry import load_floor_log
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +24,7 @@ def main() -> int:
     args = parser.parse_args()
     log = ROOT / "data" / "handoff_runs.json"
     entry = record_review_feedback(log_path=log, feedback=args.feedback, retrospective_id=args.retrospective_id)
-    render_handoff_dashboard(json.loads(log.read_text(encoding="utf-8")), ROOT / "docs" / "handoffs.html")
+    render_handoff_dashboard(json.loads(log.read_text(encoding="utf-8")), ROOT / "docs" / "handoffs.html", load_floor_log(ROOT / "data" / "floor_runs.json")["runs"])
     print(f"Feedback sent to VEDA for {entry['packet']['stage']}")
     return 0
 
