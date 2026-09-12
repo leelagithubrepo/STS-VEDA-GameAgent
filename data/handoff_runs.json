@@ -77,6 +77,45 @@
         "status": "feedback_sent_to_veda"
       },
       "screenshot": "assets/handoffs/handoff-1a30ef44.png"
+    },
+    {
+      "id": "646452ee-fbd7-4694-baf6-4571659dd51f",
+      "packet": {
+        "created_at": "2026-09-12T22:42:20.567665+00:00",
+        "ending_state": {
+          "hp": 44
+        },
+        "metrics": {
+          "decision_records": 0,
+          "matched_predictions": 0,
+          "prediction_comparisons": 0,
+          "prediction_match_rate": null,
+          "verified_outcomes": 0
+        },
+        "notes": [
+          "Feed increased maximum HP from 90 to 93; Burning Blood restored HP after combat."
+        ],
+        "outcome": "completed",
+        "promotion_policy": "A lesson changes VEDA only after review, cited or run evidence, an explicit implementation, and a regression test.",
+        "proposed_lessons": [
+          "Against multiple Byrds, prioritize all-target hits to reduce Flight stacks while matching block to the displayed combined attack; use Hemokinesis only for immediate lethal at safe HP."
+        ],
+        "retrospective_id": "ac8f2902-1c0c-4cea-a761-0249c7772aff",
+        "review_status": "awaiting_codex_feedback",
+        "schema": "veda.review-handoff.v1",
+        "stage": "Floor 29 Byrd encounter",
+        "starting_state": {
+          "hp": 42
+        }
+      },
+      "review": {
+        "feedback": "LLM review: Floor 29 is a win. Feed raised max HP from 90 to 93, and Burning Blood left you at 44 HP after starting at 42. Keep the Byrds lesson proposed: it has no decision evidence, predicted-vs-actual comparisons, or regression test, so do not claim a strategy change yet. For the next Byrds or multi-enemy fight, log the opening enemy count, each Flight stack, combined incoming damage, Block chosen, every all-target or single-target choice, and the exact post-turn result. Use Hemokinesis only when the stated lethal and the resulting HP are both verified safe. Before the next meaningful decision, read all inbox messages.",
+        "feedback_at": "2026-09-12T22:42:20.653283+00:00",
+        "implementation_status": "pending",
+        "implementation_summary": null,
+        "status": "feedback_sent_to_veda"
+      },
+      "screenshot": null
     }
   ],
   "schema": "veda.handoff-dashboard.v1"

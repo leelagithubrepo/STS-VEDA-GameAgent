@@ -1,10 +1,10 @@
 # VEDA
 
-VEDA is an autonomous game-playing agent designed to learn a game before and while playing it. Its first target is *Slay the Spire*.
+VEDA is an AI-powered, turn-based game advisor architecture. It observes game state, reasons about decisions, predicts outcomes, learns from results, and advises the player. Its first implementation is *Slay the Spire*.
 
 VEDA is not given a fixed winning script. She gathers attributed research, distinguishes rules from advice, studies decision examples, then learns from her own observed play.
 
-Read the live project report: [VEDA — Slay the Spire Learning Agent](https://leelagithubrepo.github.io/STS-VEDA-GameAgent/).
+Read the project site: [VEDA Intelligence Architecture](https://leelagithubrepo.github.io/STS-VEDA-GameAgent/). The [Slay the Spire Report Card](https://leelagithubrepo.github.io/STS-VEDA-GameAgent/report-card.html) is the evidence-backed run record.
 
 ## Design
 
