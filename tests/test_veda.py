@@ -10,6 +10,10 @@ from veda.knowledge import Claim, ClaimKind, KnowledgeBase, Source
 from veda.research import ResearchIntake, ResearchNote
 from veda.observation import capture_visible_ps5_feed
 from veda.standalone import observation_status, write_observation_status
+from veda.retrospective import build_stage_retrospective, validate_lesson, write_stage_retrospective
+from veda.floor_telemetry import load_floor_log, record_floor, render_floor_dashboard
+from veda.handoff import build_review_packet, write_feedback
+from veda.handoff_dashboard import acknowledge_feedback, append_handoff, record_review_feedback, render_handoff_dashboard
 from veda.research_catalog import load_catalog
 from veda.vision import LocalOllamaVisionProvider, StructuredGameState, VisibleEnemy, combat_action_readiness
 from veda.benchmark import BenchmarkCase, run_benchmark, summarize
@@ -129,6 +133,95 @@ class VedaTests(unittest.TestCase):
         self.assertEqual(status["mode"], "watch_only")
         self.assertEqual(status["controller_input"], "disabled")
         self.assertEqual(saved["image"], str(image))
+
+    def test_stage_retro_is_evidence_first_and_does_not_promote_lessons(self):
+        record = DecisionRecord(
+            {"hp": 70}, (), {}, "safe line", "enemy dies",
+            immediate_outcome="verified", prediction_evaluation={"all_matched": True},
+        )
+        document = build_stage_retrospective(
+            stage="Act 1", outcome="completed", records=(record,),
+            proposed_lessons=("Prefer Feed on safe lethal.",),
+        )
+        self.assertEqual(document["metrics"]["prediction_match_rate"], 1.0)
+        self.assertEqual(document["lessons"][0]["status"], "proposed")
+        self.assertIn(record.id, document["evidence_record_ids"])
+        with TemporaryDirectory() as directory:
+            target = Path(directory) / "retro.json"
+            write_stage_retrospective(document, target)
+            saved = json.loads(target.read_text())
+        self.assertEqual(saved["schema"], "veda.stage-retrospective.v1")
+
+    def test_lesson_validation_requires_evidence_and_regression_test(self):
+        lesson = {"statement": "Keep a safety margin.", "status": "proposed"}
+        with self.assertRaises(ValueError):
+            validate_lesson(lesson, evidence_record_ids=(), implementation="rule", regression_test="test_rule")
+        validated = validate_lesson(
+            lesson, evidence_record_ids=("record-1",), implementation="add safety check", regression_test="test_safety_check",
+        )
+        self.assertEqual(validated["status"], "validated")
+
+    def test_floor_log_copies_evidence_and_renders_html(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "screen.png"
+            source.write_bytes(b"png")
+            log = root / "data" / "floor_runs.json"
+            assets = root / "docs" / "assets" / "floor-runs"
+            entry = record_floor(
+                log_path=log, screenshot=source, screenshot_dir=assets, act=2, floor=18,
+                outcome="victory", hp=72, max_hp=90, gold=204,
+                telemetry={"recommendation": "Feed lethal"},
+            )
+            page = root / "docs" / "floor-telemetry.html"
+            render_floor_dashboard(load_floor_log(log), page)
+            rendered = page.read_text()
+            self.assertTrue((assets / Path(entry["screenshot"]).name).is_file())
+            self.assertIn("Feed lethal", rendered)
+            self.assertIn("Act 2 · Floor 18", rendered)
+
+    def test_handoff_keeps_proposals_separate_and_writes_feedback(self):
+        retrospective = build_stage_retrospective(
+            stage="Act 2", outcome="completed", proposed_lessons=("Measure Frail Block first.",),
+        )
+        packet = build_review_packet(retrospective)
+        self.assertEqual(packet["review_status"], "awaiting_codex_feedback")
+        self.assertEqual(packet["proposed_lessons"], ["Measure Frail Block first."])
+        with TemporaryDirectory() as directory:
+            feedback_path = Path(directory) / "feedback.json"
+            write_feedback(packet=packet, feedback="Collect another verified example.", path=feedback_path)
+            saved = json.loads(feedback_path.read_text())
+        self.assertIn("another verified example", saved["feedback"])
+
+    def test_handoff_dashboard_copies_relevant_screenshot(self):
+        packet = build_review_packet(build_stage_retrospective(stage="Act 2", outcome="completed"))
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            screenshot = root / "screen.png"
+            screenshot.write_bytes(b"png")
+            log = root / "data" / "handoffs.json"
+            assets = root / "docs" / "assets" / "handoffs"
+            entry = append_handoff(log_path=log, asset_dir=assets, packet=packet, screenshot=screenshot)
+            page = root / "docs" / "handoffs.html"
+            render_handoff_dashboard(json.loads(log.read_text()), page)
+            self.assertTrue((assets / Path(entry["screenshot"]).name).is_file())
+            self.assertIn("Act 2", page.read_text())
+
+    def test_handoff_requires_review_then_veda_acknowledgement(self):
+        packet = build_review_packet(build_stage_retrospective(stage="Act 2", outcome="completed"))
+        with TemporaryDirectory() as directory:
+            log = Path(directory) / "handoffs.json"
+            append_handoff(log_path=log, asset_dir=Path(directory) / "assets", packet=packet, screenshot=None)
+            with self.assertRaises(ValueError):
+                acknowledge_feedback(
+                    log_path=log, implementation_status="implemented", summary="Added a rule.",
+                )
+            record_review_feedback(log_path=log, feedback="Protect a 15 HP margin.")
+            entry = acknowledge_feedback(
+                log_path=log, implementation_status="implemented", summary="Added the survival guardrail.",
+            )
+        self.assertEqual(entry["review"]["status"], "handoff_complete")
+        self.assertEqual(entry["review"]["implementation_status"], "implemented")
 
     def test_initial_catalog_loads_sourced_facts_and_advice(self):
         catalog = Path(__file__).parents[1] / "data" / "sts_initial_research.json"

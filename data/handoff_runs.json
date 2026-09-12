@@ -1,0 +1,44 @@
+{
+  "handoffs": [
+    {
+      "id": "9b31c046-a0c6-4738-9fb4-356bdff75568",
+      "packet": {
+        "created_at": "2026-09-12T15:57:50.288809+00:00",
+        "ending_state": {
+          "hp": 49
+        },
+        "metrics": {
+          "decision_records": 0,
+          "matched_predictions": 0,
+          "prediction_comparisons": 0,
+          "prediction_match_rate": null,
+          "verified_outcomes": 0
+        },
+        "notes": [
+          "Completed two normal combats and reached a Rest Site. Confirmed Snake Plant's Malleable behavior and that a 15-damage multi-hit turn required potion-assisted blocking while Frail was active."
+        ],
+        "outcome": "completed",
+        "promotion_policy": "A lesson changes VEDA only after review, cited or run evidence, an explicit implementation, and a regression test.",
+        "proposed_lessons": [
+          "Proposed: against multi-hit threats while Frail, calculate post-Frail Block before deciding whether to spend a temporary Dexterity potion."
+        ],
+        "retrospective_id": "975cecca-d9ba-4c5b-b3b3-5af65eb5a6e2",
+        "review_status": "awaiting_codex_feedback",
+        "schema": "veda.review-handoff.v1",
+        "stage": "Act 2 floors 20-23",
+        "starting_state": {
+          "hp": 72
+        }
+      },
+      "review": {
+        "feedback": "Keep the Frail-versus-multi-hit lesson proposed. Add a survival guardrail: when the projected hit could leave Ironclad below roughly 15-20 HP, prefer guaranteed Block, available potion use, or a safer line over damage unless the line secures a kill. For the next comparable fight, capture before/after screenshots and record enemy intent, hand, energy, Frail, Dexterity, Block, potion availability/use, predicted damage, and actual damage before seeking validation.",
+        "feedback_at": "2026-09-12T20:57:59.899901+00:00",
+        "implementation_status": "pending",
+        "implementation_summary": null,
+        "status": "feedback_sent_to_veda"
+      },
+      "screenshot": "assets/handoffs/handoff-a1697df3.png"
+    }
+  ],
+  "schema": "veda.handoff-dashboard.v1"
+}

@@ -90,6 +90,59 @@ and map-node fields. The current empty calibration manifest is
 [`data/quicktime_vision_calibration.json`](data/quicktime_vision_calibration.json).
 No OpenAI API key is required.
 
+## Retrospect after each stage
+
+After an Act, boss, or any meaningful floor sequence, create a review artifact
+before changing VEDA's strategy. Proposed lessons are intentionally **not**
+promoted to knowledge automatically: a Codex review must connect a lesson to
+evidence, an implementation, and a regression test.
+
+```zsh
+./scripts/veda_retro.py --stage "Act 2" --outcome completed \
+  --start-hp 72 --end-hp 41 \
+  --note "Slime Boss kill was secured with Feed." \
+  --lesson "Preserve Feed for safe lethal when max HP matters."
+```
+
+The local report is saved to `artifacts/retrospectives/`. In Terminal VEDA,
+ask: `Review the newest stage retrospective. Validate only evidence-backed
+lessons, then implement each validation with a regression test.`
+
+For the standalone VEDA handoff, run this immediately after the retrospective:
+
+```zsh
+./scripts/veda_handoff.py --latest
+```
+
+It writes one short packet to `artifacts/handoff/latest-review.json`. A Codex
+The handoff loop is deliberately closed before VEDA begins its next stage:
+
+1. VEDA writes the retrospective and runs `./scripts/veda_handoff.py --latest`.
+   This updates the screenshot-backed HTML handoff dashboard.
+2. Codex reviews the telemetry and publishes a recommendation with
+   `./scripts/veda_review_feedback.py --feedback "..."`.
+3. VEDA reads the feedback, applies an evidence-backed change when warranted,
+   then confirms it with `./scripts/veda_acknowledge_feedback.py --status implemented --summary "..."`.
+
+The HTML entry moves from `awaiting_codex_review` to `feedback_sent_to_veda`,
+then to `handoff_complete`. A proposed lesson is still not promoted to durable
+strategy without supporting evidence and a regression test.
+
+## Log each completed floor to HTML
+
+Choose a screenshot from `artifacts/veda-inbox` (or any local image), then log
+the completed floor. The command stores structured telemetry in
+`data/floor_runs.json`, copies the evidence image into the site assets, and
+regenerates [`docs/floor-telemetry.html`](docs/floor-telemetry.html).
+
+```zsh
+./scripts/veda_floor_log.py --act 2 --floor 18 --outcome victory \
+  --screenshot artifacts/veda-inbox/floor-18.png \
+  --hp 72 --max-hp 90 --gold 204 \
+  --metric "recommendation=Feed lethal" \
+  --note "Human executed VEDA's advisory line."
+```
+
 ## Run VEDA outside VS Code
 
 VEDA can run as a standalone **watch-only** macOS process. It captures the
