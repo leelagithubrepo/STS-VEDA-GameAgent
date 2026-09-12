@@ -14,6 +14,7 @@ from veda.retrospective import build_stage_retrospective, validate_lesson, write
 from veda.floor_telemetry import load_floor_log, record_floor, render_floor_dashboard
 from veda.handoff import build_review_packet, write_feedback
 from veda.handoff_dashboard import acknowledge_feedback, append_handoff, record_review_feedback, render_handoff_dashboard
+from veda.review_handoff import submit_for_review
 from veda.relic_inventory import inventory_summary, load_relic_inventory, record_relic
 from veda.mailbox import mailbox_status, receive_messages, send_message
 from veda.research_catalog import load_catalog
@@ -221,6 +222,22 @@ class VedaTests(unittest.TestCase):
             write_feedback(packet=packet, feedback="Collect another verified example.", path=feedback_path)
             saved = json.loads(feedback_path.read_text())
         self.assertIn("another verified example", saved["feedback"])
+
+    def test_submitting_a_retrospective_creates_a_review_request(self):
+        retrospective = build_stage_retrospective(stage="Floor 30", outcome="completed")
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "artifacts" / "retrospectives" / "floor-30.json"
+            write_stage_retrospective(retrospective, source)
+            (root / "data").mkdir()
+            (root / "data" / "floor_runs.json").write_text('{"schema":"veda.floor-telemetry.v1","runs":[]}')
+            (root / "data" / "relic_inventory.json").write_text('{"schema":"veda.relic-inventory.v1","relics":[]}')
+            packet, review, dashboard = submit_for_review(root=root, retrospective_path=source)
+            messages = receive_messages(mailbox_path=root / "artifacts" / "mailbox" / "review-mailbox.json", recipient="llm")
+            self.assertEqual(messages[0]["related_id"], retrospective["id"])
+            self.assertEqual(packet["retrospective_id"], retrospective["id"])
+            self.assertTrue(review.is_file())
+            self.assertTrue(dashboard.is_file())
 
     def test_handoff_dashboard_copies_relevant_screenshot(self):
         packet = build_review_packet(build_stage_retrospective(stage="Act 2", outcome="completed"))

@@ -116,6 +116,45 @@
         "status": "feedback_sent_to_veda"
       },
       "screenshot": null
+    },
+    {
+      "id": "2349c0a8-0fc1-4534-852b-613a6a3c9a24",
+      "packet": {
+        "created_at": "2026-09-12T23:20:51.144738+00:00",
+        "ending_state": {
+          "hp": 57
+        },
+        "metrics": {
+          "decision_records": 0,
+          "matched_predictions": 0,
+          "prediction_comparisons": 0,
+          "prediction_match_rate": null,
+          "verified_outcomes": 0
+        },
+        "notes": [
+          "Three potions remained available throughout. Feed must be checked against exact displayed enemy HP rather than assumed lethal."
+        ],
+        "outcome": "completed",
+        "promotion_policy": "A lesson changes VEDA only after review, cited or run evidence, an explicit implementation, and a regression test.",
+        "proposed_lessons": [
+          "For Centurion and Mystic, prioritize applying Weak and Vulnerable, use Reaper during a multi-target Vulnerable window, and verify Feed lethality from the displayed HP before committing to it."
+        ],
+        "retrospective_id": "01be09b7-8b12-4abb-af37-badd32b95e6c",
+        "review_status": "awaiting_codex_feedback",
+        "schema": "veda.review-handoff.v1",
+        "stage": "Floor 30 Centurion and Mystic encounter",
+        "starting_state": {
+          "hp": 44
+        }
+      },
+      "review": {
+        "feedback": "LLM review: Floor 30 is a strong recovery, ending at 57 HP from 44 with all three potions still available. Keep the Centurion and Mystic lesson proposed: this report includes no decision evidence, opening state, enemy HP, intent, or forecast-versus-result comparison. In the next multi-enemy fight, record the displayed enemy HP and intents, order of Weak/Vulnerable application, target selection, Reaper healing calculation, Feed lethal calculation, and exact post-turn state. Preserve potions when the combat is already safe, but explicitly state why they were not needed. Before the next meaningful decision, read all LLM inbox messages.",
+        "feedback_at": "2026-09-12T23:21:18.820877+00:00",
+        "implementation_status": "pending",
+        "implementation_summary": null,
+        "status": "feedback_sent_to_veda"
+      },
+      "screenshot": null
     }
   ],
   "schema": "veda.handoff-dashboard.v1"

@@ -4,17 +4,12 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from veda.handoff import build_review_packet, write_json
-from veda.handoff_dashboard import append_handoff, render_handoff_dashboard
-from veda.floor_telemetry import load_floor_log
-from veda.relic_inventory import inventory_summary, load_relic_inventory
-from veda.mailbox import send_message
+from veda.review_handoff import submit_for_review
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,25 +31,10 @@ def main() -> int:
         source = max(candidates, key=lambda path: path.stat().st_mtime)
     else:
         source = args.retrospective
-    packet = build_review_packet(json.loads(source.read_text(encoding="utf-8")))
-    write_json(packet, args.output)
-    send_message(
-        mailbox_path=ROOT / "artifacts" / "mailbox" / "review-mailbox.json",
-        sender="veda", recipient="llm", kind="review_request",
-        body=f"Review requested: {packet['stage']} ({packet['outcome']}).",
-        related_id=packet["retrospective_id"],
-    )
-    screenshot = args.screenshot
-    log_path = ROOT / "data" / "handoff_runs.json"
-    append_handoff(
-        log_path=log_path, asset_dir=ROOT / "docs" / "assets" / "handoffs", packet=packet, screenshot=screenshot,
-    )
-    dashboard = ROOT / "docs" / "report-card.html"
-    render_handoff_dashboard(
-        json.loads(log_path.read_text(encoding="utf-8")), dashboard,
-        load_floor_log(ROOT / "data" / "floor_runs.json")["runs"],
-        inventory_summary(load_relic_inventory(ROOT / "data" / "relic_inventory.json")),
-    )
+    _, latest_review, dashboard = submit_for_review(root=ROOT, retrospective_path=source, screenshot=args.screenshot)
+    if args.output != latest_review:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(latest_review.read_text(encoding="utf-8"), encoding="utf-8")
     print(f"{args.output}\n{dashboard}")
     return 0
 
