@@ -48,6 +48,19 @@ requires named, capacity-checked ledger slots before a full-inventory potion
 replacement. `veda.prediction_telemetry` aggregates exact-match-only forecast
 accuracy without promoting outcomes into game knowledge.
 
+`veda.mailbox` is the standalone review boundary. VEDA submits a durable review
+request after a floor, major choice, or danger event; the LLM reviewer returns
+feedback; VEDA explicitly reads and acknowledges it before treating it as
+received. Separate terminal sessions do not imply delivery. The current
+mailbox is local and file-backed; its message schema can migrate to SQLite
+when VEDA becomes a packaged application.
+
+`veda.floor_telemetry` and `veda.relic_inventory` create the player-facing
+Report Card. They record floor outcomes, rewards, losses, actions, strategy,
+one or two evidence screenshots, and confirmed relic properties with sources
+and confidence. The published Report Card never exposes private LLM↔VEDA
+review messages; it presents only the verified run record.
+
 ## Source and confidence policy
 
 Each claim has one or more sources. A source records URL, publisher, type, captured time, and a reliability assessment. Claims retain conditions and rationale. Contradictory claims coexist; retrieval returns each matching claim, never a forced consensus.
@@ -69,3 +82,15 @@ The agent refuses to execute an action that was not listed as legal for the same
 ## Decision policy seam
 
 `DecisionPolicy` receives the current state, legal actions, retrieved knowledge, and related experience. It returns a `Decision` containing action, rationale, confidence, and prediction. The default policy is deliberately conservative: it chooses no action. A future reasoning model can be introduced here without changing evidence, control, or audit formats.
+
+## Standalone review protocol
+
+1. Before a meaningful decision, VEDA reads its mailbox and records the
+   current game state and relevant evidence.
+2. After every floor, and immediately after a major choice, Elite, boss, death,
+   or dangerous HP state, VEDA writes a review request with linked records.
+3. The LLM reviewer returns evidence-bound feedback. VEDA acknowledges receipt
+   and records any implementation or clarification request.
+4. The Report Card regenerates from floor and inventory evidence. Strategy
+   changes remain proposed until evidence and a regression test warrant
+   promotion.

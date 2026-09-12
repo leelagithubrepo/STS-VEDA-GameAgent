@@ -114,8 +114,8 @@ For the standalone VEDA handoff, run this immediately after the retrospective:
 ./scripts/veda_handoff.py --latest
 ```
 
-It writes one short packet to `artifacts/handoff/latest-review.json`. A Codex
-The handoff loop is deliberately closed before VEDA begins its next stage:
+It writes one short packet to `artifacts/handoff/latest-review.json`. The
+handoff loop is deliberately closed before VEDA begins its next stage:
 
 1. VEDA writes the retrospective and runs `./scripts/veda_handoff.py --latest`.
    This updates the screenshot-backed HTML handoff dashboard.
@@ -133,14 +133,44 @@ strategy without supporting evidence and a regression test.
 Choose a screenshot from `artifacts/veda-inbox` (or any local image), then log
 the completed floor. The command stores structured telemetry in
 `data/floor_runs.json`, copies the evidence image into the site assets, and
-regenerates [`docs/floor-telemetry.html`](docs/floor-telemetry.html).
+regenerates the player-facing [`docs/report-card.html`](docs/report-card.html).
 
 ```zsh
 ./scripts/veda_floor_log.py --act 2 --floor 18 --outcome victory \
   --screenshot artifacts/veda-inbox/floor-18.png \
-  --hp 72 --max-hp 90 --gold 204 \
-  --metric "recommendation=Feed lethal" \
+  --hp 72 --max-hp 90 --gold 204 --ascension 0 \
+  --trophy "Elite defeated" --loss "HP fell below 15" \
+  --action "Used Cleave for confirmed lethal" \
+  --strategy "Hold a safe line until lethal is verified." \
   --note "Human executed VEDA's advisory line."
+```
+
+## Standalone review mailbox
+
+Before each meaningful decision, standalone VEDA reads and acknowledges any
+unread LLM feedback:
+
+```zsh
+./scripts/veda_inbox.py
+```
+
+VEDA submits review requests through `veda_handoff.py`; the reviewer sends a
+durable response through `veda_review_feedback.py`. Receipt is explicit rather
+than assumed from a separate terminal conversation.
+
+## Build a relic inventory from evidence
+
+When the relic bar is hard to read, VEDA must not guess. Record the exact
+relic name and property from a tooltip, reward screen, or trusted manual
+reference. The inventory persists the source, confidence, Act/floor, and an
+optional evidence screenshot, then refreshes the Report Card.
+
+```zsh
+./scripts/veda_relic_inventory.py \
+  --name "Burning Blood" \
+  --property "At the end of combat, heal 6 HP." \
+  --source "visible relic tooltip" --confidence 1 \
+  --act 1 --floor 0 --screenshot artifacts/veda-inbox/burning-blood.png
 ```
 
 ## Run VEDA outside VS Code

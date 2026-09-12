@@ -36,14 +36,22 @@ def record_floor(
     gold: int | None,
     notes: tuple[str, ...] = (),
     telemetry: dict[str, str] | None = None,
+    ascension: int | None = None,
+    trophies: tuple[str, ...] = (),
+    losses: tuple[str, ...] = (),
+    actions: tuple[str, ...] = (),
+    strategy: str | None = None,
+    additional_screenshots: tuple[Path, ...] = (),
 ) -> dict[str, Any]:
     """Append one completed floor and copy its evidence image for the site."""
     if act < 1 or floor < 0:
         raise ValueError("act and floor must be non-negative (act begins at 1)")
     if outcome not in {"victory", "defeat", "event", "shop", "rest", "treasure", "unknown"}:
         raise ValueError("unrecognized floor outcome")
-    if not screenshot.is_file():
+    if not screenshot.is_file() or any(not image.is_file() for image in additional_screenshots):
         raise FileNotFoundError(f"screenshot not found: {screenshot}")
+    if len(additional_screenshots) > 1:
+        raise ValueError("a Report Card entry supports at most two screenshots")
 
     document = load_floor_log(log_path)
     screenshot_dir.mkdir(parents=True, exist_ok=True)
@@ -51,6 +59,11 @@ def record_floor(
     asset_name = f"act-{act}-floor-{floor}-{uuid4().hex[:8]}{suffix}"
     asset_path = screenshot_dir / asset_name
     shutil.copy2(screenshot, asset_path)
+    evidence = [f"assets/floor-runs/{asset_name}"]
+    for image in additional_screenshots:
+        extra_name = f"act-{act}-floor-{floor}-{uuid4().hex[:8]}{image.suffix.lower() or '.png'}"
+        shutil.copy2(image, screenshot_dir / extra_name)
+        evidence.append(f"assets/floor-runs/{extra_name}")
     entry = {
         "id": str(uuid4()),
         "recorded_at": datetime.now(timezone.utc).isoformat(),
@@ -60,9 +73,11 @@ def record_floor(
         "hp": hp,
         "max_hp": max_hp,
         "gold": gold,
-        "screenshot": f"assets/floor-runs/{asset_name}",
+        "screenshot": evidence[0], "screenshots": evidence,
         "notes": list(notes),
         "telemetry": telemetry or {},
+        "ascension": ascension, "trophies": list(trophies), "losses": list(losses),
+        "actions": list(actions), "strategy": strategy,
     }
     document["runs"].append(entry)
     log_path.parent.mkdir(parents=True, exist_ok=True)

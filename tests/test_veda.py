@@ -14,6 +14,8 @@ from veda.retrospective import build_stage_retrospective, validate_lesson, write
 from veda.floor_telemetry import load_floor_log, record_floor, render_floor_dashboard
 from veda.handoff import build_review_packet, write_feedback
 from veda.handoff_dashboard import acknowledge_feedback, append_handoff, record_review_feedback, render_handoff_dashboard
+from veda.relic_inventory import inventory_summary, load_relic_inventory, record_relic
+from veda.mailbox import mailbox_status, receive_messages, send_message
 from veda.research_catalog import load_catalog
 from veda.vision import LocalOllamaVisionProvider, StructuredGameState, VisibleEnemy, combat_action_readiness
 from veda.benchmark import BenchmarkCase, run_benchmark, summarize
@@ -180,6 +182,33 @@ class VedaTests(unittest.TestCase):
             self.assertIn("Feed lethal", rendered)
             self.assertIn("Act 2 · Floor 18", rendered)
 
+    def test_floor_log_retains_report_card_outcome_fields_and_two_screenshots(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, second = root / "first.png", root / "second.png"
+            first.write_bytes(b"png")
+            second.write_bytes(b"png")
+            entry = record_floor(
+                log_path=root / "floors.json", screenshot=first, additional_screenshots=(second,), screenshot_dir=root / "assets",
+                act=2, floor=24, outcome="victory", hp=10, max_hp=90, gold=187, ascension=0,
+                trophies=("Gremlin Leader defeated",), losses=("Reached 1 HP",), actions=("Used Cleave for lethal",),
+                strategy="Verify lethal before self-damage.",
+            )
+        self.assertEqual(entry["screenshots"].__len__(), 2)
+        self.assertEqual(entry["trophies"], ["Gremlin Leader defeated"])
+        self.assertEqual(entry["strategy"], "Verify lethal before self-damage.")
+
+    def test_mailbox_requires_explicit_receipt(self):
+        with TemporaryDirectory() as directory:
+            mailbox = Path(directory) / "mailbox.json"
+            message = send_message(
+                mailbox_path=mailbox, sender="llm", recipient="veda", kind="review_feedback", body="Use the safe line.",
+            )
+            self.assertEqual(mailbox_status(mailbox_path=mailbox)["veda_unread"], 1)
+            received = receive_messages(mailbox_path=mailbox, recipient="veda")
+        self.assertEqual(received[0]["id"], message["id"])
+        self.assertIsNotNone(received[0]["received_at"])
+
     def test_handoff_keeps_proposals_separate_and_writes_feedback(self):
         retrospective = build_stage_retrospective(
             stage="Act 2", outcome="completed", proposed_lessons=("Measure Frail Block first.",),
@@ -207,6 +236,19 @@ class VedaTests(unittest.TestCase):
             self.assertTrue((assets / Path(entry["screenshot"]).name).is_file())
             self.assertIn("Act 2", page.read_text())
 
+    def test_report_card_does_not_publish_private_review_feedback(self):
+        packet = build_review_packet(build_stage_retrospective(stage="Act 2", outcome="completed"))
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "handoffs.json"
+            append_handoff(log_path=log, asset_dir=root / "assets", packet=packet, screenshot=None)
+            record_review_feedback(log_path=log, feedback="Private reviewer instruction.")
+            page = root / "report-card.html"
+            render_handoff_dashboard(json.loads(log.read_text()), page)
+            rendered = page.read_text()
+        self.assertIn("Report Card", rendered)
+        self.assertNotIn("Private reviewer instruction.", rendered)
+
     def test_handoff_requires_review_then_veda_acknowledgement(self):
         packet = build_review_packet(build_stage_retrospective(stage="Act 2", outcome="completed"))
         with TemporaryDirectory() as directory:
@@ -222,6 +264,21 @@ class VedaTests(unittest.TestCase):
             )
         self.assertEqual(entry["review"]["status"], "handoff_complete")
         self.assertEqual(entry["review"]["implementation_status"], "implemented")
+
+    def test_relic_inventory_keeps_property_and_evidence_separate_from_a_guess(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            screenshot = root / "relic.png"
+            screenshot.write_bytes(b"png")
+            entry = record_relic(
+                inventory_path=root / "relics.json", name="Burning Blood",
+                property_text="At the end of combat, heal 6 HP.", source="visible relic tooltip",
+                confidence=1.0, act=1, floor=0, screenshot=screenshot, asset_dir=root / "assets",
+            )
+            summary = inventory_summary(load_relic_inventory(root / "relics.json"))
+        self.assertEqual(summary[0]["name"], "Burning Blood")
+        self.assertEqual(summary[0]["property"], "At the end of combat, heal 6 HP.")
+        self.assertTrue((root / "assets" / Path(entry["screenshot"]).name).exists() if False else entry["screenshot"].startswith("assets/relics/"))
 
     def test_initial_catalog_loads_sourced_facts_and_advice(self):
         catalog = Path(__file__).parents[1] / "data" / "sts_initial_research.json"

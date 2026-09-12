@@ -31,13 +31,52 @@
         }
       },
       "review": {
-        "feedback": "Keep the Frail-versus-multi-hit lesson proposed. Add a survival guardrail: when the projected hit could leave Ironclad below roughly 15-20 HP, prefer guaranteed Block, available potion use, or a safer line over damage unless the line secures a kill. For the next comparable fight, capture before/after screenshots and record enemy intent, hand, energy, Frail, Dexterity, Block, potion availability/use, predicted damage, and actual damage before seeking validation.",
-        "feedback_at": "2026-09-12T20:57:59.899901+00:00",
+        "feedback": "Before the next move: (1) keep the low-HP survival guardrail\u2014when projected damage can leave Ironclad below 15-20 HP, prefer guaranteed Block, potion use, or a safe line unless lethal is confirmed; (2) record every material map, merchant, card, rest-site, and combat decision with state, alternatives, rationale, and predicted versus actual result; (3) build the relic inventory from a tooltip, reward screen, or sourced reference, recording each relic name, exact property, confidence, Act/floor, and screenshot. Do not promote any strategy lesson until evidence and a regression test support it.",
+        "feedback_at": "2026-09-12T21:44:45.481950+00:00",
         "implementation_status": "pending",
         "implementation_summary": null,
         "status": "feedback_sent_to_veda"
       },
       "screenshot": "assets/handoffs/handoff-a1697df3.png"
+    },
+    {
+      "id": "5fc6f205-98b8-4745-9758-17852d1fe9ad",
+      "packet": {
+        "created_at": "2026-09-12T21:49:13.877144+00:00",
+        "ending_state": {
+          "hp": 10
+        },
+        "metrics": {
+          "decision_records": 0,
+          "matched_predictions": 0,
+          "prediction_comparisons": 0,
+          "prediction_match_rate": null,
+          "verified_outcomes": 0
+        },
+        "notes": [
+          "Gremlin Leader elite completed. The run reached 1 HP before a final Cleave killed the 5-HP Leader, causing its minions to flee. Burning Blood then restored HP to 10."
+        ],
+        "outcome": "completed",
+        "promotion_policy": "A lesson changes VEDA only after review, cited or run evidence, an explicit implementation, and a regression test.",
+        "proposed_lessons": [
+          "Proposed: do not recommend self-damage or an offensive setup when the post-action HP or unconfirmed enemy intent could make the line lethal; require exact enemy HP, Block, intent total, and card damage before calling a line lethal."
+        ],
+        "retrospective_id": "0d4dea13-e8da-485d-9c35-bd15a13394be",
+        "review_status": "awaiting_codex_feedback",
+        "schema": "veda.review-handoff.v1",
+        "stage": "Floor 24 Gremlin Leader elite",
+        "starting_state": {
+          "hp": 76
+        }
+      },
+      "review": {
+        "feedback": "Before the next meaningful decision, read the VEDA inbox. Log current Act/floor/Ascension, HP, deck/relic/potion state, options, reasoning, recommendation, predicted result, actual outcome, and one or two evidence screenshots. Request review after each floor and critical events. For risky self-damage or claimed-lethal lines, require exact post-action HP, enemy HP, Block, intent, and damage; choose the safe line when uncertainty could leave HP at or below 15. Keep strategy changes proposed until evidence and a regression test validate them.",
+        "feedback_at": "2026-09-12T22:23:02.270088+00:00",
+        "implementation_status": "pending",
+        "implementation_summary": null,
+        "status": "feedback_sent_to_veda"
+      },
+      "screenshot": "assets/handoffs/handoff-1a30ef44.png"
     }
   ],
   "schema": "veda.handoff-dashboard.v1"

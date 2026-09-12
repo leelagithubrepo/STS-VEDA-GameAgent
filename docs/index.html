@@ -76,7 +76,7 @@
   </style>
 </head>
 <body>
-  <div class="topbar"><div class="wrap"><a class="brand" href="#veda">VEDA</a><nav><a href="#veda">Agent</a><a href="#spire">Slay the Spire</a><a href="handoffs.html">Progress Report</a><a href="#learnings">Learnings</a><a href="#future">WIP</a></nav></div></div>
+  <div class="topbar"><div class="wrap"><a class="brand" href="#veda">VEDA</a><nav><a href="#veda">Agent</a><a href="#spire">Slay the Spire</a><a href="report-card.html">Report Card</a><a href="#learnings">Learnings</a><a href="#future">WIP</a></nav></div></div>
   <header id="veda"><div class="wrap hero"><p class="eyebrow">Research-first autonomous game-playing agent</p><h1>Play. Verify. Learn.</h1><p>VEDA studies a game, turns what is visible into a checked state, proposes an evidence-backed move, and learns from the outcome. <em>Slay the Spire</em> is the first hackathon proving ground.</p><div class="runes"><span class="rune">Human-guided PS5</span><span class="rune">Ironclad · A0</span><span class="rune">Act 3 cleared</span></div></div></header>
   <main class="wrap">
     <section>
@@ -95,6 +95,7 @@
         <article class="card tall"><h3>Current automation</h3><p>Screen-to-state parsing; visible-hand and energy checks; target validation; direct combat arithmetic; end-turn survival forecasts; route and boss confidence gates; named potion-swap safety; controller-result verification; and persistent prediction records.</p></article>
         <article class="card tall"><h3>Decision packet</h3><p>Before each human-guided move, VEDA produces verified board facts, missing fields, confirmed immediate threat, ledger context, a primary line, and—when useful—a separately preflight-checked safer line.</p></article>
         <article class="card tall"><h3>Prediction technique</h3><p>Predictions cover only explicit, checkable fields: energy, Block, player HP, and named enemy HP. The next screen determines whether each field matched. Unknowns are excluded from scoring.</p></article>
+        <article class="card tall"><h3>Standalone review loop</h3><p>VEDA logs meaningful decisions, requests review after each floor and critical event, then explicitly reads reviewer feedback before treating it as received. The Report Card publishes outcomes and evidence, never private review conversation.</p></article>
       </div>
       <div class="table-wrap"><table><thead><tr><th>Decision</th><th>Forecast</th><th>Observed outcome</th><th>Calibration</th></tr></thead><tbody>
         <tr><td>Bandits opening</td><td>Whirlwind+ with early Strength and Vulnerable would clear all three.</td><td>All Bandits defeated immediately; 352 gold retained.</td><td class="yes">Match</td></tr>
