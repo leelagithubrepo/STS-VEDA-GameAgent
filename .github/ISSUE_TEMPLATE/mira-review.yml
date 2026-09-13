@@ -1,0 +1,36 @@
+name: MIRA usability review
+description: Request franchise-level usability review for a user-facing VEDA change.
+title: "MIRA review: "
+labels: ["mira-review", "usability"]
+body:
+  - type: markdown
+    attributes:
+      value: "MIRA reviews the human experience; see .veda/team/mira.md."
+  - type: input
+    id: change
+    attributes:
+      label: Change
+      description: What changed?
+    validations:
+      required: true
+  - type: input
+    id: preview
+    attributes:
+      label: Build or preview
+      description: Link or access instructions.
+    validations:
+      required: true
+  - type: textarea
+    id: audience_goal
+    attributes:
+      label: Audience and user goal
+      description: Who is this for, and what should they accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots and evidence
+      description: Attach screenshots and relevant context.
+    validations:
+      required: true
