@@ -59,6 +59,7 @@ def build_decision_brief(
     fact("Block", observation.block)
     fact("player Strength", observation.player_strength)
     fact("player Weak", observation.player_weak)
+    fact("player Vulnerable", observation.player_vulnerable)
     fact("player Frail", observation.player_frail)
     fact("end-of-turn damage", observation.end_turn_damage)
     if observation.hand:
@@ -76,11 +77,16 @@ def build_decision_brief(
             missing.append("Block")
         if enemy.intent_total_damage is None:
             missing.append("intent total")
+        if observation.player_vulnerable and enemy.intent_total_damage and enemy.intent_hits is None:
+            missing.append("per-hit intent")
         if missing:
             unknowns.append(f"{enemy.name} " + "/".join(missing))
             continue
         incoming += enemy.intent_total_damage
-        enemy_lines.append(f"{enemy.name}: {enemy.hp} HP, {enemy.block} Block, {enemy.intent_total_damage} incoming")
+        hit_detail = ""
+        if enemy.intent_hits is not None:
+            hit_detail = " (" + "+".join(str(hit) for hit in enemy.intent_hits) + ")"
+        enemy_lines.append(f"{enemy.name}: {enemy.hp} HP, {enemy.block} Block, {enemy.intent_total_damage} incoming{hit_detail}")
     if enemy_lines:
         verified.extend(enemy_lines)
     else:

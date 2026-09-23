@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from veda.floor_telemetry import load_floor_log, record_floor
 from veda.handoff_dashboard import render_handoff_dashboard
 from veda.relic_inventory import inventory_summary, load_relic_inventory
+from veda.telemetry_database import TelemetryDatabase
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +41,7 @@ def main() -> int:
     parser.add_argument("--loss", action="append", default=[])
     parser.add_argument("--action", action="append", default=[])
     parser.add_argument("--strategy")
+    parser.add_argument("--run-id", help="SQLite run ID; omitted resumes VEDA's active local run")
     parser.add_argument("--metric", action="append", type=_metric, default=[])
     args = parser.parse_args()
     entry = record_floor(
@@ -49,6 +51,12 @@ def main() -> int:
         notes=tuple(args.note), telemetry=dict(args.metric),
         ascension=args.ascension, trophies=tuple(args.trophy), losses=tuple(args.loss),
         actions=tuple(args.action), strategy=args.strategy,
+    )
+    memory = TelemetryDatabase(ROOT / "artifacts" / "veda-memory.sqlite3")
+    run_id = args.run_id or memory.start_or_resume_run(ascension=args.ascension)
+    memory.record_floor(
+        run_id=run_id, act=args.act, floor=args.floor, node_type=args.outcome, outcome=args.outcome,
+        ending_state={"hp": args.hp, "max_hp": args.max_hp, "gold": args.gold}, summary=entry,
     )
     floors = load_floor_log(ROOT / "data" / "floor_runs.json")
     handoff_log = ROOT / "data" / "handoff_runs.json"

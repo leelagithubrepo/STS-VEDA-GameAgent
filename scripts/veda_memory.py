@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import sys
@@ -20,7 +21,7 @@ DEFAULT_DB = ROOT / "artifacts" / "veda-memory.sqlite3"
 
 def _document(value: str) -> dict:
     try:
-        parsed = json.loads(value)
+        parsed = json.loads(Path(value[1:]).read_text() if value.startswith("@") else value)
     except json.JSONDecodeError as error:
         raise argparse.ArgumentTypeError("must be valid JSON") from error
     if not isinstance(parsed, dict):
@@ -34,15 +35,62 @@ def _database(path: Path) -> TelemetryDatabase:
     return database
 
 
-def _required_evidence_path(parser: argparse.ArgumentParser, args: argparse.Namespace) -> str:
-    """Return supplied evidence or capture one passive frame before logging."""
+@dataclass(frozen=True)
+class EvidenceCapture:
+    """Evidence provenance kept separate from the observed game state."""
+
+    screenshot_path: str | None
+    source: str
+    confidence_cap: float
+    metadata: dict[str, str]
+
+
+def _evidence_for_logging(parser: argparse.ArgumentParser, args: argparse.Namespace) -> EvidenceCapture:
+    """Return evidence details without allowing a capture failure to erase a turn.
+
+    A supplied still remains the strongest evidence.  When macOS denies the
+    passive capture process, the decision is still recorded as a written
+    observation with deliberately lower confidence and an explicit reason.
+    It is therefore auditable but never mistaken for screenshot-backed proof.
+    """
     if args.capture and args.screenshot:
         parser.error("use either --capture or --screenshot, not both")
     if args.capture:
-        return str(capture_visible_ps5_feed())
+        try:
+            return EvidenceCapture(
+                screenshot_path=str(capture_visible_ps5_feed()),
+                source="passive-screen-capture",
+                confidence_cap=1.0,
+                metadata={"evidence_mode": "passive_screen_capture"},
+            )
+        except RuntimeError as error:
+            return EvidenceCapture(
+                screenshot_path=None,
+                source="written-observation-capture-unavailable",
+                confidence_cap=0.6,
+                metadata={
+                    "evidence_mode": "written_fallback",
+                    "capture_status": "unavailable",
+                    "capture_error": str(error),
+                },
+            )
     if args.screenshot:
-        return args.screenshot
+        return EvidenceCapture(
+            screenshot_path=args.screenshot,
+            source="supplied-screenshot",
+            confidence_cap=1.0,
+            metadata={"evidence_mode": "supplied_screenshot"},
+        )
     parser.error("a meaningful decision or completed floor requires --capture or --screenshot")
+
+
+def _evidence_confidence(value: float | None, evidence: EvidenceCapture) -> float:
+    """Keep capture-unavailable entries visibly lower confidence."""
+    return min(evidence.confidence_cap, 1.0 if value is None else value)
+
+
+def _source_with_evidence(source: str, evidence: EvidenceCapture) -> str:
+    return f"{source}; {evidence.source}"
 
 
 def main() -> int:
@@ -93,6 +141,11 @@ def main() -> int:
     decision.add_argument("--capture", action="store_true", help="passively capture the visible game screen before recommending")
     decision.add_argument("--safety-margin-hp", type=int)
     decision.add_argument("--confidence", type=float)
+    decision.add_argument("--high-stakes", action="store_true", help="allow one unresolved sequence only for this combat")
+    decision.add_argument(
+        "--requires-boss-preflight", action="store_true",
+        help="require a confirmed boss inventory snapshot on this floor before advice",
+    )
 
     resolve = commands.add_parser("resolve", help="attach the player action and observed result")
     resolve.add_argument("--decision-id", required=True)
@@ -198,6 +251,25 @@ def main() -> int:
     inventory_ledger = commands.add_parser("inventory-ledger", help="retrieve confirmed run inventory and its history")
     inventory_ledger.add_argument("--run-id", required=True)
 
+    boss_preflight = commands.add_parser(
+        "boss-preflight", help="record the confirmed relic, potion, and key-card inventory before a boss",
+    )
+    boss_preflight.add_argument("--run-id", required=True)
+    boss_preflight.add_argument("--floor-id", required=True)
+    boss_preflight.add_argument("--boss")
+    boss_preflight.add_argument("--relics", type=_document, required=True, help='JSON object with an "items" list')
+    boss_preflight.add_argument("--potions", type=_document, required=True, help='JSON object with an "items" list')
+    boss_preflight.add_argument("--key-cards", type=_document, required=True, help='JSON object with an "items" list')
+    boss_preflight.add_argument("--unknowns", type=_document, default={"items": []}, help='JSON object with an "items" list')
+    boss_preflight.add_argument("--screenshot")
+    boss_preflight.add_argument("--capture", action="store_true", help="passively capture the visible inventory before logging")
+    boss_preflight.add_argument("--source", default="visible boss-inventory screen")
+    boss_preflight.add_argument("--confidence", type=float)
+
+    run_card = commands.add_parser("run-card", help="show only current wins, health/resources, and next priority")
+    run_card.add_argument("--run-id", required=True)
+    run_card.add_argument("--next-priority")
+
     inventory_baseline = commands.add_parser(
         "inventory-baseline",
         help="record the current observed inventory without claiming earlier acquisition timing",
@@ -262,9 +334,62 @@ def main() -> int:
     floor_completeness = commands.add_parser("floor-completeness", help="report evidence gaps before a floor retrospective")
     floor_completeness.add_argument("--floor-id", required=True)
 
+    observe = commands.add_parser("combat-observe", help="save a fresh, explicitly verified advisory snapshot")
+    for key in ("run-id", "floor-id", "combat-id", "turn-id", "source"):
+        observe.add_argument("--" + key, required=True)
+    observe.add_argument("--state", type=_document, required=True, help="JSON or @path; see docs/spire-advisory-example.json")
+    observe.add_argument("--screenshot")
+    observe.add_argument("--capture", action="store_true")
+    context = commands.add_parser("combat-context", help="read fresh state, inventory and relevant reviewed rules together")
+    context.add_argument("--combat-id", required=True)
+    for name in ("advice-check", "advice-decide"):
+        cmd = commands.add_parser(name, help="check a plan against the current advisory context")
+        cmd.add_argument("--combat-id", required=True)
+        cmd.add_argument("--plan", type=_document, required=True)
+        if name == "advice-decide":
+            cmd.add_argument("--snapshot-id", required=True)
+            cmd.add_argument("--reasoning", required=True)
+    potion = commands.add_parser("potion-use", help="atomically record confirmed consumption and its combat context")
+    for key in ("run-id", "floor-id", "item", "source"):
+        potion.add_argument("--" + key, required=True)
+    for key in ("combat-id", "turn-id", "screenshot"):
+        potion.add_argument("--" + key)
+    potion.add_argument("--observed-effect", type=_document, required=True)
+    campfire = commands.add_parser("campfire-advice", help="compare Rest/Smith with confirmed automatic healing")
+    for key in ("run-id", "floor-id", "reasoning", "source"):
+        campfire.add_argument("--" + key, required=True)
+    campfire.add_argument("--choice", choices=("Rest", "Smith"), required=True)
+    campfire.add_argument("--state", type=_document, required=True)
+    campfire.add_argument("--screenshot")
+    campfire.add_argument("--capture", action="store_true")
+
     args = parser.parse_args()
     database = _database(args.database)
-    if args.command == "status":
+    if args.command == "combat-observe":
+        evidence = _evidence_for_logging(parser, args)
+        print(database.record_advisory_snapshot(run_id=args.run_id, floor_id=args.floor_id,
+            combat_id=args.combat_id, turn_id=args.turn_id, state=args.state,
+            source=_source_with_evidence(args.source, evidence), screenshot_path=evidence.screenshot_path))
+    elif args.command == "combat-context":
+        print(json.dumps(database.advisory_context(combat_id=args.combat_id), indent=2))
+    elif args.command == "advice-check":
+        from veda.advisory import check_plan
+        result = check_plan(database.advisory_context(combat_id=args.combat_id), args.plan)
+        print(json.dumps(result, indent=2))
+        return 0 if result['allowed'] else 2
+    elif args.command == "advice-decide":
+        print(json.dumps(database.record_checked_advice(combat_id=args.combat_id, snapshot_id=args.snapshot_id,
+            plan=args.plan, reasoning=args.reasoning), indent=2))
+    elif args.command == "potion-use":
+        print(database.record_potion_use(run_id=args.run_id, floor_id=args.floor_id, combat_id=args.combat_id,
+            turn_id=args.turn_id, item_name=args.item, source=args.source, observed_effect=args.observed_effect,
+            screenshot_path=args.screenshot))
+    elif args.command == "campfire-advice":
+        evidence = _evidence_for_logging(parser, args)
+        print(database.record_campfire_advice(run_id=args.run_id, floor_id=args.floor_id, state=args.state,
+            choice=args.choice, reasoning=args.reasoning, source=_source_with_evidence(args.source, evidence),
+            screenshot_path=evidence.screenshot_path))
+    elif args.command == "status":
         print(json.dumps(database.status(), indent=2, sort_keys=True))
     elif args.command == "run":
         print(database.start_or_resume_run(game=args.game, character_name=args.character, ascension=args.ascension))
@@ -278,7 +403,7 @@ def main() -> int:
             outcome=None, starting_state=args.state, summary=args.summary,
         ))
     elif args.command == "floor-finish":
-        screenshot_path = _required_evidence_path(parser, args)
+        evidence = _evidence_for_logging(parser, args)
         database.complete_floor(
             floor_id=args.floor_id, outcome=args.outcome, ending_state=args.state, summary=args.summary,
         )
@@ -286,19 +411,28 @@ def main() -> int:
         evidence_id = database.record_event(
             run_id=floor["run_id"], floor_id=args.floor_id, kind="floor_completion_evidence",
             phase="safe_boundary", state=args.state,
-            payload={"outcome": args.outcome, "summary": args.summary}, screenshot_path=screenshot_path,
-            source="passive-screen-capture" if args.capture else "supplied-screenshot", confidence=1.0,
+            payload={"outcome": args.outcome, "summary": args.summary, "evidence": evidence.metadata},
+            screenshot_path=evidence.screenshot_path, source=evidence.source,
+            confidence=_evidence_confidence(None, evidence),
         )
-        print(json.dumps({"floor_id": args.floor_id, "evidence_id": evidence_id, "screenshot": screenshot_path}))
+        print(json.dumps({"floor_id": args.floor_id, "evidence_id": evidence_id,
+                          "screenshot": evidence.screenshot_path, "evidence": evidence.metadata}))
     elif args.command == "decision":
-        screenshot_path = _required_evidence_path(parser, args)
+        if args.phase.lower() == "combat":
+            parser.error("combat advice requires combat-observe, combat-context and advice-decide")
+        if args.phase.lower() in ("rest_site", "campfire"):
+            parser.error("Rest/Smith advice requires campfire-advice")
+        evidence = _evidence_for_logging(parser, args)
         decision_id = database.record_decision(
             run_id=args.run_id, phase=args.phase, state=args.state, options=[args.options], recommendation=args.recommendation,
             reasoning=args.reasoning, prediction=args.prediction, floor_id=args.floor_id,
-            combat_id=args.combat_id, turn_id=args.turn_id, screenshot_path=screenshot_path,
-            safety_margin_hp=args.safety_margin_hp, confidence=args.confidence,
+            combat_id=args.combat_id, turn_id=args.turn_id, screenshot_path=evidence.screenshot_path,
+            safety_margin_hp=args.safety_margin_hp, confidence=_evidence_confidence(args.confidence, evidence),
+            source=evidence.source, evidence_metadata=evidence.metadata,
+            high_stakes=args.high_stakes, requires_boss_preflight=args.requires_boss_preflight,
         )
-        print(json.dumps({"decision_id": decision_id, "screenshot": screenshot_path}))
+        print(json.dumps({"decision_id": decision_id, "screenshot": evidence.screenshot_path,
+                          "evidence": evidence.metadata}))
     elif args.command == "resolve":
         database.resolve_decision(
             decision_id=args.decision_id, chosen_action=args.action, actual_outcome=args.outcome,
@@ -327,11 +461,12 @@ def main() -> int:
         nodes = args.legal_next_nodes.get("nodes")
         if not isinstance(nodes, list):
             parser.error("--legal-next-nodes must be an object with a nodes list")
-        screenshot_path = _required_evidence_path(parser, args)
+        evidence = _evidence_for_logging(parser, args)
         print(database.record_route_snapshot(
             run_id=args.run_id, act=args.act, floor=args.floor, current_node_id=args.current_node,
             legal_next_nodes=nodes, resource_context=args.resources, floor_id=args.floor_id,
-            screenshot_path=screenshot_path, source=args.source, confidence=args.confidence,
+            screenshot_path=evidence.screenshot_path, source=_source_with_evidence(args.source, evidence),
+            confidence=_evidence_confidence(args.confidence, evidence),
         ))
     elif args.command == "route-recommendation":
         print(database.record_route_recommendation(
@@ -369,24 +504,39 @@ def main() -> int:
         ))
     elif args.command == "inventory-ledger":
         print(json.dumps(database.inventory_ledger(run_id=args.run_id), indent=2, sort_keys=True))
+    elif args.command == "boss-preflight":
+        categories = (args.relics, args.potions, args.key_cards, args.unknowns)
+        if any(not isinstance(category.get("items"), list) for category in categories):
+            parser.error("--relics, --potions, --key-cards, and --unknowns must contain items lists")
+        evidence = _evidence_for_logging(parser, args)
+        print(database.record_boss_inventory_preflight(
+            run_id=args.run_id, floor_id=args.floor_id, boss_name=args.boss,
+            relics=args.relics["items"], potions=args.potions["items"], key_cards=args.key_cards["items"],
+            unknowns=args.unknowns["items"], screenshot_path=evidence.screenshot_path,
+            source=_source_with_evidence(args.source, evidence),
+            confidence=_evidence_confidence(args.confidence, evidence),
+        ))
+    elif args.command == "run-card":
+        print(json.dumps(database.run_card(run_id=args.run_id, next_priority=args.next_priority), indent=2, sort_keys=True))
     elif args.command == "inventory-baseline":
         items = args.items.get("items")
         if not isinstance(items, list):
             parser.error("--items must be an object with an items list")
-        screenshot_path = _required_evidence_path(parser, args)
+        evidence = _evidence_for_logging(parser, args)
         print(database.record_inventory_baseline(
             run_id=args.run_id, items=items, coverage=args.coverage, floor_id=args.floor_id,
-            screenshot_path=screenshot_path, source=args.source, confidence=args.confidence,
+            screenshot_path=evidence.screenshot_path, source=_source_with_evidence(args.source, evidence),
+            confidence=_evidence_confidence(args.confidence, evidence),
         ))
     elif args.command == "map-snapshot":
         nodes, edges = args.nodes.get("nodes"), args.edges.get("edges")
         if not isinstance(nodes, list) or not isinstance(edges, list):
             parser.error("--nodes and --edges must contain nodes and edges lists")
-        screenshot_path = _required_evidence_path(parser, args)
+        evidence = _evidence_for_logging(parser, args)
         print(database.record_map_snapshot(
             run_id=args.run_id, current_node_id=args.current_node, visible_nodes=nodes, visible_edges=edges,
-            act=args.act, floor=args.floor, floor_id=args.floor_id, screenshot_path=screenshot_path,
-            source=args.source, confidence=args.confidence,
+            act=args.act, floor=args.floor, floor_id=args.floor_id, screenshot_path=evidence.screenshot_path,
+            source=_source_with_evidence(args.source, evidence), confidence=_evidence_confidence(args.confidence, evidence),
         ))
     elif args.command == "map-latest":
         print(json.dumps(database.latest_map_snapshot(run_id=args.run_id), indent=2, sort_keys=True))

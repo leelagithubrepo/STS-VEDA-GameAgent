@@ -195,3 +195,22 @@ To start this observer automatically when you sign in to the Mac:
 Stop it with `stop`, or remove it completely with `uninstall`. The service is
 deliberately observation-only. An independent decision service requires a
 separate vision/agent approval gate; it is not silently enabled by this setup.
+
+
+## Checked Spire advice and site release
+
+The current local advisory workflow is documented in
+[Spire advisory](.veda/workflows/spire-advisory.md). Use `combat-observe`,
+`combat-context`, and `advice-decide` for new combat recommendations. They
+preserve unknown state and stop at observation boundaries. `potion-use`
+records consumption atomically; `campfire-advice` compares verified healing.
+The reviewed rule pack currently includes Bronze Automaton and Time Eater;
+other bosses need their own verified manifest. This is not a full simulator.
+
+Run `python3 -m unittest discover -s tests -q` and
+`python3 scripts/build_site.py` before publishing. GitHub Pages serves `docs/`;
+Sites serves the matching generated `dist/`. Private SQLite, raw desktop
+screenshots, and original recordings stay under ignored `artifacts/`.
+
+The September 22, 2026 release records the completed Ironclad A1 run (score
+802, Time Eater defeated). Missing historical turns and floors remain missing.

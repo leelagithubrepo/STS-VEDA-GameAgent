@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 
 COMBAT_CRITICAL_FIELDS = frozenset({
-    "screen_type", "hp", "max_hp", "energy", "block", "hand", "enemies",
+    "screen_type", "hp", "max_hp", "energy", "block", "player_vulnerable", "hand", "enemies",
     "end_turn_damage",
 })
 MAP_CRITICAL_FIELDS = frozenset({"screen_type", "map_nodes"})

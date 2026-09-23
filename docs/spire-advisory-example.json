@@ -1,0 +1,51 @@
+{
+  "schema": "spire.advisory.v1",
+  "observed_at": "REPLACE_WITH_ACTUAL_FRAME_TIME_ISO_8601",
+  "hp": 50,
+  "max_hp": 80,
+  "energy": 3,
+  "block": 10,
+  "strength": 0,
+  "dexterity": 0,
+  "weak": 0,
+  "vulnerable": 0,
+  "frail": 0,
+  "no_block": 0,
+  "powers": {},
+  "powers_complete": true,
+  "hand_complete": true,
+  "hand": [
+    {
+      "id": "c1",
+      "name": "Strike",
+      "type": "Attack",
+      "cost": 1,
+      "upgraded": false,
+      "title_color": "white",
+      "playable": true
+    }
+  ],
+  "piles": {
+    "draw": null,
+    "discard": null,
+    "exhaust": null,
+    "draw_order": null
+  },
+  "counters": {},
+  "enemies": [
+    {
+      "name": "Cultist",
+      "hp": 40,
+      "block": 0,
+      "vulnerable": 0,
+      "strength": 0,
+      "weak": 0,
+      "intent": "attack 6",
+      "intent_hits": [
+        6
+      ]
+    }
+  ],
+  "end_turn_damage": 0,
+  "unmodeled_effects": []
+}

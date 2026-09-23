@@ -1,0 +1,361 @@
+{
+  "version": "spire-rules-2026-09-22.1",
+  "reviewed_at": "2026-09-22",
+  "game": "Slay the Spire 1",
+  "provenance": "Community references and game-extracted database; console build not independently verified. Live evidence overrides predictions.",
+  "rules": [
+    {
+      "id": "observed-state",
+      "tags": [
+        "combat"
+      ],
+      "statement": "Use current named cards, costs, intents, inventory and counters. Unknown fields stay unknown; re-observe after a material change.",
+      "kind": "advisory_policy",
+      "conditions": null,
+      "sources": [
+        ".veda/workflows/spire-advisory.md"
+      ]
+    },
+    {
+      "id": "corruption-skills",
+      "tags": [
+        "corruption"
+      ],
+      "statement": "Corruption makes Skills cost zero and exhaust when played. Powers retain their current cost.",
+      "kind": "game_fact",
+      "conditions": null,
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Corruption"
+      ]
+    },
+    {
+      "id": "pyramid-barricade",
+      "tags": [
+        "runic pyramid",
+        "corruption",
+        "barricade"
+      ],
+      "statement": "In a long fight, inspect hand and draw pile and compare Barricade setup before Corruption. Corruption does not immediately exhaust retained Skills.",
+      "kind": "situational_strategy",
+      "conditions": "Runic Pyramid confirmed, Barricade not active; evaluate energy, incoming damage and skill reserve. This is not a mandatory card order.",
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Corruption",
+        "https://slay-the-spire.fandom.com/wiki/Runic_Pyramid"
+      ]
+    },
+    {
+      "id": "headbutt-discard",
+      "tags": [
+        "headbutt"
+      ],
+      "statement": "Headbutt returns a card from discard to the top of draw. Confirm an eligible discard target; a sorted pile listing does not prove draw order.",
+      "kind": "game_fact",
+      "conditions": null,
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Headbutt"
+      ]
+    },
+    {
+      "id": "true-grit",
+      "tags": [
+        "true grit",
+        "shame"
+      ],
+      "statement": "True Grit exhausts a random other hand card; True Grit+ chooses. Verify upgrade and remaining hand before choosing an exhaust.",
+      "kind": "game_fact",
+      "conditions": null,
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Ironclad_Cards"
+      ]
+    },
+    {
+      "id": "end-turn",
+      "tags": [
+        "combat",
+        "body slam"
+      ],
+      "statement": "Before End Turn review all playable zero-cost cards, damage, safety and card-count limits. Body Slam uses current Block plus applicable attack modifiers.",
+      "kind": "advisory_policy",
+      "conditions": null,
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Ironclad_Cards"
+      ]
+    },
+    {
+      "id": "potions",
+      "tags": [
+        "combat"
+      ],
+      "statement": "Review confirmed potions before spending HP or ending a dangerous turn. Record observed consumption immediately; Fairy in a Bottle triggers automatically.",
+      "kind": "advisory_policy",
+      "conditions": null,
+      "sources": [
+        ".veda/workflows/spire-advisory.md"
+      ]
+    },
+    {
+      "id": "time-warp",
+      "tags": [
+        "time eater"
+      ],
+      "statement": "Every twelfth played card resolves then ends the player turn; Time Eater gains 2 Strength. Counter persists across ordinary turns. Potions do not count.",
+      "kind": "game_fact",
+      "conditions": null,
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Time_Eater",
+        "https://slay-the-spire.fandom.com/wiki/Buffs"
+      ]
+    },
+    {
+      "id": "haste",
+      "tags": [
+        "time eater"
+      ],
+      "statement": "Once per fight, going strictly below half HP queues Haste for the following turn. It heals to half HP and removes debuffs; current intent still resolves.",
+      "kind": "game_fact",
+      "conditions": null,
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Time_Eater"
+      ]
+    },
+    {
+      "id": "displayed-damage",
+      "tags": [
+        "combat"
+      ],
+      "statement": "Displayed intent already includes visible damage modifiers. Do not multiply it by Vulnerable again. Recompute from verified raw per-hit values only when modifiers change.",
+      "kind": "advisory_policy",
+      "conditions": null,
+      "sources": [
+        ".veda/workflows/spire-advisory.md"
+      ]
+    },
+    {
+      "id": "campfire",
+      "tags": [
+        "eternal feather",
+        "pantograph"
+      ],
+      "statement": "Eternal Feather heals 3 per 5 deck cards on rest-site entry; Pantograph heals 25 at boss start. Do not count entry healing twice. Compare Rest with Smith.",
+      "kind": "game_fact",
+      "conditions": null,
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Rest_Site",
+        "https://slay-the-spire.fandom.com/wiki/Pantograph"
+      ]
+    }
+  ],
+  "bosses": {
+    "Bronze Automaton": {
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Bronze_Automaton",
+        "https://slayspiredb.com/sts1/monsters/bronzeautomaton"
+      ],
+      "variants": [
+        {
+          "min_ascension": 0,
+          "max_ascension": 3,
+          "hp": 300,
+          "initial_artifact": 3,
+          "flail_base_hits": [
+            7,
+            7
+          ],
+          "boost_strength": 3,
+          "boost_block": 9,
+          "hyper_beam_base": 45,
+          "opening": "Spawn two Bronze Orbs",
+          "timeline": [
+            "1: Spawn Orbs",
+            "2: Flail",
+            "3: Boost",
+            "4: Flail",
+            "5: Boost",
+            "6: Hyper Beam",
+            "7: Stunned"
+          ],
+          "next_high_threat": "First Hyper Beam on enemy action 6; base damage plus current Strength. Two unmodified Boosts make 51 below A4 or 58 at A4+."
+        },
+        {
+          "min_ascension": 4,
+          "max_ascension": 8,
+          "hp": 300,
+          "initial_artifact": 3,
+          "flail_base_hits": [
+            8,
+            8
+          ],
+          "boost_strength": 4,
+          "boost_block": 9,
+          "hyper_beam_base": 50,
+          "opening": "Spawn two Bronze Orbs",
+          "timeline": [
+            "1: Spawn Orbs",
+            "2: Flail",
+            "3: Boost",
+            "4: Flail",
+            "5: Boost",
+            "6: Hyper Beam",
+            "7: Stunned"
+          ],
+          "next_high_threat": "First Hyper Beam on enemy action 6; base damage plus current Strength. Two unmodified Boosts make 51 below A4 or 58 at A4+."
+        },
+        {
+          "min_ascension": 9,
+          "max_ascension": 18,
+          "hp": 320,
+          "initial_artifact": 3,
+          "flail_base_hits": [
+            8,
+            8
+          ],
+          "boost_strength": 4,
+          "boost_block": 12,
+          "hyper_beam_base": 50,
+          "opening": "Spawn two Bronze Orbs",
+          "timeline": [
+            "1: Spawn Orbs",
+            "2: Flail",
+            "3: Boost",
+            "4: Flail",
+            "5: Boost",
+            "6: Hyper Beam",
+            "7: Stunned"
+          ],
+          "next_high_threat": "First Hyper Beam on enemy action 6; base damage plus current Strength. Two unmodified Boosts make 51 below A4 or 58 at A4+."
+        },
+        {
+          "min_ascension": 19,
+          "max_ascension": 20,
+          "hp": 320,
+          "initial_artifact": 3,
+          "flail_base_hits": [
+            8,
+            8
+          ],
+          "boost_strength": 4,
+          "boost_block": 12,
+          "hyper_beam_base": 50,
+          "opening": "Spawn two Bronze Orbs",
+          "timeline": [
+            "1: Spawn Orbs",
+            "2: Flail",
+            "3: Boost",
+            "4: Flail",
+            "5: Boost",
+            "6: Hyper Beam",
+            "7: Boost"
+          ],
+          "next_high_threat": "First Hyper Beam on enemy action 6; base damage plus current Strength. Two unmodified Boosts make 51 below A4 or 58 at A4+."
+        }
+      ],
+      "behavior": [
+        "After the opening, repeat Flail, Boost, Flail, Boost, Hyper Beam, then Stunned (A0\u201318) or Boost (A19+).",
+        "Strength applies to each hit. Orbs attack for base 8, give Automaton 12 Block or use Stasis once to capture an eligible highest-rarity draw card (discard if draw empty); killing an Orb returns its card. Do not predict a specific stolen card.",
+        "Source conflict: use A4 Boost Strength upgrade from boss table and extracted statistics, not standalone Strength wiki A9 claim."
+      ]
+    },
+    "Time Eater": {
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Time_Eater",
+        "https://slay-the-spire.fandom.com/wiki/Buffs"
+      ],
+      "variants": [
+        {
+          "min_ascension": 0,
+          "max_ascension": 3,
+          "hp": 456,
+          "reverberate_base_hits": [
+            7,
+            7,
+            7
+          ],
+          "head_slam_base": 26,
+          "haste_trigger_max_hp": 227,
+          "haste_heal_target": 228,
+          "haste_block": 0,
+          "head_slam_slimed": 0,
+          "ripple_frail": 0,
+          "opening": "Inspect visible intent; no guaranteed opening",
+          "timeline": [
+            "12th card: resolves, ends turn, +2 Strength",
+            "Below half HP: following turn Haste, once"
+          ],
+          "next_high_threat": "Current visible attack, especially if the next card triggers Time Warp."
+        },
+        {
+          "min_ascension": 4,
+          "max_ascension": 8,
+          "hp": 456,
+          "reverberate_base_hits": [
+            8,
+            8,
+            8
+          ],
+          "head_slam_base": 32,
+          "haste_trigger_max_hp": 227,
+          "haste_heal_target": 228,
+          "haste_block": 0,
+          "head_slam_slimed": 0,
+          "ripple_frail": 0,
+          "opening": "Inspect visible intent; no guaranteed opening",
+          "timeline": [
+            "12th card: resolves, ends turn, +2 Strength",
+            "Below half HP: following turn Haste, once"
+          ],
+          "next_high_threat": "Current visible attack, especially if the next card triggers Time Warp."
+        },
+        {
+          "min_ascension": 9,
+          "max_ascension": 18,
+          "hp": 480,
+          "reverberate_base_hits": [
+            8,
+            8,
+            8
+          ],
+          "head_slam_base": 32,
+          "haste_trigger_max_hp": 239,
+          "haste_heal_target": 240,
+          "haste_block": 0,
+          "head_slam_slimed": 0,
+          "ripple_frail": 0,
+          "opening": "Inspect visible intent; no guaranteed opening",
+          "timeline": [
+            "12th card: resolves, ends turn, +2 Strength",
+            "Below half HP: following turn Haste, once"
+          ],
+          "next_high_threat": "Current visible attack, especially if the next card triggers Time Warp."
+        },
+        {
+          "min_ascension": 19,
+          "max_ascension": 20,
+          "hp": 480,
+          "reverberate_base_hits": [
+            8,
+            8,
+            8
+          ],
+          "head_slam_base": 32,
+          "haste_trigger_max_hp": 239,
+          "haste_heal_target": 240,
+          "haste_block": 32,
+          "head_slam_slimed": 2,
+          "ripple_frail": 1,
+          "opening": "Inspect visible intent; no guaranteed opening",
+          "timeline": [
+            "12th card: resolves, ends turn, +2 Strength",
+            "Below half HP: following turn Haste, once"
+          ],
+          "next_high_threat": "Current visible attack, especially if the next card triggers Time Warp."
+        }
+      ],
+      "behavior": [
+        "Reverberate is three hits; at most twice consecutively. Head Slam and Ripple cannot repeat consecutively.",
+        "Head Slam reduces next-turn draw by one; A19+ adds two Slimed to discard. Ripple gains 20 Block, applies one Weak and Vulnerable, plus Frail at A19+.",
+        "Haste is strictly below half HP, once per fight, on the following turn; it does not interrupt current intent. Heals to half and removes debuffs.",
+        "Time Warp counts cards, including zero-cost cards and Powers, but not potions. The twelfth resolves, then ends the turn and adds 2 Strength before an ensuing attack."
+      ]
+    }
+  }
+}
