@@ -39,7 +39,17 @@ def preflight_combat(
             visible_hand.remove(card.name)
         except ValueError:
             hand_reasons.append(f"{card.name} is not in the observed hand")
-    reasons = (*readiness.reasons, *check.reasons, *hand_reasons)
+    verified = verify_combat_state(observation)
+    mismatch = []
+    if verified.snapshot is not None:
+        current = verified.snapshot
+        for field in ('energy', 'player_hp', 'player_block', 'incoming_damage', 'incoming_hits',
+                      'end_turn_damage', 'player_weak', 'player_vulnerable', 'player_frail'):
+            if getattr(snapshot, field) != getattr(current, field):
+                mismatch.append(f"snapshot {field} disagrees with the current observation")
+        if [(e.name, e.hp, e.block) for e in snapshot.enemies] != [(e.name, e.hp, e.block) for e in current.enemies]:
+            mismatch.append("snapshot enemies disagree with the current observation")
+    reasons = (*readiness.reasons, *check.reasons, *hand_reasons, *mismatch)
     if reasons:
         return RecommendationPreflight(False, tuple(dict.fromkeys(reasons)), "No action prediction: preflight failed.", check)
     enemies = ", ".join(f"{enemy.name}: {enemy.hp} HP" for enemy in check.enemies)
@@ -55,7 +65,7 @@ def preflight_combat(
     predicted_state = {
         "energy": check.energy_remaining,
         "block": check.player_block,
-        "player_hp": check.projected_player_hp,
+        "player_hp": observation.hp,  # Immediate post-card state, before the enemy turn.
         "enemies": {enemy.name: enemy.hp for enemy in check.enemies},
     }
     return RecommendationPreflight(True, (), prediction, check, predicted_state=predicted_state)

@@ -24,11 +24,16 @@ def verify_combat_state(state: StructuredGameState) -> CombatStateVerification:
         energy=state.energy,
         player_hp=state.hp,
         player_weak=state.player_weak or 0,
+        player_vulnerable=state.player_vulnerable or 0,
         player_frail=state.player_frail or 0,
         player_block=state.block or 0,
         incoming_damage=sum(enemy.intent_total_damage or 0 for enemy in state.enemies),
+        incoming_hits=tuple(hit for enemy in state.enemies for hit in (enemy.intent_hits or ())) if all(
+            enemy.intent_hits is not None for enemy in state.enemies
+        ) else None,
         end_turn_damage=state.end_turn_damage,
         hand_size=len(state.hand),
+        hand=state.hand,
         enemies=tuple(
             CombatEnemy(enemy.name, enemy.hp or 0, block=enemy.block or 0)
             for enemy in state.enemies

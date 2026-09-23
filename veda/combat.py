@@ -12,11 +12,7 @@ from dataclasses import dataclass
 
 def _scaled(value: int, *, weak: bool = False, vulnerable: bool = False) -> int:
     """Apply the relevant base-game multiplicative modifiers, rounding down."""
-    if weak:
-        value = int(value * 0.75)
-    if vulnerable:
-        value = int(value * 1.5)
-    return value
+    return max(0, value) * (3 if weak else 4) * (3 if vulnerable else 2) // 8
 
 
 @dataclass(frozen=True)
@@ -47,9 +43,12 @@ class CombatSnapshot:
     energy: int | None
     player_hp: int | None = None
     player_weak: int = 0
+    player_vulnerable: int = 0
     player_frail: int = 0
     player_block: int = 0
+    # Screen-displayed intent already includes visible Strength/Weak/Vulnerable.
     incoming_damage: int | None = None
+    incoming_hits: tuple[int, ...] | None = None
     end_turn_damage: int | None = None
     hand_size: int | None = None
     hand: tuple[str, ...] | None = None
@@ -159,11 +158,13 @@ def validate_and_predict(snapshot: CombatSnapshot, cards: tuple[CardEffect, ...]
                     continue
                 exhausted = cards_in_hand
                 damage = _scaled(
-                    card.damage_per_exhausted, weak=snapshot.player_weak > 0, vulnerable=enemy_vulnerable > 0,
+                    card.damage_per_exhausted, weak=snapshot.player_weak > 0, vulnerable=enemy.vulnerable > 0,
                 ) * exhausted
                 cards_in_hand = 0
+                if available_cards is not None:
+                    available_cards.clear()
             else:
-                damage = _scaled(card.attack_damage, weak=snapshot.player_weak > 0, vulnerable=enemy_vulnerable > 0)
+                damage = _scaled(card.attack_damage, weak=snapshot.player_weak > 0, vulnerable=enemy.vulnerable > 0)
             absorbed = min(enemy.block, damage)
             enemies[target_index] = CombatEnemy(
                 name=enemy.name, hp=max(0, enemy.hp - (damage - absorbed)),
@@ -171,15 +172,23 @@ def validate_and_predict(snapshot: CombatSnapshot, cards: tuple[CardEffect, ...]
             )
 
     projected_hp: int | None = None
+    projected_incoming = snapshot.incoming_damage
     lethal = False
     # A survival forecast is only made when every required value was explicitly
     # observed.  `0` is meaningful: it means a verified non-attacking turn or
     # no end-of-turn status damage.
-    if snapshot.player_hp is not None and snapshot.incoming_damage is not None and snapshot.end_turn_damage is not None:
+    if snapshot.player_vulnerable > 0 and snapshot.incoming_damage is not None:
+        if snapshot.incoming_hits is None:
+            reasons.append("player Vulnerable requires confirmed per-hit incoming damage")
+        elif sum(snapshot.incoming_hits) != snapshot.incoming_damage:
+            reasons.append("confirmed per-hit incoming damage does not match the total intent")
+
+    if snapshot.player_hp is not None and snapshot.incoming_damage is not None and snapshot.end_turn_damage is not None and not reasons:
         # Combat ends immediately on the final kill: no enemy intent or
         # end-of-turn status damage resolves after that point.
         combat_ended = not any(enemy.hp > 0 for enemy in enemies)
         incoming = 0 if combat_ended else snapshot.incoming_damage
+        projected_incoming = incoming
         end_turn = 0 if combat_ended else snapshot.end_turn_damage
         post_attack_block = max(0, block - incoming)
         projected_hp = snapshot.player_hp - max(0, incoming - block)
@@ -189,10 +198,10 @@ def validate_and_predict(snapshot: CombatSnapshot, cards: tuple[CardEffect, ...]
             reasons.append(
                 "sequence is lethal after confirmed incoming and end-of-turn damage"
             )
-    elif any(value is not None for value in (snapshot.player_hp, snapshot.incoming_damage, snapshot.end_turn_damage)):
+    elif not reasons and any(value is not None for value in (snapshot.player_hp, snapshot.incoming_damage, snapshot.end_turn_damage)):
         reasons.append("survival forecast needs confirmed player HP, incoming damage, and end-of-turn damage")
 
     return SequenceCheck(
         not reasons, tuple(reasons), spent, energy, block, tuple(enemies),
-        projected_hp, snapshot.incoming_damage, snapshot.end_turn_damage, lethal,
+        projected_hp, projected_incoming, snapshot.end_turn_damage, lethal,
     )

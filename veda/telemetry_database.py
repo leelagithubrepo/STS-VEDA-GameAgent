@@ -8,6 +8,7 @@ sanitized summaries, while reviewer guidance remains only in this local DB.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from collections import Counter
 from datetime import datetime, timezone
 import json
@@ -17,7 +18,10 @@ from typing import Any, Iterator
 from uuid import uuid4
 
 
-SCHEMA_VERSION = "veda.telemetry.sqlite.v5"
+from .advisory_memory import AdvisoryMemory
+
+
+SCHEMA_VERSION = "veda.telemetry.sqlite.v6"
 
 
 def _now() -> str:
@@ -32,14 +36,20 @@ def _load_json(value: str | None) -> Any:
     return json.loads(value) if value else {}
 
 
-class TelemetryDatabase:
+class TelemetryDatabase(AdvisoryMemory):
     """Small transactional API over VEDA's private, append-only evidence log."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
+        self._initialized = False
+        self._transaction_connection = ContextVar("veda_connection", default=None)
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
+        active = self._transaction_connection.get()
+        if active is not None:
+            yield active
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path)
         connection.row_factory = sqlite3.Row
@@ -51,8 +61,24 @@ class TelemetryDatabase:
         finally:
             connection.close()
 
+    @contextmanager
+    def _transaction(self):
+        self.initialize()
+        if self._transaction_connection.get() is not None:
+            yield
+            return
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            token = self._transaction_connection.set(db)
+            try:
+                yield
+            finally:
+                self._transaction_connection.reset(token)
+
     def initialize(self) -> None:
-        """Create the schema without requiring any third-party package."""
+        """Create the schema once per API instance, not on every hot read."""
+        if self._initialized:
+            return
         with self._connection() as db:
             db.execute("PRAGMA journal_mode = WAL")
             db.executescript(
@@ -303,6 +329,8 @@ class TelemetryDatabase:
             if "turn_id" not in evidence_columns:
                 db.execute("ALTER TABLE evidence_events ADD COLUMN turn_id TEXT REFERENCES combat_turns(id)")
             db.execute("CREATE INDEX IF NOT EXISTS evidence_by_combat_turn ON evidence_events(combat_id, turn_id, observed_at)")
+
+        self._initialized = True
 
     def start_or_resume_run(
         self,
@@ -712,8 +740,8 @@ class TelemetryDatabase:
         kinds = {"card", "relic", "potion"}
         expected_coverage = {"card", "relic", "potion"}
         levels = {"complete", "partial", "unknown"}
-        if not items or not source.strip():
-            raise ValueError("baseline items and source are required")
+        if not isinstance(items, list) or not source.strip():
+            raise ValueError("baseline items list and source are required")
         if set(coverage) != expected_coverage or any(level not in levels for level in coverage.values()):
             raise ValueError("baseline coverage must describe card, relic, and potion as complete, partial, or unknown")
         if confidence is not None and not 0 <= confidence <= 1:
@@ -753,92 +781,71 @@ class TelemetryDatabase:
             )
         return baseline_id
 
-    def inventory_ledger(self, *, run_id: str) -> dict[str, Any]:
-        """Return history plus current confirmed inventory, preserving uncertainty."""
+    def inventory_ledger(self, *, run_id: str, include_history: bool = True) -> dict[str, Any]:
+        """Replay confirmed inventory; a partial category never erases known items.
+
+        Three batched reads avoid one query per historical baseline. Compact
+        context callers omit history serialization; the audit view retains it.
+        """
         self.initialize()
         with self._connection() as db:
-            rows = db.execute(
-                "SELECT * FROM inventory_events WHERE run_id = ? ORDER BY observed_at, id", (run_id,)
-            ).fetchall()
-            baselines = db.execute(
-                "SELECT * FROM inventory_baselines WHERE run_id = ? ORDER BY observed_at, id", (run_id,)
-            ).fetchall()
-            latest_baseline = baselines[-1] if baselines else None
-            baseline_items = [] if latest_baseline is None else db.execute(
-                "SELECT * FROM inventory_baseline_items WHERE baseline_id = ? ORDER BY item_kind, id",
-                (latest_baseline["id"],),
-            ).fetchall()
-            baseline_history = []
-            for baseline in baselines:
-                snapshot_items = db.execute(
-                    "SELECT item_kind, item_name, property_text FROM inventory_baseline_items "
-                    "WHERE baseline_id = ? ORDER BY item_kind, id", (baseline["id"],),
-                ).fetchall()
-                baseline_history.append({**dict(baseline), "items": [dict(item) for item in snapshot_items]})
-
-        current_records: dict[str, list[dict[str, Any]]] = {"card": [], "relic": [], "potion": []}
-        coverage = {"card": "unknown", "relic": "unknown", "potion": "unknown"}
-        if latest_baseline is not None:
-            coverage = _load_json(latest_baseline["coverage_json"])
-            for item in baseline_items:
-                current_records[item["item_kind"]].append({
-                    "item_name": item["item_name"],
-                    "provenance": "baseline_snapshot",
-                    "baseline_id": latest_baseline["id"],
-                    "floor_id": latest_baseline["floor_id"],
-                    "source": latest_baseline["source"],
-                    "confidence": latest_baseline["confidence"],
-                })
-        properties: dict[tuple[str, str], dict[str, Any]] = {}
-        history: list[dict[str, Any]] = []
-        for row in rows:
-            event = dict(row)
-            history.append(event)
-            key = (row["item_kind"], row["item_name"].casefold())
-            if row["action"] == "property_confirmed":
-                properties[key] = {"property": row["property_text"], "source": row["source"], "confidence": row["confidence"], "event_id": row["id"]}
+            rows = [dict(r) for r in db.execute(
+                "SELECT rowid AS sequence, * FROM inventory_events WHERE run_id=? ORDER BY observed_at,rowid", (run_id,))]
+            baselines = [dict(r) for r in db.execute(
+                "SELECT rowid AS sequence, * FROM inventory_baselines WHERE run_id=? ORDER BY observed_at,rowid", (run_id,))]
+            items = [dict(r) for r in db.execute(
+                "SELECT i.* FROM inventory_baseline_items i JOIN inventory_baselines b ON b.id=i.baseline_id WHERE b.run_id=? ORDER BY i.rowid", (run_id,))]
+        grouped: dict[str, list] = {}
+        for item in items:
+            grouped.setdefault(item['baseline_id'], []).append(item)
+        current = {k: [] for k in ('card', 'relic', 'potion')}
+        coverage = {k: 'unknown' for k in current}
+        properties = {}
+        timeline = [(r['observed_at'], 1, r['sequence'], 'event', r) for r in rows]
+        timeline += [(r['observed_at'], 0, r['sequence'], 'baseline', r) for r in baselines]
+        for _, _, _, kind, row in sorted(timeline):
+            if kind == 'baseline':
+                levels = _load_json(row['coverage_json'])
+                for category, level in levels.items():
+                    observed = [i for i in grouped.get(row['id'], []) if i['item_kind'] == category]
+                    if level == 'complete':
+                        current[category] = []
+                        coverage[category] = 'complete'
+                    elif level == 'unknown':
+                        continue
+                    elif coverage[category] == 'unknown':
+                        coverage[category] = 'partial'
+                    counts = Counter(i['item_name'] for i in current[category])
+                    seen = Counter()
+                    for item in observed:
+                        name = item['item_name']; seen[name] += 1
+                        if level == 'complete' or seen[name] > counts[name]:
+                            current[category].append({'item_name': name, 'provenance': 'baseline_snapshot',
+                                'baseline_id': row['id'], 'floor_id': row['floor_id'], 'source': row['source'], 'confidence': row['confidence']})
+                        if item['property_text']:
+                            properties[f'{category}:{name.casefold()}'] = {'property': item['property_text'],
+                                'source': row['source'], 'confidence': row['confidence'], 'baseline_id': row['id']}
                 continue
-            if latest_baseline is not None and row["observed_at"] <= latest_baseline["observed_at"]:
+            category, name, action = row['item_kind'], row['item_name'], row['action']
+            if action == 'property_confirmed':
+                properties[f'{category}:{name.casefold()}'] = {'property': row['property_text'],
+                    'source': row['source'], 'confidence': row['confidence'], 'event_id': row['id']}
                 continue
-            items = current_records[row["item_kind"]]
-            if row["action"] == "acquired":
-                if row["item_kind"] == "relic" and any(item["item_name"].casefold() == row["item_name"].casefold() for item in items):
-                    continue
-                items.append({
-                    "item_name": row["item_name"], "provenance": "inventory_event", "event_id": row["id"],
-                    "floor_id": row["floor_id"], "source": row["source"], "confidence": row["confidence"],
-                })
-            elif row["action"] in {"removed", "consumed"}:
-                match = next((index for index, item in enumerate(items) if item["item_name"] == row["item_name"]), None)
+            if action in ('removed', 'consumed', 'replaced'):
+                match = next((i for i, item in enumerate(current[category]) if item['item_name'].casefold() == name.casefold()), None)
                 if match is not None:
-                    items.pop(match)
-            elif row["action"] == "replaced":
-                match = next((index for index, item in enumerate(items) if item["item_name"] == row["item_name"]), None)
-                if match is not None:
-                    items.pop(match)
-                if row["related_item_name"]:
-                    items.append({
-                        "item_name": row["related_item_name"], "provenance": "inventory_event", "event_id": row["id"],
-                        "floor_id": row["floor_id"], "source": row["source"], "confidence": row["confidence"],
-                    })
-
-        for item in baseline_items:
-            if item["property_text"]:
-                key = (item["item_kind"], item["item_name"].casefold())
-                properties[key] = {
-                    "property": item["property_text"], "source": latest_baseline["source"],
-                    "confidence": latest_baseline["confidence"], "baseline_id": latest_baseline["id"],
-                }
-        return {
-            "run_id": run_id,
-            "current": {kind: [item["item_name"] for item in items] for kind, items in current_records.items()},
-            "current_items": current_records,
-            "coverage": coverage,
-            "latest_baseline": None if latest_baseline is None else baseline_history[-1],
-            "baseline_history": baseline_history,
-            "properties": {f"{kind}:{name}": value for (kind, name), value in properties.items()},
-            "history": history,
-        }
+                    current[category].pop(match)
+                elif coverage[category] == 'complete':
+                    coverage[category] = 'partial'  # Contradictory history cannot claim completeness.
+            added = name if action == 'acquired' else row['related_item_name'] if action == 'replaced' else None
+            if added and not (category == 'relic' and any(i['item_name'].casefold() == added.casefold() for i in current[category])):
+                current[category].append({'item_name': added, 'provenance': 'inventory_event', 'event_id': row['id'],
+                    'floor_id': row['floor_id'], 'source': row['source'], 'confidence': row['confidence']})
+        history = [{**b, 'items': grouped.get(b['id'], [])} for b in baselines] if include_history else []
+        return {'run_id': run_id, 'current': {k: [i['item_name'] for i in v] for k, v in current.items()},
+                'current_items': current, 'coverage': coverage, 'properties': properties,
+                'latest_baseline': {**baselines[-1], 'items': grouped.get(baselines[-1]['id'], [])} if baselines else None,
+                'baseline_history': history, 'history': rows if include_history else []}
 
     def record_event(
         self,
@@ -869,6 +876,76 @@ class TelemetryDatabase:
                 (event_id, run_id, floor_id, kind.strip(), phase.strip(), _now(), _json(state), _json(payload), screenshot_path, source.strip(), confidence, combat_id, turn_id),
             )
         return event_id
+
+    @staticmethod
+    def _confirmed_inventory_names(items: list[str], *, label: str) -> list[str]:
+        """Normalize a visible inventory list without converting uncertainty into facts."""
+        if any(not isinstance(item, str) or not item.strip() for item in items):
+            raise ValueError(f"{label} entries must be non-empty names")
+        return [item.strip() for item in items]
+
+    def record_boss_inventory_preflight(
+        self,
+        *,
+        run_id: str,
+        floor_id: str,
+        boss_name: str | None,
+        relics: list[str],
+        potions: list[str],
+        key_cards: list[str],
+        unknowns: list[str],
+        source: str,
+        screenshot_path: str | None = None,
+        confidence: float | None = None,
+    ) -> str:
+        """Snapshot only the inventory visibly confirmed before a boss.
+
+        ``unknowns`` intentionally stays separate from confirmed names.  An
+        advisor can therefore say that a relic is unreadable without treating
+        its familiar effect as a combat constraint.
+        """
+        if not source.strip():
+            raise ValueError("boss preflight source is required")
+        if confidence is not None and not 0 <= confidence <= 1:
+            raise ValueError("boss preflight confidence must be between 0 and 1")
+        confirmed = {
+            "relics": self._confirmed_inventory_names(relics, label="relic"),
+            "potions": self._confirmed_inventory_names(potions, label="potion"),
+            "key_cards": self._confirmed_inventory_names(key_cards, label="key card"),
+        }
+        observed_unknowns = self._confirmed_inventory_names(unknowns, label="unknown inventory")
+        return self.record_event(
+            run_id=run_id,
+            floor_id=floor_id,
+            kind="boss_inventory_preflight",
+            phase="safe_boundary",
+            state={"boss_name": boss_name.strip() if boss_name and boss_name.strip() else None, **confirmed},
+            payload={"unknowns": observed_unknowns, "inventory_is_confirmed_snapshot": True},
+            screenshot_path=screenshot_path,
+            source=source,
+            confidence=confidence,
+        )
+
+    def latest_boss_inventory_preflight(self, *, run_id: str, floor_id: str) -> dict[str, Any] | None:
+        """Return the latest floor-linked boss preflight, if one was observed."""
+        self.initialize()
+        with self._connection() as db:
+            row = db.execute(
+                "SELECT * FROM evidence_events WHERE run_id = ? AND floor_id = ? "
+                "AND kind = 'boss_inventory_preflight' ORDER BY observed_at DESC, id DESC LIMIT 1",
+                (run_id, floor_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "state": _load_json(row["state_json"]),
+            "payload": _load_json(row["payload_json"]),
+            "screenshot_path": row["screenshot_path"],
+            "source": row["source"],
+            "confidence": row["confidence"],
+            "observed_at": row["observed_at"],
+        }
 
     def combat_ledger(self, *, run_id: str, floor_id: str | None = None) -> list[dict[str, Any]]:
         """Return recorded combat snapshots in observation order for a run.
@@ -921,6 +998,10 @@ class TelemetryDatabase:
         screenshot_path: str | None = None,
         safety_margin_hp: int | None = None,
         confidence: float | None = None,
+        source: str = "veda",
+        evidence_metadata: dict[str, Any] | None = None,
+        high_stakes: bool = False,
+        requires_boss_preflight: bool = False,
     ) -> str:
         """Persist a recommendation before the player acts, for later scoring."""
         if not reasoning.strip():
@@ -929,10 +1010,43 @@ class TelemetryDatabase:
             raise ValueError("new decisions must be linked to a recorded floor")
         if phase.strip().lower() == "combat" and (combat_id is None or turn_id is None):
             raise ValueError("combat decisions must be linked to a recorded combat and turn")
+        if requires_boss_preflight and not high_stakes:
+            raise ValueError("boss preflight can only guard a high-stakes decision")
+        if high_stakes:
+            if combat_id is None:
+                raise ValueError("high-stakes decisions must be linked to a recorded combat")
+            self.initialize()
+            with self._connection() as db:
+                self._validate_event_context(
+                    db, run_id=run_id, floor_id=floor_id, combat_id=combat_id, turn_id=turn_id,
+                )
+                pending = db.execute(
+                    "SELECT d.id FROM decisions d JOIN evidence_events e ON e.id = d.event_id "
+                    "WHERE e.combat_id = ? AND d.status = 'recommended' "
+                    "AND json_extract(e.payload_json, '$.high_stakes') = 1 LIMIT 1",
+                    (combat_id,),
+                ).fetchone()
+                if pending is not None:
+                    raise ValueError("verify or mark the prior high-stakes sequence skipped before issuing another")
+                if requires_boss_preflight:
+                    preflight = db.execute(
+                        "SELECT id FROM evidence_events WHERE run_id = ? AND floor_id = ? "
+                        "AND kind = 'boss_inventory_preflight' LIMIT 1",
+                        (run_id, floor_id),
+                    ).fetchone()
+                    if preflight is None:
+                        raise ValueError("record a confirmed boss inventory preflight before boss advice")
         event_id = self.record_event(
             run_id=run_id, floor_id=floor_id, kind="meaningful_decision", phase=phase,
-            state=state, payload={"recommendation": recommendation}, screenshot_path=screenshot_path,
-            source="veda", confidence=confidence, combat_id=combat_id, turn_id=turn_id,
+            state=state,
+            payload={
+                "recommendation": recommendation,
+                "evidence": evidence_metadata or {},
+                "high_stakes": high_stakes,
+                "requires_boss_preflight": requires_boss_preflight,
+            },
+            screenshot_path=screenshot_path, source=source, confidence=confidence,
+            combat_id=combat_id, turn_id=turn_id,
         )
         decision_id = str(uuid4())
         with self._connection() as db:
@@ -941,6 +1055,60 @@ class TelemetryDatabase:
                 (decision_id, event_id, _json(options), _json(recommendation), reasoning.strip(), _json(prediction), safety_margin_hp),
             )
         return decision_id
+
+    @staticmethod
+    def _state_value(state: dict[str, Any], *keys: str) -> Any:
+        for key in keys:
+            value = state.get(key)
+            if value is not None:
+                return value
+        player = state.get("player")
+        if isinstance(player, dict):
+            for key in keys:
+                value = player.get(key)
+                if value is not None:
+                    return value
+        return "unrecorded"
+
+    def run_card(self, *, run_id: str, next_priority: str | None = None) -> dict[str, Any]:
+        """Return a compact operational summary, not a telemetry-gap report."""
+        self.initialize()
+        with self._connection() as db:
+            floors = db.execute(
+                "SELECT act, floor, node_type, outcome, starting_state_json, ending_state_json, recorded_at "
+                "FROM floors WHERE run_id = ? ORDER BY recorded_at DESC, id DESC",
+                (run_id,),
+            ).fetchall()
+        if not floors:
+            raise ValueError("run has no recorded floors")
+        latest = floors[0]
+        latest_state = _load_json(latest["ending_state_json"])
+        if not latest_state:
+            latest_state = _load_json(latest["starting_state_json"])
+        wins = [
+            {"act": row["act"], "floor": row["floor"], "node_type": row["node_type"], "outcome": row["outcome"]}
+            for row in reversed(floors)
+            if str(row["outcome"] or "").casefold() in {"victory", "win", "completed"}
+        ][-3:]
+        inventory = self.inventory_ledger(run_id=run_id)
+        return {
+            "run_id": run_id,
+            "latest_floor": {
+                "act": latest["act"], "floor": latest["floor"], "node_type": latest["node_type"],
+                "outcome": latest["outcome"],
+            },
+            "wins": wins,
+            "health": {
+                "hp": self._state_value(latest_state, "hp", "player_hp"),
+                "max_hp": self._state_value(latest_state, "max_hp", "player_max_hp"),
+            },
+            "resources": {
+                "gold": self._state_value(latest_state, "gold"),
+                "potions": inventory["current"]["potion"],
+                "relics": inventory["current"]["relic"],
+            },
+            "next_priority": next_priority.strip() if next_priority and next_priority.strip() else "Confirm the next visible decision state.",
+        }
 
     def floor_retrospective(self, *, floor_id: str) -> dict[str, Any]:
         """Return only evidence actually linked to one floor for on-demand review.
@@ -977,6 +1145,7 @@ class TelemetryDatabase:
                 "combat_id": row["combat_id"], "turn_id": row["turn_id"],
                 "observed_at": row["observed_at"], "screenshot_path": row["screenshot_path"],
                 "source": row["source"], "confidence": row["confidence"],
+                "payload": _load_json(row["payload_json"]),
             }
 
         return {
@@ -1242,6 +1411,8 @@ class TelemetryDatabase:
             if node_id in seen_nodes:
                 raise ValueError("legal node IDs must be unique within a snapshot")
             seen_nodes.add(node_id)
+            if node_kind.casefold() in {'elite', 'merchant', 'shop'} and not node.get('classification_evidence'):
+                node_kind = 'unknown'
             parsed_nodes.append((node_id, node_kind, float(node_confidence)))
         if not parsed_nodes:
             raise ValueError("at least one legal next node is required")
@@ -1278,11 +1449,13 @@ class TelemetryDatabase:
         self.initialize()
         with self._connection() as db:
             legal = db.execute(
-                "SELECT 1 FROM route_nodes WHERE snapshot_id = ? AND node_id = ?",
+                "SELECT node_kind, confidence FROM route_nodes WHERE snapshot_id = ? AND node_id = ?",
                 (snapshot_id, selected_node_id.strip()),
             ).fetchone()
             if legal is None:
                 raise ValueError("selected node is not a recorded legal next node")
+            if legal["node_kind"] == "unknown" or legal["confidence"] < 0.9:
+                raise ValueError("verify the selected map-node classification before recommending it")
             recommendation_id = str(uuid4())
             db.execute(
                 "INSERT INTO route_recommendations VALUES (?, ?, ?, ?, ?, ?)",

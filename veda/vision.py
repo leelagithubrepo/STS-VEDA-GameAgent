@@ -26,7 +26,8 @@ OBSERVATION_SCHEMA: dict[str, Any] = {
         "character": _NULLABLE_STRING, "ascension": _NULLABLE_INTEGER, "act": _NULLABLE_INTEGER, "floor": _NULLABLE_INTEGER,
         "hp": _NULLABLE_INTEGER, "max_hp": _NULLABLE_INTEGER, "energy": _NULLABLE_INTEGER,
         "block": _NULLABLE_INTEGER, "gold": _NULLABLE_INTEGER,
-        "player_strength": _NULLABLE_INTEGER, "player_weak": _NULLABLE_INTEGER, "player_frail": _NULLABLE_INTEGER,
+        "player_strength": _NULLABLE_INTEGER, "player_weak": _NULLABLE_INTEGER,
+        "player_vulnerable": _NULLABLE_INTEGER, "player_frail": _NULLABLE_INTEGER,
         "boss_name": _NULLABLE_STRING, "boss_confidence": {"type": "number", "minimum": 0, "maximum": 1},
         "encounter_kind": _NULLABLE_STRING, "encounter_confidence": {"type": "number", "minimum": 0, "maximum": 1},
         "map_nodes": {"type": "array", "items": {"type": "object", "properties": {
@@ -38,13 +39,22 @@ OBSERVATION_SCHEMA: dict[str, Any] = {
         "enemies": {"type": "array", "items": {"type": "object", "properties": {
             "name": {"type": "string"}, "hp": _NULLABLE_INTEGER, "max_hp": _NULLABLE_INTEGER,
             "block": _NULLABLE_INTEGER, "intent": _NULLABLE_STRING,
+            "intent_hits": {"type": ["array", "null"], "items": {"type": "integer", "minimum": 0}},
             "intent_total_damage": _NULLABLE_INTEGER, "intent_damage_confidence": {"type": "number", "minimum": 0, "maximum": 1},
-        }, "required": ["name", "hp", "max_hp", "block", "intent", "intent_total_damage", "intent_damage_confidence"], "additionalProperties": False}},
+        }, "required": ["name", "hp", "max_hp", "block", "intent", "intent_hits", "intent_total_damage", "intent_damage_confidence"], "additionalProperties": False}},
         "description": {"type": "string"},
     },
-    "required": ["screen_type", "confidence", "selected_item", "visible_actions", "character", "ascension", "act", "floor", "hp", "max_hp", "energy", "block", "gold", "player_strength", "player_weak", "player_frail", "boss_name", "boss_confidence", "encounter_kind", "encounter_confidence", "map_nodes", "end_turn_damage", "end_turn_damage_confidence", "hand", "enemies", "description"],
+    "required": ["screen_type", "confidence", "selected_item", "visible_actions", "character", "ascension", "act", "floor", "hp", "max_hp", "energy", "block", "gold", "player_strength", "player_weak", "player_vulnerable", "player_frail", "boss_name", "boss_confidence", "encounter_kind", "encounter_confidence", "map_nodes", "end_turn_damage", "end_turn_damage_confidence", "hand", "enemies", "description"],
     "additionalProperties": False,
 }
+
+
+OBSERVATION_SCHEMA['properties']['hand_complete'] = {'type': ['boolean', 'null']}
+OBSERVATION_SCHEMA['properties']['hand_details'] = {'type': 'array', 'items': {'type': 'object', 'properties': {
+    'name': {'type': 'string'}, 'title_color': {'type': ['string', 'null'], 'enum': ['green','teal','white',None]},
+    'upgraded': {'type': ['boolean','null']}, 'current_cost': _NULLABLE_INTEGER,
+}, 'required': ['name','title_color','upgraded','current_cost'], 'additionalProperties': False}}
+OBSERVATION_SCHEMA['required'] += ['hand_complete', 'hand_details']
 
 
 @dataclass(frozen=True)
@@ -54,6 +64,7 @@ class VisibleEnemy:
     max_hp: int | None
     intent: str | None
     block: int | None = None
+    intent_hits: tuple[int, ...] | None = None
     intent_total_damage: int | None = None
     intent_damage_confidence: float = 0.0
 
@@ -88,6 +99,7 @@ class StructuredGameState:
     gold: int | None = None
     player_strength: int | None = None
     player_weak: int | None = None
+    player_vulnerable: int | None = None
     player_frail: int | None = None
     boss_name: str | None = None
     boss_confidence: float = 0.0
@@ -97,6 +109,8 @@ class StructuredGameState:
     end_turn_damage: int | None = None
     end_turn_damage_confidence: float = 0.0
     hand: tuple[str, ...] = ()
+    hand_complete: bool | None = None
+    hand_details: tuple[dict[str, Any], ...] = ()
     enemies: tuple[VisibleEnemy, ...] = ()
     description: str = ""
 
@@ -105,7 +119,7 @@ class StructuredGameState:
             raise ValueError(f"unsupported screen type: {self.screen_type}")
         if not 0 <= self.confidence <= 1:
             raise ValueError("confidence must be between 0 and 1")
-        for value in (self.ascension, self.act, self.floor, self.hp, self.max_hp, self.energy, self.block, self.gold, self.player_strength, self.player_weak, self.player_frail, self.end_turn_damage):
+        for value in (self.ascension, self.act, self.floor, self.hp, self.max_hp, self.energy, self.block, self.gold, self.player_strength, self.player_weak, self.player_vulnerable, self.player_frail, self.end_turn_damage):
             if value is not None and value < 0:
                 raise ValueError("numeric game-state values cannot be negative")
         for label, confidence in (("end-turn damage", self.end_turn_damage_confidence), ("boss", self.boss_confidence), ("encounter", self.encounter_confidence)):
@@ -114,21 +128,29 @@ class StructuredGameState:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "StructuredGameState":
+        value = {"hand_complete": None, "hand_details": [], **value}
         expected = {field.name for field in cls.__dataclass_fields__.values()}
         if set(value) != expected:
             raise ValueError("vision response fields do not match the state contract")
-        enemies = tuple(VisibleEnemy(**enemy) for enemy in value["enemies"])
+        enemies = tuple(
+            VisibleEnemy(
+                **{**enemy, "intent_hits": None if enemy["intent_hits"] is None else tuple(enemy["intent_hits"])}
+            )
+            for enemy in value["enemies"]
+        )
         map_nodes = tuple(VisibleMapNode(**node) for node in value["map_nodes"])
         return cls(
             screen_type=value["screen_type"], confidence=float(value["confidence"]),
             selected_item=value["selected_item"], visible_actions=tuple(value["visible_actions"]),
             character=value["character"], ascension=value["ascension"], act=value["act"], floor=value["floor"], hp=value["hp"],
             max_hp=value["max_hp"], energy=value["energy"], block=value["block"], gold=value["gold"],
-            player_strength=value["player_strength"], player_weak=value["player_weak"], player_frail=value["player_frail"],
+            player_strength=value["player_strength"], player_weak=value["player_weak"],
+            player_vulnerable=value["player_vulnerable"], player_frail=value["player_frail"],
             boss_name=value["boss_name"], boss_confidence=float(value["boss_confidence"]),
             encounter_kind=value["encounter_kind"], encounter_confidence=float(value["encounter_confidence"]), map_nodes=map_nodes,
             end_turn_damage=value["end_turn_damage"], end_turn_damage_confidence=float(value["end_turn_damage_confidence"]),
-            hand=tuple(value["hand"]), enemies=enemies, description=value["description"],
+            hand=tuple(value["hand"]), hand_complete=value["hand_complete"],
+            hand_details=tuple(value["hand_details"]), enemies=enemies, description=value["description"],
         )
 
     def as_observation(self) -> dict[str, Any]:
@@ -160,10 +182,12 @@ def combat_action_readiness(state: StructuredGameState) -> ActionReadiness:
         reasons.append("vision confidence is below the action threshold")
     if state.hp is None or state.max_hp is None or state.energy is None or state.block is None:
         reasons.append("player HP, Block, or energy is missing")
+    if state.player_vulnerable is None:
+        reasons.append("player Vulnerable is unconfirmed")
     if state.end_turn_damage is None or state.end_turn_damage_confidence < 0.9:
         reasons.append("end-of-turn damage is unconfirmed")
-    if not state.hand:
-        reasons.append("no playable hand was extracted")
+    if not state.hand and state.hand_complete is not True:
+        reasons.append("no confirmed hand was extracted")
     if not state.enemies:
         reasons.append("no enemy was extracted")
     for enemy in state.enemies:
@@ -179,6 +203,13 @@ def combat_action_readiness(state: StructuredGameState) -> ActionReadiness:
         if enemy.intent_total_damage is None or enemy.intent_damage_confidence < 0.9:
             reasons.append("an enemy's total intent damage is unconfirmed")
             break
+        if state.player_vulnerable is not None and state.player_vulnerable > 0 and enemy.intent_total_damage > 0:
+            if enemy.intent_hits is None:
+                reasons.append("player Vulnerable requires per-hit enemy intent data")
+                break
+            if sum(enemy.intent_hits) != enemy.intent_total_damage:
+                reasons.append("per-hit enemy intent data does not match its total")
+                break
     return ActionReadiness(not reasons, tuple(reasons))
 
 
@@ -247,16 +278,22 @@ The player's HP is top left near the character name. Gold is top left directly b
 Current energy is the first number in the circular X/X counter at lower left; never use gold or enemy
 HP as energy. Player Block is the shield value beside the player, if one is visibly present. Enemy HP
 is shown under each enemy. Name an enemy only if its name is readable; otherwise use "unknown enemy".
-For every enemy, report its current Block, the readable intent text, and the total damage that intent
-will deal this turn. For a multi-hit intent such as 4x6, report 24, not 4 or 6. Use null and confidence
-0 when the total cannot be read or calculated from visible text. Sum only visible player end-of-turn
+For every enemy, report its current Block, the readable intent text, the total damage that intent
+will deal this turn, and its individual hit values. For a multi-hit intent such as 4x6, report
+intent_hits [4, 4, 4, 4, 4, 4] and intent_total_damage 24. For a single 16-damage attack, report
+intent_hits [16] and intent_total_damage 16. For a confirmed non-attacking intent, report an empty
+intent_hits array and total 0. Use null and confidence 0 when the total or individual hits cannot be
+read or calculated from visible text. Sum only visible player end-of-turn
 damage statuses (for example, three Burns = 6) into end_turn_damage; use 0 only when you can verify
 there is none. On MAP, report each currently reachable node with a stable local node_id, its visible
 kind, and confidence. Report a boss_name only when the name itself is readable; boss art is not proof.
 On COMBAT, set encounter_kind to enemy, elite, or boss only when the screen proves it; otherwise use
-null and confidence 0. Also report player_strength, player_weak, and player_frail from visible player
+null and confidence 0. Also report player_strength, player_weak, player_vulnerable, and player_frail from visible player
 status icons; use null when a count is not legible. Read a value only if it is visibly legible. Do not
-recommend or execute any action."""
+recommend or execute any action. Set hand_complete true only if the whole hand is visible (including an empty hand).
+For each visible card, report hand_details with name, title_color, upgraded, and current_cost.
+Green/teal titles mean upgraded; white means base. Unreadable color, upgrade or cost is null.
+Displayed intent already includes visible damage modifiers: do not apply Vulnerable a second time."""
         payload = json.dumps({
             "model": self.model,
             "messages": [{

@@ -33,9 +33,6 @@ def _effect_for(name: str, *, target: str | None, strength: int) -> CardEffect |
         "Defend": (1, "Skill", 0, 5, 0, 0),
         "Bash": (2, "Attack", 8 + strength, 0, 0, 2),
         "Clothesline": (2, "Attack", 12 + strength, 0, 2, 0),
-        "Twin Strike": (1, "Attack", 10 + 2 * strength, 0, 0, 0),
-        "Shrug It Off": (1, "Skill", 0, 8, 0, 0),
-        "Headbutt": (1, "Attack", 9 + strength, 0, 0, 0),
     }
     spec = effects.get(name)
     if spec is None:
@@ -85,8 +82,8 @@ def plan_routine_combat(state: StructuredGameState, calibration: CalibrationRepo
         reasons.extend(profile.cautions)
     elif profile.profile and profile.profile.name == "Gremlin Nob":
         reasons.append("Gremlin Nob requires its Enrage-aware planner; routine planner defers")
-    if state.player_strength is None or state.player_weak is None or state.player_frail is None:
-        reasons.append("player Strength, Weak, or Frail is unconfirmed")
+    if state.player_strength is None or state.player_weak is None or state.player_vulnerable is None or state.player_frail is None:
+        reasons.append("player Strength, Weak, Vulnerable, or Frail is unconfirmed")
     unmodeled = sorted({card for card in state.hand if card not in _STATUS_CARDS and _effect_for(card, target=None, strength=state.player_strength or 0) is None})
     if unmodeled:
         reasons.append("hand contains unmodeled cards: " + ", ".join(unmodeled))

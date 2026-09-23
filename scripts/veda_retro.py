@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Save a stage-end VEDA retrospective for later Codex review."""
+"""Save a stage-end VEDA retrospective to private local memory.
+
+LLM review is deliberately opt-in.  VEDA can keep learning evidence without
+depending on an always-running reviewer or interrupting the player's run.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from veda.experience import ExperienceStore
 from veda.retrospective import build_stage_retrospective, write_stage_retrospective
 from veda.review_handoff import submit_for_review
+from veda.telemetry_database import TelemetryDatabase
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +28,7 @@ def _slug(value: str) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Create and submit an evidence-first VEDA stage retrospective")
+    parser = argparse.ArgumentParser(description="Create an evidence-first VEDA stage retrospective")
     parser.add_argument("--stage", required=True, help="for example: Act 2 or Floor 23")
     parser.add_argument("--outcome", required=True, choices=("completed", "failed", "abandoned"))
     parser.add_argument("--experience", type=Path, default=ROOT / "artifacts" / "experience.json")
@@ -32,7 +37,7 @@ def main() -> int:
     parser.add_argument("--note", action="append", default=[])
     parser.add_argument("--lesson", action="append", default=[], help="proposed lesson; it remains unvalidated")
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--no-review-request", action="store_true", help="save only; do not notify the LLM reviewer")
+    parser.add_argument("--request-llm-review", action="store_true", help="explicitly notify the LLM reviewer after saving")
     args = parser.parse_args()
 
     records = ExperienceStore(args.experience).records if args.experience.exists() else ()
@@ -47,11 +52,23 @@ def main() -> int:
     )
     destination = args.output or ROOT / "artifacts" / "retrospectives" / f"{_slug(args.stage)}.json"
     write_stage_retrospective(document, destination)
-    if args.no_review_request:
+    memory = TelemetryDatabase(ROOT / "artifacts" / "veda-memory.sqlite3")
+    run_id = memory.start_or_resume_run()
+    event_id = memory.record_event(
+        run_id=run_id, kind="retrospective", phase="safe_boundary",
+        state={"stage": args.stage, "outcome": args.outcome, "start_hp": args.start_hp, "end_hp": args.end_hp},
+        payload=document, source="veda",
+    )
+    memory.queue_review(
+        run_id=run_id, trigger="stage_complete", priority="important", evidence_ids=[event_id],
+        summary={"stage": args.stage, "outcome": args.outcome, "retrospective": str(destination)},
+        dedupe_key=f"retrospective:{document['id']}",
+    )
+    if args.request_llm_review:
+        _, review, dashboard = submit_for_review(root=ROOT, retrospective_path=destination)
+        print(f"{destination}\n{review}\n{dashboard}")
+    else:
         print(destination)
-        return 0
-    _, review, dashboard = submit_for_review(root=ROOT, retrospective_path=destination)
-    print(f"{destination}\n{review}\n{dashboard}")
     return 0
 
 

@@ -1,4 +1,32 @@
 {
-  "runs": [],
+  "runs": [
+    {
+      "act": 3,
+      "actions": [
+        "Fled Giant Head Elite using Smoke Bomb at 12/99 HP."
+      ],
+      "ascension": 1,
+      "floor": 41,
+      "gold": 238,
+      "hp": 30,
+      "id": "3b0ceffd-4287-47ab-9b8b-ca04a04ae497",
+      "losses": [
+        "Elite rewards forfeited; Smoke Bomb consumed."
+      ],
+      "max_hp": 99,
+      "notes": [
+        "Entered at 76/99 HP; passed the floor by fleeing. Static evidence captures the combat state; MOV excluded from screenshot evidence."
+      ],
+      "outcome": "unknown",
+      "recorded_at": "2026-09-13T22:26:23.407073+00:00",
+      "screenshot": "assets/floor-runs/act-3-floor-41-342c6005.png",
+      "screenshots": [
+        "assets/floor-runs/act-3-floor-41-342c6005.png"
+      ],
+      "strategy": "Preserve the run after lethal next intent.",
+      "telemetry": {},
+      "trophies": []
+    }
+  ],
   "schema": "veda.floor-telemetry.v1"
 }

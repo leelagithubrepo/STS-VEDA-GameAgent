@@ -6,3 +6,5 @@ __pycache__/
 .bridge-source/
 .ps5rmtctl/
 artifacts/
+
+.DS_Store

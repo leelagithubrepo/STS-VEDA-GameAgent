@@ -155,6 +155,197 @@
         "status": "feedback_sent_to_veda"
       },
       "screenshot": null
+    },
+    {
+      "id": "dbd6b299-e01f-47fb-bec3-1e169656bef1",
+      "packet": {
+        "created_at": "2026-09-13T00:06:38.717083+00:00",
+        "ending_state": {
+          "hp": 54
+        },
+        "metrics": {
+          "decision_records": 0,
+          "matched_predictions": 0,
+          "prediction_comparisons": 0,
+          "prediction_match_rate": null,
+          "verified_outcomes": 0
+        },
+        "notes": [
+          "No potions used. CUA evidence frames captured the opening, multi-enemy state, Taskmaster elimination, and reward screen; local screen-recording capture was unavailable."
+        ],
+        "outcome": "completed",
+        "promotion_policy": "A lesson changes VEDA only after review, cited or run evidence, an explicit implementation, and a regression test.",
+        "proposed_lessons": [
+          "In the Three Slavers Elite, record displayed intents and status effects before lethal claims. Prioritize Taskmaster to stop retained Wounds under Runic Pyramid, but calculate Weak and Vulnerable on each attack before claiming a kill."
+        ],
+        "retrospective_id": "ad306bfe-4521-47a3-937e-83f81db6c178",
+        "review_status": "awaiting_codex_feedback",
+        "schema": "veda.review-handoff.v1",
+        "stage": "Floor 31 Three Slavers Elite",
+        "starting_state": {
+          "hp": 57
+        }
+      },
+      "review": {
+        "feedback": null,
+        "implementation_status": "pending",
+        "implementation_summary": null,
+        "status": "awaiting_codex_review"
+      },
+      "screenshot": null
+    },
+    {
+      "id": "0bc2e88d-e85e-44fb-9905-fedbf96e2bf1",
+      "packet": {
+        "created_at": "2026-09-13T01:17:06.727990+00:00",
+        "ending_state": {
+          "hp": 32
+        },
+        "metrics": {
+          "decision_records": 0,
+          "matched_predictions": 0,
+          "prediction_comparisons": 0,
+          "prediction_match_rate": null,
+          "verified_outcomes": 0
+        },
+        "notes": [
+          "All three potions were consumed: Dexterity, Energy, and Blood. Exact potion tooltips and actual effects must be verified before calculations. Inbox screenshots captured the boss opening and multi-enemy states."
+        ],
+        "outcome": "completed",
+        "promotion_policy": "A lesson changes VEDA only after review, cited or run evidence, an explicit implementation, and a regression test.",
+        "proposed_lessons": [
+          "Against The Collector, use Reaper during multi-target turns, preserve enough Block for heavy Collector-plus-Torch attacks, and only claim a lethal after confirming current Weak, Vulnerable, Block, card damage, and enemy HP."
+        ],
+        "retrospective_id": "8088d91c-44f1-467c-9005-9bf4c5f29867",
+        "review_status": "awaiting_codex_feedback",
+        "schema": "veda.review-handoff.v1",
+        "stage": "Act 2 boss \u2014 The Collector",
+        "starting_state": {
+          "hp": 81
+        }
+      },
+      "review": {
+        "feedback": null,
+        "implementation_status": "pending",
+        "implementation_summary": null,
+        "status": "awaiting_codex_review"
+      },
+      "screenshot": null
+    },
+    {
+      "id": "0d1d4004-dc10-4f6c-ba9c-7820df72fe16",
+      "packet": {
+        "created_at": "2026-09-13T01:39:06.728075+00:00",
+        "ending_state": {
+          "hp": 32
+        },
+        "metrics": {
+          "decision_records": 0,
+          "matched_predictions": 0,
+          "prediction_comparisons": 0,
+          "prediction_match_rate": null,
+          "verified_outcomes": 0
+        },
+        "notes": [
+          "All three potions were consumed: Dexterity, Energy, and Blood. Exact potion tooltips and actual effects must be verified before calculations. Inbox screenshots captured the boss opening and multi-enemy states.",
+          "After this stage, the complete 1,266-line VEDA Slay the Spire 1 Player Manual was read. The manual requires observing and verifying transitions, but does not specify Act-transition HP behavior; the unsupported assumption that 32 HP would carry forward was therefore incorrect. The actual next-Act screen must be the source of truth."
+        ],
+        "outcome": "completed",
+        "promotion_policy": "A lesson changes VEDA only after review, cited or run evidence, an explicit implementation, and a regression test.",
+        "proposed_lessons": [
+          "Against The Collector, use Reaper during multi-target turns, preserve enough Block for heavy Collector-plus-Torch attacks, and only claim a lethal after confirming current Weak, Vulnerable, Block, card damage, and enemy HP.",
+          "For an Act transition, consult the full player manual and verify the next Act screen before carrying forward HP, potion, relic, or map assumptions. The current manual documents boss rewards to next Act but does not state post-boss HP behavior, so that value remains unknown until observed."
+        ],
+        "retrospective_id": "8088d91c-44f1-467c-9005-9bf4c5f29867",
+        "review_status": "awaiting_codex_feedback",
+        "schema": "veda.review-handoff.v1",
+        "stage": "Act 2 boss \u2014 The Collector",
+        "starting_state": {
+          "hp": 81
+        }
+      },
+      "review": {
+        "feedback": null,
+        "implementation_status": "pending",
+        "implementation_summary": null,
+        "status": "awaiting_codex_review"
+      },
+      "screenshot": "assets/handoffs/handoff-44266e2c.png"
+    },
+    {
+      "id": "a372c412-8223-4e6d-b448-b0cbbeae2243",
+      "packet": {
+        "created_at": "2026-09-13T16:57:26.437705+00:00",
+        "ending_state": {
+          "hp": 47
+        },
+        "metrics": {
+          "decision_records": 0,
+          "matched_predictions": 0,
+          "prediction_comparisons": 0,
+          "prediction_match_rate": null,
+          "verified_outcomes": 0
+        },
+        "notes": [
+          "Verified from the post-Maw reward state: victory completed with HP 54/96 to 47/99 and gold 205 to 238. Feed increased maximum HP from 96 to 99.",
+          "Flex was then selected from the verified card reward. The later Floor 39 event/rest and Floor 40 Elite selection remain in progress and are not recorded as completed floors."
+        ],
+        "outcome": "completed",
+        "promotion_policy": "A lesson changes VEDA only after review, cited or run evidence, an explicit implementation, and a regression test.",
+        "proposed_lessons": [],
+        "retrospective_id": "f7d9c8ab-89a1-4fa1-9978-3dc8bdfe941d",
+        "review_status": "awaiting_codex_feedback",
+        "schema": "veda.review-handoff.v1",
+        "stage": "Floor 38 Maw encounter",
+        "starting_state": {
+          "hp": 54
+        }
+      },
+      "review": {
+        "feedback": null,
+        "implementation_status": "pending",
+        "implementation_summary": null,
+        "status": "awaiting_codex_review"
+      },
+      "screenshot": null
+    },
+    {
+      "id": "dafba063-0dae-4937-a99d-4eb74cd86096",
+      "packet": {
+        "created_at": "2026-09-14T04:10:23.138805+00:00",
+        "ending_state": {
+          "hp": 0
+        },
+        "metrics": {
+          "decision_records": 0,
+          "matched_predictions": 0,
+          "prediction_comparisons": 0,
+          "prediction_match_rate": null,
+          "verified_outcomes": 0
+        },
+        "notes": [
+          "Confirmed Time Eater. The run reached 22 HP while facing 10x3 and Vulnerable. The available visible defensive line was not verified as sufficient before ending the prior turn. Shrug It Off was then played for 8 Block; the attack killed the player. Earlier resource uses: Essence of Steel and Colorless Potion; Panacea supplied one Artifact but did not clear existing Vulnerable. Time Warp card-count management was observed, but survival math around Vulnerable required stricter confirmation."
+        ],
+        "outcome": "failed",
+        "promotion_policy": "A lesson changes VEDA only after review, cited or run evidence, an explicit implementation, and a regression test.",
+        "proposed_lessons": [
+          "Proposed: when player is Vulnerable and a multi-hit attack is telegraphed, compute per-hit post-Weak/post-Vulnerable damage and require a verified nonlethal block or healing line before ending the prior turn; regression test required before promotion."
+        ],
+        "retrospective_id": "c3304fae-88ba-4552-995c-69cb3541df65",
+        "review_status": "awaiting_codex_feedback",
+        "schema": "veda.review-handoff.v1",
+        "stage": "Floor 50: Time Eater",
+        "starting_state": {
+          "hp": 69
+        }
+      },
+      "review": {
+        "feedback": null,
+        "implementation_status": "pending",
+        "implementation_summary": null,
+        "status": "awaiting_codex_review"
+      },
+      "screenshot": null
     }
   ],
   "schema": "veda.handoff-dashboard.v1"

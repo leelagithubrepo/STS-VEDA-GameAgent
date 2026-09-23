@@ -37,6 +37,7 @@ from veda.prediction_telemetry import summarize_prediction_telemetry
 from veda.calibration import COMBAT_CRITICAL_FIELDS, LabeledFrame, calibrate
 from veda.routine_combat import plan_routine_combat
 from veda.decision_protocol import build_decision_brief
+from veda.telemetry_database import TelemetryDatabase
 
 
 class FakeAdapter:
@@ -108,6 +109,377 @@ class VedaTests(unittest.TestCase):
         self.assertEqual(document["metadata"]["schema"], "veda.experience.v1")
         self.assertEqual(len(restored.records), 1)
         self.assertEqual(restored.records[0].immediate_outcome, "verified")
+
+    def test_private_sqlite_memory_links_recommendation_outcome_and_review(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            run_id = database.start_or_resume_run(ascension=0)
+            floor_id = database.record_floor(
+                run_id=run_id, act=1, floor=1, node_type="enemy", outcome=None,
+                starting_state={"hp": 67},
+            )
+            combat_id = database.start_combat(
+                run_id=run_id, floor_id=floor_id, opening_state={"hp": 67}, encounter_name="Cultist",
+            )
+            turn_id = database.start_combat_turn(
+                combat_id=combat_id, turn_number=1, phase="combat", opening_state={"hp": 67},
+            )
+            decision_id = database.record_decision(
+                run_id=run_id, phase="combat", state={"hp": 67}, options=[{"card": "Bash"}],
+                recommendation={"card": "Bash"}, reasoning="Applies Vulnerable before damage.",
+                prediction={"enemy_hp": 20}, safety_margin_hp=15, floor_id=floor_id,
+                combat_id=combat_id, turn_id=turn_id,
+            )
+            database.resolve_decision(decision_id=decision_id, chosen_action={"card": "Bash"}, actual_outcome={"enemy_hp": 20})
+            review_id = database.queue_review(
+                run_id=run_id, trigger="boss_complete", priority="important", evidence_ids=[decision_id],
+                summary={"act": 2, "outcome": "victory"}, dedupe_key="collector-act-2",
+            )
+            duplicate = database.queue_review(
+                run_id=run_id, trigger="boss_complete", priority="important", evidence_ids=[decision_id],
+                summary={"act": 2, "outcome": "victory"}, dedupe_key="collector-act-2",
+            )
+            database.record_reviewer_guidance(review_id=review_id, guidance="Keep an exact safety margin.")
+            status = database.status()
+        self.assertEqual(status["runs"], 1)
+        self.assertEqual(status["decisions"], 1)
+        self.assertEqual(status["unresolved_decisions"], 0)
+        self.assertEqual(status["pending_reviews"], 0)
+        self.assertEqual(duplicate, review_id)
+
+    def test_floor_retrospective_links_combat_turn_evidence_and_decision(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            run_id = database.start_or_resume_run(ascension=1)
+            floor_id = database.record_floor(
+                run_id=run_id, act=2, floor=24, node_type="elite", outcome=None,
+                starting_state={"hp": 54, "max_hp": 87},
+            )
+            combat_id = database.start_combat(
+                run_id=run_id, floor_id=floor_id, encounter_name="Gremlin Leader",
+                encounter_type="elite", opening_state={"hp": 54},
+            )
+            turn_id = database.start_combat_turn(
+                combat_id=combat_id, turn_number=1, phase="combat", opening_state={"hp": 54, "energy": 3},
+            )
+            evidence_id = database.record_event(
+                run_id=run_id, floor_id=floor_id, combat_id=combat_id, turn_id=turn_id,
+                kind="combat_state", phase="combat", state={"hp": 54, "enemy_intent": "8x3"},
+                screenshot_path="artifacts/veda-inbox/floor-24.png", source="screenshot", confidence=.97,
+            )
+            decision_id = database.record_decision(
+                run_id=run_id, floor_id=floor_id, combat_id=combat_id, turn_id=turn_id,
+                phase="combat", state={"hp": 54}, options=[{"card": "Defend"}],
+                recommendation={"card": "Defend"}, reasoning="Preserve a positive safety margin.",
+                prediction={"damage_after_block": 3}, screenshot_path="artifacts/veda-inbox/floor-24.png",
+            )
+            database.resolve_decision(
+                decision_id=decision_id, chosen_action={"card": "Defend"}, actual_outcome={"hp": 51},
+            )
+            database.complete_combat_turn(turn_id=turn_id, closing_state={"hp": 51})
+            database.complete_combat(combat_id=combat_id, outcome="victory", closing_state={"hp": 51})
+            database.complete_floor(floor_id=floor_id, outcome="victory", ending_state={"hp": 51})
+            retrospective = database.floor_retrospective(floor_id=floor_id)
+
+        self.assertEqual(
+            set(retrospective["evidence_record_ids"]),
+            {evidence_id, retrospective["decisions"][0]["event_id"]},
+        )
+        self.assertEqual(retrospective["decision_record_ids"], [decision_id])
+        self.assertEqual(retrospective["decisions"][0]["combat_id"], combat_id)
+        self.assertEqual(retrospective["decisions"][0]["turn_id"], turn_id)
+        self.assertEqual(retrospective["combats"][0]["outcome"], "victory")
+        self.assertEqual(retrospective["turns"][0]["turn_number"], 1)
+
+    def test_combat_logging_refuses_missing_or_mismatched_context(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            run_id = database.start_or_resume_run()
+            first_floor = database.record_floor(
+                run_id=run_id, act=1, floor=1, node_type="enemy", outcome=None, starting_state={},
+            )
+            second_floor = database.record_floor(
+                run_id=run_id, act=1, floor=2, node_type="enemy", outcome=None, starting_state={},
+            )
+            combat_id = database.start_combat(run_id=run_id, floor_id=first_floor, opening_state={})
+            turn_id = database.start_combat_turn(combat_id=combat_id, turn_number=1, phase="combat", opening_state={})
+            with self.assertRaisesRegex(ValueError, "combat must be linked to its recorded floor"):
+                database.record_event(
+                    run_id=run_id, floor_id=second_floor, combat_id=combat_id, turn_id=turn_id,
+                    kind="combat_state", phase="combat", state={}, source="veda",
+                )
+            with self.assertRaisesRegex(ValueError, "new decisions must be linked to a recorded floor"):
+                database.record_decision(
+                    run_id=run_id, phase="combat", state={}, options=[], recommendation={},
+                    reasoning="Need evidence.", prediction={}, combat_id=combat_id, turn_id=turn_id,
+                )
+
+    def test_explicit_new_run_archives_matching_active_run_without_erasing_it(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            old_run = database.start_or_resume_run(ascension=1)
+            old_floor = database.record_floor(
+                run_id=old_run, act=1, floor=10, node_type="enemy", outcome="victory", starting_state={},
+            )
+            new_run = database.start_new_run(ascension=1, metadata={"run_label": "A1 second run"})
+            with database._connection() as db:
+                old_status = db.execute("SELECT status, ended_at FROM runs WHERE id = ?", (old_run,)).fetchone()
+                new_status = db.execute("SELECT status, metadata_json FROM runs WHERE id = ?", (new_run,)).fetchone()
+                retained = db.execute("SELECT run_id FROM floors WHERE id = ?", (old_floor,)).fetchone()
+        self.assertNotEqual(old_run, new_run)
+        self.assertEqual(old_status["status"], "abandoned")
+        self.assertIsNotNone(old_status["ended_at"])
+        self.assertEqual(new_status["status"], "active")
+        self.assertEqual(json.loads(new_status["metadata_json"])["run_label"], "A1 second run")
+        self.assertEqual(retained["run_id"], old_run)
+
+    def test_combat_zone_ledger_replays_headbutt_and_refuses_unknown_as_confirmed(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            run_id = database.start_or_resume_run()
+            floor_id = database.record_floor(run_id=run_id, act=1, floor=1, node_type="enemy", outcome=None, starting_state={})
+            combat_id = database.start_combat(run_id=run_id, floor_id=floor_id, opening_state={})
+            turn_id = database.start_combat_turn(combat_id=combat_id, turn_number=1, phase="combat", opening_state={})
+            database.start_combat_zones(
+                combat_id=combat_id, deck=["Strike", "Defend", "Carnage", "Headbutt"],
+                hand=["Strike", "Headbutt"], source="visible opening hand", confidence=.99,
+            )
+            database.record_combat_zone_event(
+                combat_id=combat_id, turn_id=turn_id, kind="play", card_name="Strike",
+                from_zone="hand", to_zone="discard", source="visible play", confidence=.99,
+            )
+            database.record_combat_zone_event(
+                combat_id=combat_id, turn_id=turn_id, kind="return", card_name="Strike",
+                from_zone="discard", to_zone="draw", source="visible Headbutt list", confidence=.99,
+            )
+            known = database.combat_zone_state(combat_id=combat_id)
+            database.record_combat_zone_event(
+                combat_id=combat_id, turn_id=turn_id, kind="unknown", reason="unread random card generation",
+                source="incomplete screen", confidence=.0,
+            )
+            unknown = database.combat_zone_state(combat_id=combat_id)
+        self.assertTrue(known["known"])
+        self.assertNotIn("Carnage", known["eligible_discard_cards"])
+        self.assertIn("Strike", known["zones"]["draw"])
+        self.assertFalse(unknown["known"])
+        self.assertEqual(unknown["eligible_discard_cards"], [])
+        self.assertIn("unread random card generation", unknown["unknown_reasons"])
+
+    def test_inventory_and_visible_map_ledgers_preserve_only_confirmed_facts(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            run_id = database.start_or_resume_run(ascension=1)
+            floor_id = database.record_floor(run_id=run_id, act=1, floor=8, node_type="elite", outcome=None, starting_state={})
+            database.record_inventory_event(
+                run_id=run_id, floor_id=floor_id, item_kind="relic", action="acquired", item_name="Kunai",
+                source="visible reward", confidence=.98,
+            )
+            database.record_inventory_event(
+                run_id=run_id, floor_id=floor_id, item_kind="relic", action="property_confirmed", item_name="Kunai",
+                property_text="Every 3 Attacks played in a single turn, gain 1 Dexterity.", source="visible tooltip", confidence=.99,
+            )
+            database.record_inventory_event(
+                run_id=run_id, floor_id=floor_id, item_kind="potion", action="acquired", item_name="Dexterity Potion",
+                source="visible reward", confidence=.98,
+            )
+            database.record_inventory_event(
+                run_id=run_id, floor_id=floor_id, item_kind="potion", action="consumed", item_name="Dexterity Potion",
+                source="visible use", confidence=.98,
+            )
+            snapshot_id = database.record_map_snapshot(
+                run_id=run_id, floor_id=floor_id, act=1, floor=8, current_node_id="8-current",
+                visible_nodes=[
+                    {"node_id": "8-current", "kind": "elite", "confidence": .99},
+                    {"node_id": "9-rest", "kind": "rest", "confidence": .99},
+                    {"node_id": "9-enemy", "kind": "enemy", "confidence": .97},
+                    {"node_id": "10-merchant", "kind": "merchant", "confidence": .94},
+                ],
+                visible_edges=[
+                    {"from_node_id": "8-current", "to_node_id": "9-rest"},
+                    {"from_node_id": "8-current", "to_node_id": "9-enemy"},
+                    {"from_node_id": "9-rest", "to_node_id": "10-merchant"},
+                ], source="visible map", confidence=.96,
+            )
+            inventory = database.inventory_ledger(run_id=run_id)
+            graph = database.latest_map_snapshot(run_id=run_id)
+            with self.assertRaisesRegex(ValueError, "connect two visible nodes"):
+                database.record_map_snapshot(
+                    run_id=run_id, current_node_id="8-current",
+                    visible_nodes=[{"node_id": "8-current", "kind": "elite", "confidence": .99}],
+                    visible_edges=[{"from_node_id": "8-current", "to_node_id": "future-unknown"}],
+                    source="visible map", confidence=.96,
+                )
+        self.assertEqual(inventory["current"]["relic"], ["Kunai"])
+        self.assertEqual(inventory["current"]["potion"], [])
+        self.assertIn("Every 3 Attacks", inventory["properties"]["relic:kunai"]["property"])
+        self.assertEqual(graph["id"], snapshot_id)
+        self.assertEqual(len(graph["visible_nodes"]), 4)
+        self.assertEqual(len(graph["visible_edges"]), 3)
+
+    def test_inventory_baseline_preserves_current_state_without_backfilling_acquisitions(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            run_id = database.start_or_resume_run(ascension=1)
+            floor_id = database.record_floor(
+                run_id=run_id, act=1, floor=11, node_type="enemy", outcome=None, starting_state={},
+            )
+            database.record_inventory_event(
+                run_id=run_id, floor_id=floor_id, item_kind="card", action="acquired", item_name="Legacy Strike",
+                source="unlinked pre-capture history", confidence=.7,
+            )
+            baseline_id = database.record_inventory_baseline(
+                run_id=run_id, floor_id=floor_id,
+                items=[
+                    {"kind": "relic", "item": "Burning Blood", "property": "Heal 6 HP after combat."},
+                    {"kind": "potion", "item": "Blessing of the Forge"},
+                ],
+                coverage={"card": "unknown", "relic": "partial", "potion": "partial"},
+                source="visible Floor 11 inventory", confidence=.99,
+            )
+            database.record_inventory_event(
+                run_id=run_id, floor_id=floor_id, item_kind="card", action="acquired", item_name="Inflame",
+                source="visible reward", confidence=.98,
+            )
+            inventory = database.inventory_ledger(run_id=run_id)
+
+        self.assertEqual(inventory["current"]["relic"], ["Burning Blood"])
+        self.assertEqual(inventory["current"]["potion"], ["Blessing of the Forge"])
+        self.assertEqual(inventory["current"]["card"], ["Legacy Strike", "Inflame"])
+        self.assertIn("Legacy Strike", inventory["current"]["card"])
+        self.assertEqual(inventory["latest_baseline"]["id"], baseline_id)
+        self.assertEqual(inventory["coverage"], {"card": "unknown", "relic": "partial", "potion": "partial"})
+        self.assertEqual(inventory["current_items"]["relic"][0]["provenance"], "baseline_snapshot")
+        self.assertIn("Heal 6 HP", inventory["properties"]["relic:burning blood"]["property"])
+        self.assertEqual(inventory["history"][0]["action"], "acquired")
+
+    def test_inventory_baseline_refuses_ambiguous_coverage_and_duplicate_relics(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            run_id = database.start_or_resume_run()
+            with self.assertRaisesRegex(ValueError, "coverage"):
+                database.record_inventory_baseline(
+                    run_id=run_id, items=[{"kind": "relic", "item": "Burning Blood"}],
+                    coverage={"relic": "complete"}, source="visible inventory",
+                )
+            with self.assertRaisesRegex(ValueError, "same relic twice"):
+                database.record_inventory_baseline(
+                    run_id=run_id,
+                    items=[{"kind": "relic", "item": "Burning Blood"}, {"kind": "relic", "item": "Burning Blood"}],
+                    coverage={"card": "unknown", "relic": "complete", "potion": "unknown"},
+                    source="visible inventory",
+                )
+
+    def test_floor_completeness_fails_closed_until_evidence_and_outcomes_are_linked(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            run_id = database.start_or_resume_run(ascension=1)
+            floor_id = database.record_floor(
+                run_id=run_id, act=1, floor=1, node_type="enemy", outcome=None, starting_state={},
+            )
+            combat_id = database.start_combat(run_id=run_id, floor_id=floor_id, opening_state={})
+            turn_id = database.start_combat_turn(combat_id=combat_id, turn_number=1, phase="combat", opening_state={})
+            decision_id = database.record_decision(
+                run_id=run_id, floor_id=floor_id, combat_id=combat_id, turn_id=turn_id,
+                phase="combat", state={}, options=[{"card": "Strike"}], recommendation={"card": "Strike"},
+                reasoning="Visible safe attack.", prediction={"enemy_hp": 0},
+            )
+            incomplete = database.floor_completeness(floor_id=floor_id)
+            database.start_combat_zones(
+                combat_id=combat_id, deck=["Strike"], hand=["Strike"], source="visible opening hand",
+            )
+            database.resolve_decision(
+                decision_id=decision_id, chosen_action={"card": "Strike"}, actual_outcome={"enemy_hp": 0},
+            )
+            database.complete_combat_turn(turn_id=turn_id, closing_state={})
+            database.complete_combat(combat_id=combat_id, outcome="victory", closing_state={})
+            database.complete_floor(floor_id=floor_id, outcome="victory", ending_state={})
+            database.record_event(
+                run_id=run_id, floor_id=floor_id, kind="floor_completion_evidence", phase="safe_boundary",
+                state={}, screenshot_path="artifacts/observations/floor-1.png", source="passive-screen-capture",
+            )
+            complete = database.floor_completeness(floor_id=floor_id)
+
+        self.assertFalse(incomplete["review_ready"])
+        self.assertIn("at least one linked screenshot", incomplete["missing"])
+        self.assertIn("1 unresolved decision(s)", incomplete["missing"])
+        self.assertIn("combat-zone base missing for 1 combat(s)", incomplete["missing"])
+        self.assertTrue(complete["review_ready"])
+        self.assertEqual(complete["linked_screenshots"], 1)
+        self.assertEqual(complete["decisions"]["resolved"], 1)
+
+    def test_retrospectives_can_queue_local_review_without_notifying_an_llm(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            run_id = database.start_or_resume_run()
+            database.queue_review(
+                run_id=run_id, trigger="floor_complete", priority="routine", evidence_ids=[],
+                summary={"floor": 32, "outcome": "victory"}, dedupe_key="floor-32",
+            )
+            pending = database.pending_reviews()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["trigger"], "floor_complete")
+
+    def test_builder_requests_keep_game_requirements_separate_from_implementation(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            request_id = database.request_builder_change(
+                requested_by="spire",
+                title="Persist confirmed combat hand",
+                rationale="Future combat advice must use the visible hand.",
+                scope={"acceptance": ["record hand", "record energy"]},
+                dedupe_key="confirmed-combat-hand",
+            )
+            duplicate = database.request_builder_change(
+                requested_by="spire",
+                title="Persist confirmed combat hand",
+                rationale="Future combat advice must use the visible hand.",
+                scope={"acceptance": ["record hand", "record energy"]},
+                dedupe_key="confirmed-combat-hand",
+            )
+            database.update_builder_request(
+                request_id=request_id, status="implemented", summary="Recorded combat snapshots.",
+            )
+            database.update_builder_request(
+                request_id=request_id, status="verified", summary="Focused tests passed.", verification=True,
+            )
+            requests = database.builder_requests()
+        self.assertEqual(duplicate, request_id)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0]["status"], "verified")
+        self.assertEqual(requests[0]["scope"]["acceptance"], ["record hand", "record energy"])
+
+    def test_route_ledger_persists_only_legal_next_nodes_and_audits_tradeoff(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            run_id = database.start_or_resume_run(ascension=1)
+            snapshot_id = database.record_route_snapshot(
+                run_id=run_id, act=3, floor=47, current_node_id="47-current",
+                legal_next_nodes=[
+                    {"node_id": "48-rest", "kind": "rest", "confidence": 0.98},
+                    {"node_id": "48-elite", "kind": "elite", "confidence": 0.93},
+                ],
+                resource_context={"hp": 12, "max_hp": 99, "gold": 76, "potions": ["Smoke Bomb"]},
+                screenshot_path="artifacts/veda-inbox/map.png", source="screenshot", confidence=0.96,
+            )
+            recommendation_id = database.record_route_recommendation(
+                snapshot_id=snapshot_id, selected_node_id="48-rest",
+                safety_rationale="12 HP cannot safely absorb an unknown Elite turn.",
+                reward_tradeoff="Forgo the Elite reward to preserve the run.",
+            )
+            latest = database.latest_route_snapshot(run_id=run_id)
+            with self.assertRaisesRegex(ValueError, "not a recorded legal"):
+                database.record_route_recommendation(
+                    snapshot_id=snapshot_id, selected_node_id="49-merchant",
+                    safety_rationale="Merchant might help.", reward_tradeoff="Unknown future path.",
+                )
+        self.assertTrue(recommendation_id)
+        self.assertEqual(latest["current_node_id"], "47-current")
+        self.assertEqual({node["node_id"] for node in latest["legal_next_nodes"]}, {"48-rest", "48-elite"})
+        self.assertEqual(latest["legal_next_edges"], [
+            {"from_node_id": "47-current", "to_node_id": "48-elite"},
+            {"from_node_id": "47-current", "to_node_id": "48-rest"},
+        ])
+        self.assertEqual(latest["recommendation"]["selected_node_id"], "48-rest")
 
     def test_research_intake_retains_each_selected_source(self):
         base = KnowledgeBase()
@@ -394,6 +766,31 @@ class VedaTests(unittest.TestCase):
         self.assertTrue(result.legal)
         self.assertEqual(result.projected_player_hp, 13)
 
+    def test_combat_validator_rejects_vulnerable_time_eater_multihit_as_lethal(self):
+        result = validate_and_predict(
+            CombatSnapshot(
+                1, player_hp=22, player_vulnerable=1, player_block=0,
+                incoming_damage=30, incoming_hits=(10, 10, 10), end_turn_damage=0,
+                enemies=(CombatEnemy("Time Eater", 100),),
+            ),
+            (CardEffect("Shrug It Off", 1, "Skill", block=8),),
+        )
+        self.assertFalse(result.legal)
+        self.assertTrue(result.lethal)
+        self.assertEqual(result.incoming_damage, 30)
+        self.assertEqual(result.projected_player_hp, 0)
+
+    def test_combat_validator_refuses_vulnerable_multihit_without_hit_data(self):
+        result = validate_and_predict(
+            CombatSnapshot(
+                1, player_hp=22, player_vulnerable=1, player_block=0,
+                incoming_damage=30, end_turn_damage=0, enemies=(CombatEnemy("Time Eater", 100),),
+            ),
+            (CardEffect("Shrug It Off", 1, "Skill", block=8),),
+        )
+        self.assertFalse(result.legal)
+        self.assertIn("player Vulnerable requires confirmed per-hit incoming damage", result.reasons)
+
     def test_boss_identity_requires_readable_name(self):
         self.assertEqual(confirm_boss_identity(visible_name=None), (False, "boss name is not legibly confirmed from the current screen"))
         self.assertEqual(confirm_boss_identity(visible_name="Hexaghost", expected_name="Slime Boss")[0], False)
@@ -530,7 +927,7 @@ class VedaTests(unittest.TestCase):
     def test_routine_planner_defers_until_local_vision_is_calibrated(self):
         state = StructuredGameState(
             "COMBAT", 0.96, act=1, hp=30, max_hp=80, energy=3, block=0,
-            player_strength=0, player_weak=0, player_frail=0, hand=("Strike",),
+            player_strength=0, player_weak=0, player_vulnerable=0, player_frail=0, hand=("Strike",),
             end_turn_damage=0, end_turn_damage_confidence=1.0,
             enemies=(VisibleEnemy("Cultist", 6, 50, "attack 6", block=0, intent_total_damage=6, intent_damage_confidence=1.0),),
         )
@@ -545,7 +942,7 @@ class VedaTests(unittest.TestCase):
         frames = tuple(LabeledFrame(str(index), {field: "ok" for field in COMBAT_CRITICAL_FIELDS}) for index in range(12))
         state = StructuredGameState(
             "COMBAT", 0.96, act=1, hp=30, max_hp=80, energy=1, block=0,
-            player_strength=0, player_weak=0, player_frail=0, hand=("Strike",),
+            player_strength=0, player_weak=0, player_vulnerable=0, player_frail=0, hand=("Strike",),
             end_turn_damage=0, end_turn_damage_confidence=1.0,
             enemies=(VisibleEnemy("Cultist", 6, 50, "attack 6", block=0, intent_total_damage=6, intent_damage_confidence=1.0),),
         )
@@ -556,11 +953,11 @@ class VedaTests(unittest.TestCase):
     def test_preflight_requires_observation_and_arithmetic(self):
         observation = StructuredGameState(
             "COMBAT", 0.95, hp=80, max_hp=80, energy=3, hand=("Strike",),
-            block=0, end_turn_damage=0, end_turn_damage_confidence=1.0,
+            block=0, player_vulnerable=0, end_turn_damage=0, end_turn_damage_confidence=1.0,
             enemies=(VisibleEnemy("Slime", 6, 6, "attack 4", block=0, intent_total_damage=4, intent_damage_confidence=1.0),),
         )
         allowed = preflight_combat(
-            observation, CombatSnapshot(3, hand_size=1, enemies=(CombatEnemy("Slime", 6),)),
+            observation, verify_combat_state(observation).snapshot,
             (CardEffect("Strike", 1, "Attack", attack_damage=6, target="Slime"),),
         )
         self.assertTrue(allowed.allowed)
@@ -578,14 +975,14 @@ class VedaTests(unittest.TestCase):
     def test_human_guided_session_requires_preflight_then_verifies(self):
         before = StructuredGameState(
             "COMBAT", 0.95, hp=80, max_hp=80, energy=3, hand=("Strike",),
-            block=0, end_turn_damage=0, end_turn_damage_confidence=1.0,
+            block=0, player_vulnerable=0, end_turn_damage=0, end_turn_damage_confidence=1.0,
             enemies=(VisibleEnemy("Slime", 6, 6, "attack 4", block=0, intent_total_damage=4, intent_damage_confidence=1.0),),
         )
-        after = StructuredGameState("COMBAT", 0.95, hp=80, max_hp=80, energy=2, block=0, end_turn_damage=0, end_turn_damage_confidence=1.0, hand=(), enemies=())
+        after = StructuredGameState("COMBAT", 0.95, hp=80, max_hp=80, energy=2, block=0, player_vulnerable=0, end_turn_damage=0, end_turn_damage_confidence=1.0, hand=(), enemies=())
         store = ExperienceStore()
         session = HumanGuidedSession(store)
         recommendation = session.recommend(
-            before, CombatSnapshot(3, hand_size=1, enemies=(CombatEnemy("Slime", 6),)),
+            before, verify_combat_state(before).snapshot,
             (CardEffect("Strike", 1, "Attack", attack_damage=6, target="Slime"),), "Lethal is visible.",
         )
         self.assertTrue(recommendation.preflight.allowed)
@@ -626,7 +1023,7 @@ class VedaTests(unittest.TestCase):
             "screen_type": "TITLE", "confidence": 0.9, "selected_item": "Play",
             "visible_actions": ["PLAY"], "character": None, "ascension": None, "act": None, "floor": None,
             "hp": None, "max_hp": None, "energy": None, "block": None, "gold": None,
-            "player_strength": None, "player_weak": None, "player_frail": None,
+            "player_strength": None, "player_weak": None, "player_vulnerable": None, "player_frail": None,
             "boss_name": None, "boss_confidence": 0.0, "encounter_kind": None, "encounter_confidence": 0.0, "map_nodes": [],
             "end_turn_damage": None, "end_turn_damage_confidence": 0.0,
             "hand": [], "enemies": [], "description": "Title screen.",
@@ -671,10 +1068,21 @@ class VedaTests(unittest.TestCase):
         self.assertFalse(readiness.ready)
         self.assertIn("an enemy intent is unknown", readiness.reasons)
 
+    def test_combat_readiness_blocks_vulnerable_multihit_without_hit_data(self):
+        state = StructuredGameState(
+            "COMBAT", 0.95, hp=22, max_hp=80, energy=1, block=0, hand=("Shrug It Off",),
+            player_vulnerable=1, end_turn_damage=0, end_turn_damage_confidence=1.0,
+            enemies=(VisibleEnemy("Time Eater", 100, 456, "attack 10 x3", block=0,
+                                  intent_total_damage=30, intent_damage_confidence=1.0),),
+        )
+        readiness = combat_action_readiness(state)
+        self.assertFalse(readiness.ready)
+        self.assertIn("player Vulnerable requires per-hit enemy intent data", readiness.reasons)
+
     def test_verified_combat_state_builds_survival_snapshot(self):
         state = StructuredGameState(
             "COMBAT", 0.96, hp=26, max_hp=80, energy=3, block=5, hand=("Defend",),
-            end_turn_damage=6, end_turn_damage_confidence=0.95,
+            player_vulnerable=0, end_turn_damage=6, end_turn_damage_confidence=0.95,
             enemies=(VisibleEnemy("Hexaghost", 68, 250, "attack 9 x2", block=0,
                                   intent_total_damage=18, intent_damage_confidence=0.96),),
         )
@@ -683,10 +1091,23 @@ class VedaTests(unittest.TestCase):
         self.assertEqual(verified.snapshot.incoming_damage, 18)
         self.assertEqual(verified.snapshot.end_turn_damage, 6)
 
+    def test_verified_combat_state_preserves_vulnerable_multihit_data(self):
+        state = StructuredGameState(
+            "COMBAT", 0.96, hp=22, max_hp=80, energy=1, block=0, hand=("Shrug It Off",),
+            player_vulnerable=1, end_turn_damage=0, end_turn_damage_confidence=1.0,
+            enemies=(VisibleEnemy("Time Eater", 100, 456, "attack 10 x3", block=0,
+                                  intent_hits=(10, 10, 10), intent_total_damage=30,
+                                  intent_damage_confidence=1.0),),
+        )
+        verified = verify_combat_state(state)
+        self.assertTrue(verified.ready)
+        self.assertEqual(verified.snapshot.player_vulnerable, 1)
+        self.assertEqual(verified.snapshot.incoming_hits, (10, 10, 10))
+
     def test_verified_preflight_refuses_lethal_end_turn(self):
         state = StructuredGameState(
             "COMBAT", 0.96, hp=1, max_hp=80, energy=1, block=0, hand=("Defend",),
-            end_turn_damage=6, end_turn_damage_confidence=1.0,
+            player_vulnerable=0, end_turn_damage=6, end_turn_damage_confidence=1.0,
             enemies=(VisibleEnemy("Hexaghost", 68, 250, "defensive", block=0,
                                   intent_total_damage=0, intent_damage_confidence=1.0),),
         )

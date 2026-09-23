@@ -1,4 +1,4 @@
-# Spire telemetry operating workflow (schema v5)
+# Spire telemetry operating workflow (schema v6)
 
 This is a private, advisory-only logging workflow. It never sends game input,
 starts an LLM review, or invents an unseen game state.
@@ -13,9 +13,13 @@ it never presses a game button. A pre-existing verified still may be used with
 `--screenshot` instead. The commands reject a meaningful decision or completed
 floor without one of those two forms of evidence.
 
-If passive capture fails, grant the Terminal **Screen & System Audio Recording**
-permission in macOS System Settings, then retry the evidence command. Do not
-make a decision claim without the supporting frame.
+If passive capture fails, the command now records a **written fallback** rather
+than losing the turn: no screenshot path, `capture_status: unavailable`, and
+confidence capped at 0.60. Continue logging observed state, options, reasoning,
+action, and outcome; attach a supplied still later when available. Treat these
+as lower-confidence evidence, never screenshot-backed proof. A floor with only
+written fallback remains not review-ready in `floor-completeness`, but its
+telemetry is retained for a later, qualified retrospective.
 
 After every completed floor, run `floor-completeness --floor-id "$FLOOR_ID"`.
 Do not call a floor retrospective review-ready until it reports
@@ -67,6 +71,11 @@ for the immediate legal next nodes used in a route recommendation.
 
 ## Combat state
 
+For new recommendations follow [the checked advisory workflow](spire-advisory.md).
+`combat-observe`, `combat-context`, and `advice-decide` replace free-form combat
+decision logging. The low-level event API remains available for evidence history.
+
+
 At combat entry:
 
 1. Open `combat-start` under the current floor.
@@ -85,10 +94,44 @@ Before advice that depends on a card zone (for example Headbutt), retrieve
 - If `known` is false, inspect the relevant pile or give no zone-dependent
   recommendation.
 
-For every meaningful combat recommendation, create the decision record before
-the player acts with `--capture`, then resolve it after the observed action.
-Routine card movements still go in the zone ledger, but do not require a new
-frame for each card.
+For every meaningful combat recommendation, record a fresh `combat-observe`
+snapshot with `--capture`, check and save `advice-decide`, then resolve the observed action.
+Routine card movements still go in the zone ledger. Re-observe whenever the
+checked plan reaches an observation boundary.
+
+## Elite and boss discipline
+
+For an Elite or boss, give **one executable sequence only**, then wait for the
+result. Record it with `advice-decide` (which enforces one unresolved sequence), resolve it after the observed
+result, or use `resolve --skipped` if the sequence was replaced. The next
+high-stakes sequence is rejected while the previous one remains unresolved.
+This prevents a new line of advice from silently contradicting an earlier one.
+
+Before a boss, create one confirmed inventory snapshot with
+`boss-preflight`. Enter only names actually visible: unread relics, unclear
+potions, or uncertain card identities belong in `unknowns`. They must not be
+used as a combat constraint. Checked boss advice automatically requires this preflight and the reviewed boss manifest.
+
+```zsh
+python3 scripts/veda_memory.py boss-preflight \
+  --run-id "$RUN_ID" --floor-id "$FLOOR_ID" --boss "Bronze Automaton" \
+  --relics '{"items":["Burning Blood","Kunai"]}' \
+  --potions '{"items":["Blood Potion"]}' \
+  --key-cards '{"items":["Corruption","Second Wind"]}' \
+  --unknowns '{"items":["unread relic in fifth slot"]}' --capture
+```
+
+At a safe boundary, give the player a quiet Run Card rather than raw
+telemetry-health messages:
+
+```zsh
+python3 scripts/veda_memory.py run-card --run-id "$RUN_ID" \
+  --next-priority "Recover safely before the next Elite."
+```
+
+It contains only recent wins, current HP/resources, and the next priority.
+Evidence confidence and other internal diagnostics stay in the SQLite record
+unless they prevent safe advice.
 
 ## Reviewable boundary
 

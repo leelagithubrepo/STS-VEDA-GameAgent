@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orchestrator"
+  short_description: "Play Slay the Spire using Spire advice"
+  default_prompt: "Use $orchestrator to play the currently open Slay the Spire run."
