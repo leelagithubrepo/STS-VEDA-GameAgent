@@ -193,3 +193,37 @@ a:focus-visible, button:focus-visible, select:focus-visible { outline: 3px solid
   .history-floor-list .floor-card { grid-template-columns: 1fr; }
   .floor-card .floor-photo img { max-height: 220px; }
 }
+
+/* Automation and self-training visual maps. */
+.automation-panel { margin-top: 27px; padding: 22px; border: 1px solid #cfd0e7; border-radius: 22px; background: linear-gradient(145deg, #f4f3ff, #effcff); }
+.automation-panel-heading, .self-training-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
+.automation-panel-heading .progress-heading { font-size: clamp(1.45rem, 2.4vw, 2rem); }
+.automation-intro { max-width: 620px; margin: 8px 0 0; color: var(--soft); }
+.automation-status { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; color: var(--green); font: 800 .7rem/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+.automation-status i, .training-footer i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px #27895b1c; }
+.automation-map { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-top: 19px; }
+.automation-node { display: flex; gap: 10px; min-height: 104px; padding: 13px; border: 1px solid #d9d8e7; border-radius: 15px; background: #fff; }
+.automation-icon { display: grid; flex: 0 0 30px; width: 30px; height: 30px; place-items: center; border-radius: 10px; background: #edecff; color: var(--indigo); font-size: 1.1rem; font-weight: 900; }
+.automation-node strong { display: block; margin-bottom: 4px; color: var(--ink); font-size: .9rem; }
+.automation-node span:not(.automation-icon) { display: block; color: var(--soft); font-size: .78rem; line-height: 1.35; }
+.automation-node-output { border-color: #a9dfe8; background: #f2fdff; }
+.automation-node-output .automation-icon { background: #d9f7fb; color: #08788a; }
+.automation-rail { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 18px; color: var(--indigo); font: 800 .65rem/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; }
+.automation-rail b { font-size: 1.2rem; }
+.self-training-section { background: #25263a; color: #f7f6f2; }
+.self-training-section .spire-eyebrow { color: var(--cyan); }
+.self-training-section .spire-intro { color: #c5c6d5; }
+.training-score { display: grid; min-width: 110px; padding: 12px 16px; border: 1px solid #5e5f73; border-radius: 15px; background: #303146; text-align: center; }
+.training-score strong { color: var(--cyan); font-size: 2.25rem; line-height: .9; letter-spacing: -.08em; }
+.training-score span { margin-top: 8px; color: #c5c6d5; font: 800 .64rem/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+.training-loop { display: grid; grid-template-columns: repeat(5, 1fr); gap: 9px; margin-top: 24px; }
+.training-loop article { position: relative; min-height: 165px; padding: 16px; border: 1px solid #5e5f73; border-radius: 16px; background: #303146; }
+.training-loop article:not(:last-child)::after { position: absolute; top: 21px; right: -15px; z-index: 1; color: var(--cyan); content: '→'; font-size: 1.2rem; font-weight: 900; }
+.training-step { display: inline-block; margin-bottom: 22px; color: var(--cyan); font: 900 .72rem/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .12em; }
+.training-loop h3 { margin: 0 0 7px; font-size: 1.15rem; }
+.training-loop p { margin: 0; color: #c5c6d5; font-size: .84rem; }
+.training-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; color: #c5c6d5; font-size: .78rem; }
+.training-footer span { display: inline-flex; align-items: center; gap: 8px; }
+.training-footer a { color: var(--cyan); font-weight: 800; text-decoration: none; }
+@media (max-width: 900px) { .automation-map { grid-template-columns: repeat(2, 1fr); } .training-loop { grid-template-columns: repeat(2, 1fr); } .training-loop article:not(:last-child)::after { display: none; } }
+@media (max-width: 650px) { .automation-panel-heading, .self-training-heading, .training-footer { align-items: flex-start; flex-direction: column; } .automation-map, .training-loop { grid-template-columns: 1fr; } .automation-rail { flex-wrap: wrap; gap: 8px; } .training-score { min-width: 100%; } }
