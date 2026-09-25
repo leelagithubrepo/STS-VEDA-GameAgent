@@ -4,19 +4,46 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="VEDA's Slay the Spire advisor, architecture, and reviewed floor-by-floor progress report.">
-  <title>VEDA — Enter the Spire AI Agent</title>
+  <title>VEDA</title>
   <link rel="stylesheet" href="assets/veda-spire.css">
+<style>
+/* Shared left navigation */
+body { padding-left: 248px; }
+.veda-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; width: 248px; display: flex; flex-direction: column; padding: 24px 14px; border-right: 1px solid var(--line); background: rgba(247,246,242,.96); }
+.veda-sidebar-brand { padding: 8px 12px 24px; color: var(--indigo); font: 900 1.25rem/1 ui-sans-serif,system-ui,sans-serif; letter-spacing: .08em; text-decoration: none; }
+.veda-sidebar-nav { display: grid; gap: 4px; }
+.veda-sidebar-link, .veda-sidebar-group summary { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 10px; color: var(--soft); font: 800 .76rem/1.2 ui-sans-serif,system-ui,sans-serif; letter-spacing: .05em; text-decoration: none; text-transform: uppercase; cursor: pointer; list-style: none; }
+.veda-sidebar-link span, .veda-sidebar-group summary span { width: 18px; color: var(--indigo); text-align: center; }
+.veda-sidebar-link:hover, .veda-sidebar-link[aria-current="page"], .veda-sidebar-group summary:hover { background: #edecff; color: var(--ink); }
+.veda-sidebar-group summary::-webkit-details-marker { display: none; }
+.veda-sidebar-subnav { display: grid; gap: 2px; margin: 2px 0 7px 28px; border-left: 1px solid var(--line); padding-left: 10px; }
+.veda-sidebar-subnav a { padding: 7px 8px; color: var(--soft); font: 700 .76rem/1.2 ui-sans-serif,system-ui,sans-serif; text-decoration: none; }
+.veda-sidebar-subnav a:hover, .veda-sidebar-subnav a[aria-current="page"] { color: var(--indigo); }
+.veda-sidebar-note { margin-top: auto; padding: 13px 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--soft); font: 700 .72rem/1.4 ui-sans-serif,system-ui,sans-serif; letter-spacing: .04em; }
+@media (max-width: 900px) { body { padding-left: 0; } .veda-sidebar { position: static; width: auto; padding: 10px 14px; border-right: 0; border-bottom: 1px solid var(--line); } .veda-sidebar-brand { padding: 8px 10px 12px; } .veda-sidebar-nav { display: flex; align-items: flex-start; overflow-x: auto; } .veda-sidebar-group { min-width: 185px; } .veda-sidebar-note { display: none; } }
+</style>
 </head>
 <body>
-  <nav class="spire-nav" aria-label="Primary">
-    <div class="spire-wrap">
-      <a class="spire-brand" href="index.html">VEDA</a>
-      <div class="spire-navlinks">
-        <a href="index.html">Home</a>
-        <a href="#enter-spire" aria-current="page">Enter the Spire AI Agent</a>
-      </div>
-    </div>
-  </nav>
+
+  <aside class="veda-sidebar" aria-label="Site navigation">
+    <a class="veda-sidebar-brand" href="index.html">VEDA</a>
+    <nav class="veda-sidebar-nav">
+      <a class="veda-sidebar-link" href="index.html"><span>⌂</span>Home</a>
+      <details class="veda-sidebar-group" open>
+        <summary><span>✦</span>Slay the Spire</summary>
+        <div class="veda-sidebar-subnav">
+          <a href="#enter-spire" aria-current="page">Enter the Spire</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#live-progress">Progress Report</a>
+          <a href="#learned-title">What I Learned</a>
+          <a href="#history-title">Run History</a>
+        </div>
+      </details>
+      <a class="veda-sidebar-link" href="index.html#civilization"><span>◈</span>Civilization</a>
+    </nav>
+    <p class="veda-sidebar-note">Observe · Advise · Remember</p>
+  </aside>
+
 
   <header id="enter-spire" class="spire-wrap spire-hero">
     <div class="spire-hero-copy">
