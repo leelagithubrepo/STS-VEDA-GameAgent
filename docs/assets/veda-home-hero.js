@@ -14,6 +14,7 @@
   let filmFailed = false;
   let stingFailed = false;
   film.muted = true;
+  film.loop = false;
   film.volume = 0.8;
   sting.volume = 0.8;
   controls.hidden = false;
@@ -40,14 +41,10 @@
   for (const media of [film, sting]) {
     for (const event of ['play', 'pause', 'volumechange']) media.addEventListener(event, syncControls);
   }
-  film.addEventListener('timeupdate', () => {
-    hero.classList.toggle('route-arrived', !reducedMotion.matches && film.currentTime >= 4 && film.currentTime < 6.5);
-  });
   film.addEventListener('ended', () => {
     finished = true;
     film.muted = true;
-    film.loop = true;
-    film.currentTime = 6.4;
+    film.currentTime = 8.9;
     film.pause();
     syncControls();
   });
@@ -85,9 +82,7 @@
     if (event.matches) {
       film.pause();
       film.muted = true;
-      film.loop = true;
       resumeFilm = false;
-      hero.classList.remove('route-arrived');
     }
     syncControls();
   });
