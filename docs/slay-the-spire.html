@@ -90,7 +90,7 @@ body { padding-left: 248px; }
 
     <section id="live-progress" class="spire-section alt" aria-labelledby="progress-title">
       <div class="spire-wrap">
-        <p class="spire-eyebrow">Progress Report · updated September 22, 2026</p>
+        <p class="spire-eyebrow">Progress Report · updated September 25, 2026</p>
         <h2 id="progress-title">A climb VEDA can remember.</h2>
         <p class="spire-intro">A player progression and run-history view built from supplied statistics, verified floor evidence, and clearly marked gaps. When the ledger does not know, the page says so.</p>
 
@@ -166,13 +166,21 @@ body { padding-left: 248px; }
           <h3 id="history-title" class="progress-heading">Every climb, newest evidence first.</h3>
           <p class="history-intro">Matching floor images are shown where available. Related gameplay and run overviews are labeled when an exact floor image is missing.</p>
           <form class="history-filters" aria-label="Run history filters">
-            <label>Ascension<select id="history-ascension"><option value="all">All Ascensions</option><option value="0">Ascension 0</option><option value="1">Ascension 1</option><option value="ongoing">Ongoing</option></select></label>
+            <label>Ascension<select id="history-ascension"><option value="all">All Ascensions</option><option value="0">Ascension 0</option><option value="1">Ascension 1</option><option value="2">Ascension 2</option><option value="ongoing">Ongoing</option></select></label>
             <label>Act<select id="history-act"><option value="all">All Acts</option><option value="1">Act 1</option><option value="2">Act 2</option><option value="3">Act 3</option></select></label>
             <label>Floor<select id="history-floor"><option value="all">All available floors</option></select></label>
           </form>
           <p id="history-filter-status" class="history-filter-status" role="status" aria-live="polite">Showing all runs and available floor evidence.</p>
 
           <div id="run-history-list" class="run-history-list">
+            <article class="run-history-group" data-ascension="2" data-run-state="ongoing">
+              <div class="run-group-heading"><div><span class="label">Ongoing · updated September 25, 2026</span><h4>Ascension 2 · Run 1</h4><p>Ironclad · Act 2 transition reached · current run</p></div><span class="floor-status ongoing">Ongoing</span></div>
+              <article class="floor-card run-summary-card history-item" data-history-item data-ascension="2" data-run-state="ongoing" data-act="all" data-floor=""><figure class="floor-photo"><a href="assets/run-archive/asc2-run1-guardian-reward.png"><img src="assets/run-archive/asc2-run1-guardian-reward.png" alt="Ascension 2 Ironclad Guardian reward screen with Black Blood selected" loading="lazy" decoding="async"></a><figcaption>Guardian reward · Floor 16</figcaption></figure><div class="floor-copy"><div class="floor-topline"><span class="floor-number">Ongoing run · Act 1 complete</span><span class="floor-status ongoing">Ongoing</span></div><h3>Guardian defeated</h3><p><strong>Current state:</strong> 43/80 HP at the Act 2 transition; Black Blood replaced Burning Blood and Distilled Chaos was acquired.</p><p><strong>Verified result:</strong> Act 1 Floor 16 Guardian victory. The card reward was skipped; 96 gold was recorded.</p><p><strong>Evidence boundary:</strong> The run is active and the Act 2 map state has not yet been added to the public ledger.</p></div></article>
+              <div class="floor-list history-floor-list">
+                <article class="floor-card history-item" data-history-item data-ascension="2" data-run-state="ongoing" data-act="1" data-floor="16"><figure class="floor-photo"><a href="assets/run-archive/asc2-run1-guardian-reward.png"><img src="assets/run-archive/asc2-run1-guardian-reward.png" alt="Ascension 2 Ironclad Guardian reward screen showing the boss reward" loading="lazy" decoding="async"></a><figcaption>Floor 16 · Guardian reward</figcaption></figure><div class="floor-copy"><div class="floor-topline"><span class="floor-number">Floor 16</span><span class="floor-status complete">Boss victory</span></div><h3>Guardian</h3><p><strong>What I did:</strong> Completed the Act 1 boss fight and selected Black Blood from the boss relic choices.</p><p><strong>What I accomplished:</strong> Victory at 43/80 HP; Distilled Chaos and 96 gold recorded, with the card reward skipped.</p><p><strong>What I learned:</strong> Preserve block through Guardian’s attack mode and verify each reward screen before carrying state into Act 2.</p></div></article>
+              </div>
+            </article>
+
             <article class="run-history-group" data-ascension="1" data-run-state="completed">
               <div class="run-group-heading"><div><span class="label">Completed September 22, 2026</span><h4>Ascension 1 · Run 2</h4><p>Ironclad · Score 802 · three bosses defeated</p></div><span class="floor-status complete">Victory</span></div>
               <article class="floor-card run-summary-card history-item" data-history-item data-ascension="1" data-run-state="completed" data-act="all" data-floor=""><figure class="floor-photo"><a href="assets/run-archive/history-asc1-run2.png"><img src="assets/run-archive/history-asc1-run2.png" alt="Ascension 1 Run 2 victory, score 802, 16 relics and 40 cards" loading="lazy" decoding="async"></a><figcaption>Run history · September 22, 2026</figcaption></figure><div class="floor-copy"><div class="floor-topline"><span class="floor-number">Completed run · Floor 51</span><span class="floor-status complete">Victory</span></div><h3>Time Eater defeated</h3><p><strong>Final resources:</strong> 74/74 HP · 112 gold · 40 cards · 16 relics · Fairy in a Bottle unused.</p><p><strong>Result:</strong> 51 floors climbed and three bosses defeated. The ending is “Victory?”; no Heart combat victory is claimed.</p><p><strong>Evidence:</strong> Player-confirmed boss defeat and final-results screenshots. The intermediate combat actions were not fully logged.</p></div></article>
