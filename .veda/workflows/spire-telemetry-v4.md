@@ -40,6 +40,29 @@ python3 scripts/veda_memory.py run-new --ascension 1 --metadata '{"capture_start
 
 At each visible floor entry, open `floor-start`. At exit, use `floor-finish`.
 
+## Session timing and safe pauses
+
+Wall-clock time is not active play time. Before pausing, record an explicit
+checkpoint at a safe boundary (or mark the current combat as paused) and close
+the warm bridge. Resume only after a fresh screen and bridge preflight have
+been recorded. Checkpoints must alternate `pause` and `resume`; the
+`session-time` report subtracts paused intervals and exposes an open pause.
+
+```zsh
+python3 scripts/veda_memory.py session-checkpoint --run-id "$RUN_ID" \
+  --kind pause --boundary map --state '{"screen":"map"}'
+python3 scripts/veda_memory.py session-time --run-id "$RUN_ID"
+```
+
+Before any controller input in a resumed session, record the read-only bridge
+checks. Delivery remains unverified until the next screen visibly changes.
+
+```zsh
+python3 scripts/veda_memory.py bridge-preflight --run-id "$RUN_ID" \
+  --state '{"screen":"map"}' \
+  --checks '{"bridge_ready":true,"screen_fresh":true,"exclusive_client":true}'
+```
+
 ## Persistent run facts
 
 Record every confirmed card, relic, and potion acquisition/removal/consumption

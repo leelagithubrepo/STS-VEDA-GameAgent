@@ -21,7 +21,7 @@ from uuid import uuid4
 from .advisory_memory import AdvisoryMemory
 
 
-SCHEMA_VERSION = "veda.telemetry.sqlite.v6"
+SCHEMA_VERSION = "veda.telemetry.sqlite.v7"
 
 
 def _now() -> str:
@@ -97,6 +97,21 @@ class TelemetryDatabase(AdvisoryMemory):
                     status TEXT NOT NULL CHECK(status IN ('active', 'completed', 'abandoned')),
                     metadata_json TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS session_checkpoints (
+                    id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL REFERENCES runs(id),
+                    floor_id TEXT REFERENCES floors(id),
+                    combat_id TEXT REFERENCES combats(id),
+                    kind TEXT NOT NULL CHECK(kind IN ('pause', 'resume')),
+                    boundary TEXT NOT NULL CHECK(boundary IN ('map', 'reward', 'combat', 'event', 'controller', 'other')),
+                    observed_at TEXT NOT NULL,
+                    state_json TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    screenshot_path TEXT,
+                    source TEXT NOT NULL,
+                    confidence REAL
+                );
+                CREATE INDEX IF NOT EXISTS session_checkpoints_by_run ON session_checkpoints(run_id, observed_at, id);
                 CREATE TABLE IF NOT EXISTS floors (
                     id TEXT PRIMARY KEY,
                     run_id TEXT NOT NULL REFERENCES runs(id),
@@ -876,6 +891,132 @@ class TelemetryDatabase(AdvisoryMemory):
                 (event_id, run_id, floor_id, kind.strip(), phase.strip(), _now(), _json(state), _json(payload), screenshot_path, source.strip(), confidence, combat_id, turn_id),
             )
         return event_id
+
+    def record_session_checkpoint(
+        self,
+        *,
+        run_id: str,
+        kind: str,
+        boundary: str,
+        state: dict[str, Any],
+        payload: dict[str, Any] | None = None,
+        floor_id: str | None = None,
+        combat_id: str | None = None,
+        screenshot_path: str | None = None,
+        source: str = "veda",
+        confidence: float | None = None,
+        observed_at: str | None = None,
+    ) -> str:
+        """Record a safe pause/resume boundary for active-time accounting.
+
+        A checkpoint is deliberately separate from a floor or combat outcome:
+        pausing inside combat is allowed, but it must be explicit so elapsed
+        reports do not mistake an overnight gap for gameplay.
+        """
+        if kind not in {"pause", "resume"}:
+            raise ValueError("checkpoint kind must be pause or resume")
+        if boundary not in {"map", "reward", "combat", "event", "controller", "other"}:
+            raise ValueError("unsupported checkpoint boundary")
+        if not source.strip():
+            raise ValueError("checkpoint source is required")
+        if confidence is not None and not 0 <= confidence <= 1:
+            raise ValueError("checkpoint confidence must be between 0 and 1")
+        self.initialize()
+        checkpoint_id = str(uuid4())
+        with self._connection() as db:
+            run = db.execute("SELECT status FROM runs WHERE id = ?", (run_id,)).fetchone()
+            if run is None:
+                raise ValueError("unknown run")
+            if run["status"] != "active":
+                raise ValueError("cannot checkpoint a closed run")
+            if floor_id is not None:
+                floor = db.execute("SELECT run_id FROM floors WHERE id = ?", (floor_id,)).fetchone()
+                if floor is None or floor["run_id"] != run_id:
+                    raise ValueError("checkpoint floor belongs to a different run")
+            if combat_id is not None:
+                combat = db.execute("SELECT run_id FROM combats WHERE id = ?", (combat_id,)).fetchone()
+                if combat is None or combat["run_id"] != run_id:
+                    raise ValueError("checkpoint combat belongs to a different run")
+            last = db.execute(
+                "SELECT kind FROM session_checkpoints WHERE run_id = ? ORDER BY observed_at DESC, id DESC LIMIT 1",
+                (run_id,),
+            ).fetchone()
+            if kind == "pause" and last is not None and last["kind"] == "pause":
+                raise ValueError("run is already paused")
+            if kind == "resume" and (last is None or last["kind"] != "pause"):
+                raise ValueError("resume requires a prior pause checkpoint")
+            db.execute(
+                "INSERT INTO session_checkpoints "
+                "(id, run_id, floor_id, combat_id, kind, boundary, observed_at, state_json, payload_json, screenshot_path, source, confidence) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (checkpoint_id, run_id, floor_id, combat_id, kind, boundary, observed_at or _now(),
+                 _json(state), _json(payload), screenshot_path, source.strip(), confidence),
+            )
+        return checkpoint_id
+
+    def session_time_report(self, *, run_id: str, now: str | None = None) -> dict[str, Any]:
+        """Report wall and active time, subtracting explicitly paused intervals."""
+        self.initialize()
+        with self._connection() as db:
+            run = db.execute("SELECT started_at, ended_at, status FROM runs WHERE id = ?", (run_id,)).fetchone()
+            if run is None:
+                raise ValueError("unknown run")
+            checkpoints = db.execute(
+                "SELECT kind, observed_at, boundary FROM session_checkpoints WHERE run_id = ? ORDER BY observed_at, id",
+                (run_id,),
+            ).fetchall()
+        end_at = run["ended_at"] or now or _now()
+        started = datetime.fromisoformat(run["started_at"])
+        ended = datetime.fromisoformat(end_at)
+        wall_seconds = max(0.0, (ended - started).total_seconds())
+        paused_seconds = 0.0
+        pause_started: datetime | None = None
+        intervals: list[dict[str, Any]] = []
+        for checkpoint in checkpoints:
+            timestamp = datetime.fromisoformat(checkpoint["observed_at"])
+            if checkpoint["kind"] == "pause":
+                pause_started = timestamp
+            elif pause_started is not None:
+                seconds = max(0.0, (timestamp - pause_started).total_seconds())
+                paused_seconds += seconds
+                intervals.append({"started_at": pause_started.isoformat(), "ended_at": timestamp.isoformat(), "seconds": seconds})
+                pause_started = None
+        if pause_started is not None:
+            seconds = max(0.0, (ended - pause_started).total_seconds())
+            paused_seconds += seconds
+            intervals.append({"started_at": pause_started.isoformat(), "ended_at": end_at, "seconds": seconds, "open": True})
+        return {
+            "run_id": run_id,
+            "status": run["status"],
+            "started_at": run["started_at"],
+            "ended_at": end_at,
+            "wall_seconds": wall_seconds,
+            "paused_seconds": paused_seconds,
+            "active_seconds": max(0.0, wall_seconds - paused_seconds),
+            "paused": pause_started is not None,
+            "intervals": intervals,
+        }
+
+    def record_bridge_preflight(
+        self,
+        *,
+        run_id: str,
+        state: dict[str, Any],
+        checks: dict[str, Any],
+        delivery_verified: bool = False,
+        floor_id: str | None = None,
+        screenshot_path: str | None = None,
+        source: str = "veda",
+        confidence: float | None = None,
+    ) -> str:
+        """Persist the read-only bridge checks before controller input."""
+        if not isinstance(checks, dict) or not checks:
+            raise ValueError("bridge preflight checks are required")
+        return self.record_event(
+            run_id=run_id, floor_id=floor_id, kind="bridge_preflight", phase="controller_preflight",
+            state=state, payload={"checks": checks, "delivery_verified": bool(delivery_verified)},
+            screenshot_path=screenshot_path, source=source, confidence=confidence,
+        )
 
     @staticmethod
     def _confirmed_inventory_names(items: list[str], *, label: str) -> list[str]:

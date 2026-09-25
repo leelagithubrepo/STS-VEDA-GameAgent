@@ -110,6 +110,33 @@ def main() -> int:
     run_new.add_argument("--ascension", type=int)
     run_new.add_argument("--metadata", type=_document, default={})
 
+    checkpoint = commands.add_parser("session-checkpoint", help="record an explicit safe pause or resume boundary")
+    checkpoint.add_argument("--run-id", required=True)
+    checkpoint.add_argument("--kind", choices=("pause", "resume"), required=True)
+    checkpoint.add_argument("--boundary", choices=("map", "reward", "combat", "event", "controller", "other"), required=True)
+    checkpoint.add_argument("--state", type=_document, required=True)
+    checkpoint.add_argument("--payload", type=_document, default={})
+    checkpoint.add_argument("--floor-id")
+    checkpoint.add_argument("--combat-id")
+    checkpoint.add_argument("--screenshot")
+    checkpoint.add_argument("--source", default="veda")
+    checkpoint.add_argument("--confidence", type=float)
+    checkpoint.add_argument("--observed-at")
+
+    bridge_preflight = commands.add_parser("bridge-preflight", help="record read-only bridge checks before controller input")
+    bridge_preflight.add_argument("--run-id", required=True)
+    bridge_preflight.add_argument("--state", type=_document, required=True)
+    bridge_preflight.add_argument("--checks", type=_document, required=True)
+    bridge_preflight.add_argument("--delivery-verified", action="store_true")
+    bridge_preflight.add_argument("--floor-id")
+    bridge_preflight.add_argument("--screenshot")
+    bridge_preflight.add_argument("--source", default="veda")
+    bridge_preflight.add_argument("--confidence", type=float)
+
+    session_time = commands.add_parser("session-time", help="report wall time minus explicit paused intervals")
+    session_time.add_argument("--run-id", required=True)
+    session_time.add_argument("--now")
+
     floor_start = commands.add_parser("floor-start", help="open a floor before logging its decisions")
     floor_start.add_argument("--run-id", required=True)
     floor_start.add_argument("--act", type=int)
@@ -397,6 +424,21 @@ def main() -> int:
         print(database.start_new_run(
             game=args.game, character_name=args.character, ascension=args.ascension, metadata=args.metadata,
         ))
+    elif args.command == "session-checkpoint":
+        print(database.record_session_checkpoint(
+            run_id=args.run_id, kind=args.kind, boundary=args.boundary, state=args.state,
+            payload=args.payload, floor_id=args.floor_id, combat_id=args.combat_id,
+            screenshot_path=args.screenshot, source=args.source, confidence=args.confidence,
+            observed_at=args.observed_at,
+        ))
+    elif args.command == "bridge-preflight":
+        print(database.record_bridge_preflight(
+            run_id=args.run_id, state=args.state, checks=args.checks,
+            delivery_verified=args.delivery_verified, floor_id=args.floor_id,
+            screenshot_path=args.screenshot, source=args.source, confidence=args.confidence,
+        ))
+    elif args.command == "session-time":
+        print(json.dumps(database.session_time_report(run_id=args.run_id, now=args.now), indent=2, sort_keys=True))
     elif args.command == "floor-start":
         print(database.record_floor(
             run_id=args.run_id, act=args.act, floor=args.floor, node_type=args.node_type,

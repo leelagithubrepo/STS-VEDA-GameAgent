@@ -11,6 +11,48 @@ from veda.telemetry_database import TelemetryDatabase
 
 
 class TelemetryEvidenceTests(unittest.TestCase):
+    def test_session_checkpoints_subtract_paused_time_and_require_alternation(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            with patch("veda.telemetry_database._now", return_value="2026-09-25T08:00:00+00:00"):
+                run_id = database.start_or_resume_run(ascension=2)
+                database.record_session_checkpoint(
+                    run_id=run_id, kind="pause", boundary="map", state={"screen": "map"},
+                    observed_at="2026-09-25T09:00:00+00:00",
+                )
+            with self.assertRaisesRegex(ValueError, "already paused"):
+                database.record_session_checkpoint(
+                    run_id=run_id, kind="pause", boundary="map", state={},
+                    observed_at="2026-09-25T09:05:00+00:00",
+                )
+            database.record_session_checkpoint(
+                run_id=run_id, kind="resume", boundary="controller", state={"screen": "map"},
+                observed_at="2026-09-25T10:30:00+00:00",
+            )
+            report = database.session_time_report(run_id=run_id, now="2026-09-25T11:00:00+00:00")
+
+        self.assertEqual(10_800, report["wall_seconds"])
+        self.assertEqual(5_400, report["paused_seconds"])
+        self.assertEqual(5_400, report["active_seconds"])
+        self.assertFalse(report["paused"])
+
+    def test_bridge_preflight_is_recorded_without_claiming_delivery(self):
+        with TemporaryDirectory() as directory:
+            database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
+            run_id = database.start_or_resume_run(ascension=2)
+            event_id = database.record_bridge_preflight(
+                run_id=run_id, state={"screen": "reward"},
+                checks={"bridge_ready": True, "screen_fresh": True},
+            )
+            report = database.combat_ledger(run_id=run_id)
+            with database._connection() as db:
+                event = db.execute("SELECT * FROM evidence_events WHERE id = ?", (event_id,)).fetchone()
+
+        self.assertEqual("bridge_preflight", event["kind"])
+        self.assertEqual("controller_preflight", event["phase"])
+        self.assertFalse(__import__("json").loads(event["payload_json"])["delivery_verified"])
+        self.assertEqual([], report)
+
     def test_boss_preflight_preserves_unknowns_and_guards_high_stakes_advice(self):
         with TemporaryDirectory() as directory:
             database = TelemetryDatabase(Path(directory) / "veda.sqlite3")
