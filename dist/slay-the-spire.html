@@ -35,6 +35,8 @@ body { padding-left: 248px; }
         <div class="veda-sidebar-subnav">
           <a href="#enter-spire" aria-current="page">Enter the Spire</a>
           <a href="#architecture">Architecture</a>
+          <a href="#automation">Agent / skill automation</a>
+          <a href="#self-training">VEDA self-training</a>
           <a href="#live-progress">Progress Report</a>
           <a href="#learned-title">What I Learned</a>
           <a href="#history-title">Run History</a>
@@ -86,6 +88,57 @@ body { padding-left: 248px; }
           <article class="spire-card skill-card"><strong>Builder skill</strong><h3>Product engineer</h3><p><b>Purpose:</b> implement approved telemetry, reports, architecture, and site changes.</p><p><b>Intention:</b> preserve scope, test the change, and wait for explicit approval before publishing or changing an approved surface.</p></article>
         </div>
         <p class="flow-note"><b>End-to-end:</b> Spire observes → writes evidence → MIRA reviews the user-facing result → Builder implements an approved improvement → tests verify behavior and reviewed summaries update the report → Spire uses the verified capability on the next run.</p>
+
+
+      </div>
+    </section>
+
+
+    <section id="automation" class="spire-section" aria-labelledby="automation-section-title">
+      <div class="spire-wrap">
+        <p class="spire-eyebrow">Agent / skill automation</p>
+        <h2 id="automation-section-title">The run is wired as an evidence system.</h2>
+        <p class="spire-intro">Each layer turns a live screen into a checked decision, a durable record, or a safer next action.</p>
+        <div class="automation-panel" aria-labelledby="automation-title">
+          <div class="automation-panel-heading">
+            <div>
+              <h3 id="automation-title" class="progress-heading">Automation layers</h3>
+            </div>
+            <span class="automation-status"><i></i> Connected loop</span>
+          </div>
+          <div class="automation-map" role="list" aria-label="VEDA automation layers">
+            <article class="automation-node" role="listitem"><span class="automation-icon">◌</span><div><strong>Telemetry</strong><span>Screen evidence, floors, rewards, outcomes, and SQLite run history.</span></div></article>
+            <article class="automation-node" role="listitem"><span class="automation-icon">▦</span><div><strong>Cards</strong><span>Deck state, costs, upgrades, damage, block, and legal play checks.</span></div></article>
+            <article class="automation-node" role="listitem"><span class="automation-icon">✦</span><div><strong>Relics</strong><span>Relic triggers and persistent modifiers carried into each recommendation.</span></div></article>
+            <article class="automation-node" role="listitem"><span class="automation-icon">◈</span><div><strong>Potions</strong><span>Slots, effects, timing, discard decisions, and shop availability.</span></div></article>
+            <article class="automation-node" role="listitem"><span class="automation-icon">≋</span><div><strong>Rules engine</strong><span>Intent, lethal lines, thresholds, uncertainty, and regression-tested rules.</span></div></article>
+            <article class="automation-node" role="listitem"><span class="automation-icon">⇄</span><div><strong>Bridge connection</strong><span>Health checks, recovery, sleep-mode detection, and fresh observations.</span></div></article>
+            <article class="automation-node" role="listitem"><span class="automation-icon">⌘</span><div><strong>Controller control</strong><span>Explicitly armed actions, one move at a time, verified from the next screen.</span></div></article>
+            <article class="automation-node automation-node-output" role="listitem"><span class="automation-icon">↗</span><div><strong>Advisor output</strong><span>One evidence-bound recommendation, logged with what happened next.</span></div></article>
+          </div>
+          <div class="automation-rail" aria-hidden="true"><span>observe</span><b>→</b><span>understand</span><b>→</b><span>advise</span><b>→</b><span>verify</span><b>→</b><span>remember</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="self-training" class="spire-section self-training-section" aria-labelledby="self-training-title">
+      <div class="spire-wrap">
+        <div class="self-training-heading">
+          <div>
+            <p class="spire-eyebrow">VEDA self-training</p>
+            <h2 id="self-training-title">How the orchestrator gets better by itself.</h2>
+            <p class="spire-intro">VEDA learns from verified outcomes, keeps uncertainty visible, and promotes a lesson only when the evidence and tests support it.</p>
+          </div>
+          <div class="training-score" aria-label="Self-training loop status"><strong>5</strong><span>steps in the loop</span></div>
+        </div>
+        <div class="training-loop" role="list" aria-label="VEDA self-training loop">
+          <article role="listitem"><span class="training-step">01</span><h3>Observe</h3><p>Capture a fresh screen and identify the confirmed game state.</p></article>
+          <article role="listitem"><span class="training-step">02</span><h3>Predict</h3><p>Model legal cards, relics, potions, intent, and the safest line.</p></article>
+          <article role="listitem"><span class="training-step">03</span><h3>Act</h3><p>Recommend or execute one explicitly authorized controller action.</p></article>
+          <article role="listitem"><span class="training-step">04</span><h3>Verify</h3><p>Compare the next screen with the expected result and record the gap.</p></article>
+          <article role="listitem"><span class="training-step">05</span><h3>Learn</h3><p>Turn repeatable evidence into a tested rule and a clearer next run.</p></article>
+        </div>
+        <div class="training-footer"><span><i></i> Current mode: evidence-bound</span><span>Last focus: controller recovery, boss thresholds, and reward telemetry</span><a href="#live-progress">See the progress report ↓</a></div>
       </div>
     </section>
 
@@ -110,14 +163,6 @@ body { padding-left: 248px; }
             <div class="stat-card"><strong>86/178</strong><span>Relics discovered</span></div>
             <div class="stat-card"><strong>3/24</strong><span>Relics unlocked</span></div>
             <div class="stat-card"><strong>04h 09m 47s</strong><span>Fastest victory</span></div>
-          </div>
-          <div class="achievement-evidence">
-            <div>
-              <p class="spire-eyebrow">Achievement Evidence</p>
-              <h3>Statistics reference</h3>
-              <p>These values are an earlier in-game Overall Statistics reference and have not been refreshed after the latest victory. That screenshot is not present in the local archive, so no unrelated image is substituted as proof.</p>
-            </div>
-            <div class="history-placeholder stats-evidence-placeholder" role="img" aria-label="Overall Statistics screenshot is not available in the local archive"><strong>No screenshot available</strong><span>Reference values preserved above.</span></div>
           </div>
         </div>
 
