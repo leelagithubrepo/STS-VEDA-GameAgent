@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import json
 from uuid import uuid4
 from functools import wraps
+from collections import Counter
 
 from .advisory import (validate_snapshot, relevant_rules, boss_manifest, check_plan,
                        state_digest, campfire_comparison)
@@ -17,6 +18,50 @@ def atomic(method):
 
 
 class AdvisoryMemory:
+    @atomic
+    def record_evidence_snapshot(self, *, journal, source_files, source):
+        """Persist only current source-checked evidence in the existing ledger.
+
+        Replay results cannot enter live advisory memory. The inventory and
+        encounter must agree with SQLite; the imported journal cannot silently
+        replace stored potion history or downgrade a boss to an ordinary fight.
+        """
+        from .evidence_advisory import check_evidence
+        result = check_evidence(journal, source_files=source_files, mode='review')
+        if not result['advisory_ready']:
+            raise ValueError('complete current inspected evidence is required before storing a combat snapshot')
+        binding = result['snapshot']['context']
+        self.initialize()
+        with self._connection() as db:
+            self._validate_event_context(db, **binding)
+            combat = db.execute('SELECT c.encounter_type,c.encounter_name,r.ascension,r.status FROM combats c '
+                                'JOIN runs r ON r.id=c.run_id WHERE c.id=?', (binding['combat_id'],)).fetchone()
+            if combat is None or combat['status'] != 'active':
+                raise ValueError('current evidence needs an active recorded combat/run')
+        context = result['context']
+        observed_enemy = result['snapshot']['sections']['enemies']['data']
+        if (context['encounter_type'] != combat['encounter_type']
+                or observed_enemy.get('encounter_name') != combat['encounter_name']
+                or context['state']['ascension'] != combat['ascension']):
+            raise ValueError('observed encounter or Ascension disagrees with SQLite')
+        inventory = self.inventory_ledger(run_id=binding['run_id'], include_history=False)
+        for category in ('card', 'relic', 'potion'):
+            offered = context['inventory']
+            if (Counter(offered['current'][category]) != Counter(inventory['current'][category])
+                    or offered['coverage'][category] != inventory['coverage'][category]):
+                raise ValueError('observed inventory disagrees with SQLite; record confirmed inventory changes first')
+        ident = self.record_advisory_snapshot(**binding, state=context['state'], source=source,
+            screenshot_path=result['sources'][result['snapshot']['frame']['image_sha256']]['path'])
+        with self._connection() as db:
+            payload = json.loads(db.execute('SELECT payload_json FROM evidence_events WHERE id=?',(ident,)).fetchone()[0])
+            payload['evidence_journal'] = journal
+            payload['source_files'] = result['sources']
+            payload['provenance_kinds'] = result['provenance_kinds']
+            payload['controller_authorized'] = False
+            db.execute('UPDATE evidence_events SET payload_json=? WHERE id=?',(json.dumps(payload),ident))
+        return {'snapshot_id': ident, 'controller_authorized': False,
+                'provenance_kinds': result['provenance_kinds']}
+
     def _advisory_revision(self, db, run_id, combat_id):
         # No frame is inferred from game input. A ledger revision detects known
         # changes; the caller must still observe after any unlogged input.

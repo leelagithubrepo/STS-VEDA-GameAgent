@@ -16,6 +16,8 @@ from typing import Any
 
 DATA = Path(__file__).resolve().parents[1] / 'data'
 SCHEMA = 'spire.advisory.v1'
+SPIKE_SLIME_SOURCE = 'https://slay-the-spire.fandom.com/wiki/Spike_Slime'
+SPIKE_SLIMES = ('Spike Slime (L)', 'Spike Slime (M)')
 
 
 @lru_cache(maxsize=8)
@@ -44,6 +46,8 @@ def validate_snapshot(state: dict) -> None:
     """Validate shape, preserving unread values as null rather than defaults."""
     if state.get('schema') != SCHEMA:
         raise ValueError(f'snapshot schema must be {SCHEMA}')
+    if state.get('ascension') is not None and (type(state['ascension']) is not int or not 0 <= state['ascension'] <= 20):
+        raise ValueError('Ascension must be an integer from 0 to 20 or null')
     observed = datetime.fromisoformat(state['observed_at'])
     if observed.tzinfo is None or observed > datetime.now(timezone.utc):
         raise ValueError('observation time must be timezone-aware and not in the future')
@@ -92,6 +96,33 @@ def validate_snapshot(state: dict) -> None:
         hits = enemy.get('intent_hits')
         if not enemy.get('name') or (hits is not None and (not isinstance(hits, list) or any(type(h) is not int or h < 0 for h in hits))):
             raise ValueError('enemy needs a name and nonnegative displayed intent hits or null')
+        if enemy.get('hp') is not None and enemy.get('max_hp') is not None and enemy['hp'] > enemy['max_hp']:
+            raise ValueError('enemy HP exceeds maximum HP')
+        split = enemy.get('split')
+        if split is not None:
+            if (not isinstance(split, dict) or enemy['name'] != 'Spike Slime (L)'
+                    or type(split.get('threshold_percent')) is not int or split['threshold_percent'] != 50
+                    or type(split.get('smaller_slimes')) is not int or split['smaller_slimes'] != 2
+                    or split.get('hp') != 'current HP'
+                    or enemy.get('max_hp') is None or enemy['max_hp'] <= 0):
+                raise ValueError('Split needs the reviewed large Spike Slime 50%/two/current-HP rule and confirmed maximum HP')
+        effects = enemy.get('intent_effects')
+        if effects is not None:
+            if not isinstance(effects, list):
+                raise ValueError('enemy intent effects must be a typed list or null')
+            for effect in effects:
+                if not isinstance(effect, dict):
+                    raise ValueError('each enemy intent effect must be an object')
+                kind = effect.get('kind')
+                count = effect.get('count') if kind == 'generate_status' else effect.get('amount')
+                if kind not in ('generate_status', 'apply_debuff') or type(count) is not int or count <= 0:
+                    raise ValueError('enemy intent effect needs a reviewed kind and positive integer amount')
+                if kind == 'generate_status' and (not effect.get('card') or effect.get('to_zone') not in ('draw', 'discard', 'hand')):
+                    raise ValueError('generated status needs a named card and zone')
+                if kind == 'apply_debuff' and not effect.get('debuff'):
+                    raise ValueError('debuff effect needs a name')
+        if enemy.get('evidence') is not None and not isinstance(enemy['evidence'], dict):
+            raise ValueError('enemy intent evidence must be an object or null')
 
 
 def state_digest(state: dict) -> str:
@@ -103,6 +134,16 @@ def current_cost(card: dict, powers: dict) -> int | None:
         return None
     # Unplayable statuses/curses stay unplayable. Corruption applies only to Skills.
     return 0 if card['type'] == 'Skill' and powers.get('Corruption') is True else card['cost']
+
+
+def _verified_costless_dazed(card: dict) -> bool:
+    # Dazed has no energy cost. A fully inspected, inherently unplayable Dazed
+    # cannot hide a zero-cost play; other unread costs must still stop review.
+    return (card.get('name') == 'Dazed' and card.get('type') == 'Status'
+            and 'cost' in card and card['cost'] is None
+            and card.get('upgraded') is False and card.get('title_color') == 'white'
+            and card.get('playable') is False and card.get('unplayable') is True
+            and card.get('ethereal') is True)
 
 
 def boss_manifest(name: str | None, ascension: int | None) -> dict | None:
@@ -130,9 +171,76 @@ BOUNDARIES = {'Headbutt', 'True Grit', 'Dual Wield', 'Armaments', 'Offering', 'S
               'Corruption', 'Barricade', 'Feel No Pain', 'Inflame', 'Shockwave', 'Disarm', 'Bash',
               'Clothesline', 'Panic Button', 'Burning Pact'}
 
+# Exact inspected variants only. These effects terminate a checked line: the
+# generated card and HP change must be observed before another recommendation.
+# This metadata is a prediction, never a combat-zone or inventory mutation.
+REVIEWED_SPECIAL_CARDS = {
+    'Anger': {'type': 'Attack', 'base_damage': 6,
+              'generate': {'card': 'Anger', 'count': 1, 'zone': 'discard'}},
+    # Exact text retained in the current A2 inventory evidence. Do not derive
+    # an uninspected variant by stripping '+' or substituting its usual cost.
+    'Hemokinesis': {'type': 'Attack', 'base_damage': 15, 'hp_loss': 2},
+    'Hemokinesis+': {'type': 'Attack', 'base_damage': 20, 'hp_loss': 2},
+    'Bash': {'type': 'Attack', 'base_damage': 8, 'vulnerable': 2},
+    'Bash+': {'type': 'Attack', 'base_damage': 10, 'vulnerable': 3},
+    'Clothesline': {'type': 'Attack', 'base_damage': 12, 'weak': 2},
+    'Headbutt': {'type': 'Attack', 'base_damage': 9, 'discard_to_draw': 1},
+    # Both block variants are documented by data/act1_reference_pack.json.
+    'Shrug It Off': {'type': 'Skill', 'base_block': 8, 'draw': 1},
+    'Shrug It Off+': {'type': 'Skill', 'base_block': 11, 'draw': 1},
+    'Slimed': {'type': 'Status', 'exhaust': True},
+}
+
+
+def reviewed_card_type(name: str) -> str | None:
+    """Return the reviewed type without granting support to unread variants."""
+    if name in REVIEWED_SPECIAL_CARDS:
+        return REVIEWED_SPECIAL_CARDS[name]['type']
+    base = name.rstrip('+')
+    if name not in DIRECT and base not in BOUNDARIES:
+        return None
+    if base in ('Corruption', 'Barricade', 'Feel No Pain', 'Inflame'):
+        return 'Power'
+    if base in ('Strike', 'Iron Wave', 'Carnage', 'Body Slam', 'Headbutt',
+                'Pommel Strike', 'Reckless Charge', 'Bash', 'Clothesline'):
+        return 'Attack'
+    return 'Skill'
+
+
+def _reviewed_spike_intent(state: dict, enemy: dict) -> bool:
+    """Bounded A2 interpretation; the screen's damage is never replaced by a table."""
+    if enemy.get('name') not in SPIKE_SLIMES:
+        # Other encounters retain their existing evidence requirements. A new
+        # typed effect cannot silently claim review through the Slime registry.
+        return 'intent_effects' not in enemy or enemy['intent_effects'] == []
+    evidence = enemy.get('evidence') or {}
+    if (state.get('ascension') != 2 or evidence.get('source') != SPIKE_SLIME_SOURCE
+            or evidence.get('kind') != 'reviewed_reference' or evidence.get('observed_intent') is not True):
+        return False
+    large = enemy['name'] == 'Spike Slime (L)'
+    if large and enemy.get('split') is None:
+        return False
+    move = enemy.get('move')
+    hits = enemy.get('intent_hits')
+    if large and enemy.get('hp') is not None and enemy['hp'] * 2 <= enemy['max_hp'] and move != 'Split':
+        return False  # Below-threshold HP with an old attack is not a fresh Split intent.
+    if move == 'Flame Tackle':
+        expected = [{'kind': 'generate_status', 'card': 'Slimed',
+                     'count': 2 if large else 1, 'to_zone': 'discard'}]
+        return isinstance(hits, list) and len(hits) == 1 and enemy.get('intent_effects') == expected
+    if move == 'Lick':
+        expected = [{'kind': 'apply_debuff', 'debuff': 'frail', 'amount': 2 if large else 1}]
+        return hits == [] and enemy.get('intent_effects') == expected
+    if move == 'Split' and large and enemy.get('hp') is not None:
+        return (hits == [] and enemy.get('intent_effects') == []
+                and 0 < enemy['hp'] * 2 <= enemy['max_hp'])
+    return False
+
 
 def check_plan(context: dict, plan: dict) -> dict:
     """Check legality and dependencies; approval never means automatic input."""
+    if not isinstance(plan, dict):
+        return {'allowed': False, 'reasons': ['plan must be an object'], 'notes': [], 'steps': [], 'forecast': None}
     state = context.get('state') or {}
     if state:
         try:
@@ -171,7 +279,7 @@ def check_plan(context: dict, plan: dict) -> dict:
     if 'Velvet Choker' in relics and (type(choker) is not int or not 0 <= choker <= 6):
         reasons.append('Velvet Choker play count is unknown')
     steps = plan.get('steps', [])
-    if not isinstance(steps, list) or not steps:
+    if not isinstance(steps, list) or not steps or any(not isinstance(step, dict) for step in steps):
         reasons.append('an ordered next-action plan is required')
         steps = []
     if reasons:
@@ -186,14 +294,19 @@ def check_plan(context: dict, plan: dict) -> dict:
     if len(steps) == 1 and steps[0].get('kind') == 'end_turn' and state.get('unmodeled_effects') == []:
         numeric = True  # No card triggers: use existing Block as a conservative survival bound.
     numeric = numeric and all(e.get('hp') is not None and e.get('block') is not None and e.get('vulnerable') is not None for e in enemies)
+    if any(not _reviewed_spike_intent(state, e) for e in enemies):
+        numeric = False
+        notes.append('Enemy intent effects lack a matching reviewed move, Ascension and evidence; no survival forecast is available')
     checked = []
     boundary = False
     forced_end = False
+    pays_hp = False
     for index, step in enumerate(steps):
         if boundary:
             reasons.append('plan crosses an observation boundary; observe before the next action')
             break
         kind = step.get('kind', 'card')
+        split_boundary = False
         if kind == 'potion':
             name = step.get('name')
             if name not in potions or name == 'Fairy in a Bottle':
@@ -204,13 +317,17 @@ def check_plan(context: dict, plan: dict) -> dict:
             continue
         if kind == 'end_turn':
             reviews = plan.get('zero_cost_review', {})
+            if not isinstance(reviews, dict):
+                reviews = {}
             free_cards = [c for c in hand.values() if c.get('playable') is True and current_cost(c, powers) == 0]
             for card in free_cards:
                 if not isinstance(reviews.get(card['id']), str) or not reviews[card['id']].strip():
                     reasons.append(f"review playable zero-cost {card['name']} before End Turn")
                 if card['name'].rstrip('+') == 'Body Slam':
                     notes.append(f"Body Slam base damage now is {block}; include Strength, Weak, enemy Vulnerable and turn limits")
-            if any(c.get('playable') is None or current_cost(c, powers) is None for c in hand.values()):
+            if any(c.get('playable') is None or (
+                    current_cost(c, powers) is None and not _verified_costless_dazed(c))
+                    for c in hand.values()):
                 reasons.append('unread hand card prevents the zero-cost review')
             checked.append({'kind': kind, 'energy_after': energy, 'observe_after': True})
             boundary = True
@@ -220,7 +337,8 @@ def check_plan(context: dict, plan: dict) -> dict:
             continue
         card = hand.pop(step['card_id'])
         name = card['name']; base = name.rstrip('+')
-        if name not in DIRECT and base not in BOUNDARIES:
+        expected_type = reviewed_card_type(name)
+        if expected_type is None:
             reasons.append(f'{name} has no reviewed immediate-effect check; inspect it before advice')
             continue
         upgraded = card.get('upgraded')
@@ -229,7 +347,6 @@ def check_plan(context: dict, plan: dict) -> dict:
             reasons.append(f'{name}: verify title color and upgrade state')
         if card.get('playable') is not True:
             reasons.append(f'{name} is not confirmed playable')
-        expected_type = 'Power' if base in ('Corruption', 'Barricade', 'Feel No Pain', 'Inflame') else 'Attack' if base in ('Strike', 'Iron Wave', 'Carnage', 'Body Slam', 'Headbutt', 'Pommel Strike', 'Reckless Charge', 'Bash', 'Clothesline') else 'Skill'
         if card.get('type') != expected_type:
             reasons.append(f'{name}: observed card type conflicts with its reviewed type')
         cost = current_cost(card, powers)
@@ -266,6 +383,11 @@ def check_plan(context: dict, plan: dict) -> dict:
                 reasons.append('compare Barricade setup before Corruption and record why the chosen timing fits this fight')
         if base in ('Offering', 'Bloodletting') and state['hp'] <= (6 if base == 'Offering' else 3):
             reasons.append(f'{name} HP cost is not survivable')
+        immediate_effect = REVIEWED_SPECIAL_CARDS.get(name)
+        pays_hp = pays_hp or base in ('Offering', 'Bloodletting') or bool(
+            immediate_effect and immediate_effect.get('hp_loss'))
+        if immediate_effect and state['hp'] <= immediate_effect.get('hp_loss', 0):
+            reasons.append(f'{name} HP cost is not survivable; Block does not prevent HP loss')
         energy -= cost
         choker += 1
         time_count += 1
@@ -282,15 +404,23 @@ def check_plan(context: dict, plan: dict) -> dict:
                     absorbed = min(enemy['block'], raw)
                     enemy['block'] -= absorbed
                     enemy['hp'] = max(0, enemy['hp'] - raw + absorbed)
+                    if enemy.get('split') is not None and 0 < enemy['hp'] * 2 <= enemy['max_hp']:
+                        split_boundary = True
+                        numeric = False
+                        notes.append('The attack reaches the observed Split threshold; inspect the new intent before continuing or forecasting the enemy turn')
         else:
             numeric = False
-        boundary = not numeric or name not in DIRECT or base in BOUNDARIES or (time_eater and time_count == 12)
+        boundary = split_boundary or not numeric or name not in DIRECT or base in BOUNDARIES or (time_eater and time_count == 12)
         if time_eater and time_count == 12:
             forced_end = True
             notes.append('The twelfth card ends the turn and adds 2 enemy Strength; recheck the resulting attack')
         checked.append({'kind': kind, 'card_id': card['id'], 'name': name, 'target': step.get('target'),
                         'energy_after': energy, 'time_warp_after': time_count if time_eater else None,
                         'choker_after': choker if 'Velvet Choker' in relics else None, 'observe_after': boundary})
+        if immediate_effect:
+            checked[-1]['reviewed_effect'] = json.loads(json.dumps(immediate_effect))
+        if split_boundary:
+            checked[-1]['observation_reason'] = 'Split threshold reached; intent may have changed'
     forecast = None
     if numeric and not reasons:
         kill = all(e['hp'] == 0 for e in forecast_enemies)
@@ -310,12 +440,27 @@ def check_plan(context: dict, plan: dict) -> dict:
         if end_damage == 0 and numeric:
             forecast = {'block': block, 'incoming_displayed': incoming, 'player_hp': state['hp'] - max(0, incoming - block),
                         'enemies': forecast_enemies, 'lethal_to_enemies': kill}
+            if any(e.get('intent_effects') or e.get('move') == 'Split' for e in enemies):
+                notes.append('The survival bound covers this displayed enemy turn only; observe status/debuff changes and any Split children before further advice')
             if forecast['player_hp'] <= 0:
                 reasons.append('the checked line does not survive the displayed incoming damage')
     if (forced_end or any(s.get('kind') == 'end_turn' for s in steps)) and forecast is None:
         reasons.append('ending the turn requires a verified survival forecast; inspect unmodeled effects first')
     if plan.get('claims_lethal') and not (forecast and forecast['lethal_to_enemies']):
         reasons.append('lethal is not verified for the complete proposed line')
+    # A stored rule is not enough: make the potion comparison part of the
+    # checked decision before committing HP or spending the twelfth card.
+    ends_turn = forced_end or any(s.get('kind') == 'end_turn' for s in steps)
+    exposes_hp = ends_turn and (forecast is None or forecast['player_hp'] < state['hp'])
+    if pays_hp or forced_end or exposes_hp:
+        reviews = plan.get('potion_review', {})
+        if not isinstance(reviews, dict):
+            reviews = {}
+        for name in dict.fromkeys(potions):
+            if name == 'Fairy in a Bottle':
+                notes.append('Fairy in a Bottle triggers automatically; it cannot be drunk and is not included in this survival forecast')
+            elif not isinstance(reviews.get(name), str) or not reviews[name].strip():
+                reasons.append(f'review available {name} before committing HP or the forced end of turn')
     if forecast is None:
         notes.append('Full damage/Block/survival forecast is unavailable for these interactions; observe before extending the line')
     return {'allowed': not reasons, 'reasons': list(dict.fromkeys(reasons)), 'notes': notes, 'steps': checked,

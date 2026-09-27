@@ -8,5 +8,8 @@ version = "0.1.0"
 description = "Research-first autonomous game-playing agent foundation"
 requires-python = ">=3.11"
 
+[project.optional-dependencies]
+vision = ["Pillow>=10,<13"]
+
 [tool.setuptools.packages.find]
 include = ["veda*"]

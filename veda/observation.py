@@ -10,6 +10,7 @@ from __future__ import annotations
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -19,8 +20,8 @@ DEFAULT_CAPTURE_DIR = PROJECT_ROOT / "artifacts" / "observations"
 def capture_visible_ps5_feed(output_dir: Path = DEFAULT_CAPTURE_DIR) -> Path:
     """Save one image of the current display without changing any UI state."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    destination = output_dir / f"ps5_observation_{timestamp}.png"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    destination = output_dir / f"ps5_observation_{timestamp}_{uuid4().hex}.png"
     try:
         subprocess.run(
             ["/usr/sbin/screencapture", "-x", "-t", "png", str(destination)],

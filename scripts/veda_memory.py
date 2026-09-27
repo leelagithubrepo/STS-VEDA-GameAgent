@@ -275,6 +275,14 @@ def main() -> int:
     inventory_event.add_argument("--source", required=True)
     inventory_event.add_argument("--confidence", type=float)
 
+    reward_collect = commands.add_parser("reward-collect", help="record one visible reward collection in one transaction")
+    reward_collect.add_argument("--run-id", required=True)
+    reward_collect.add_argument("--events", type=_document, required=True)
+    reward_collect.add_argument("--floor-id")
+    reward_collect.add_argument("--screenshot")
+    reward_collect.add_argument("--source", required=True)
+    reward_collect.add_argument("--confidence", type=float)
+
     inventory_ledger = commands.add_parser("inventory-ledger", help="retrieve confirmed run inventory and its history")
     inventory_ledger.add_argument("--run-id", required=True)
 
@@ -360,6 +368,11 @@ def main() -> int:
 
     floor_completeness = commands.add_parser("floor-completeness", help="report evidence gaps before a floor retrospective")
     floor_completeness.add_argument("--floor-id", required=True)
+    floor_time = commands.add_parser("floor-time", help="report measured wall time for a floor")
+    floor_time.add_argument("--floor-id", required=True)
+    run_timing = commands.add_parser("run-timing", help="report measured timing for every recorded floor")
+    run_timing.add_argument("--run-id", required=True)
+    run_timing.add_argument("--target-seconds", type=float, default=1500.0)
 
     observe = commands.add_parser("combat-observe", help="save a fresh, explicitly verified advisory snapshot")
     for key in ("run-id", "floor-id", "combat-id", "turn-id", "source"):
@@ -369,6 +382,9 @@ def main() -> int:
     observe.add_argument("--capture", action="store_true")
     context = commands.add_parser("combat-context", help="read fresh state, inventory and relevant reviewed rules together")
     context.add_argument("--combat-id", required=True)
+    inspected = commands.add_parser("combat-evidence-import", help="store complete current inspected evidence after checking its images and SQLite inventory")
+    inspected.add_argument("--bundle", type=Path, required=True)
+    inspected.add_argument("--source", required=True)
     for name in ("advice-check", "advice-decide"):
         cmd = commands.add_parser(name, help="check a plan against the current advisory context")
         cmd.add_argument("--combat-id", required=True)
@@ -397,6 +413,15 @@ def main() -> int:
         print(database.record_advisory_snapshot(run_id=args.run_id, floor_id=args.floor_id,
             combat_id=args.combat_id, turn_id=args.turn_id, state=args.state,
             source=_source_with_evidence(args.source, evidence), screenshot_path=evidence.screenshot_path))
+    elif args.command == "combat-evidence-import":
+        from veda.evidence_advisory import load_evidence_bundle
+        try:
+            bundle = load_evidence_bundle(args.bundle)
+            result = database.record_evidence_snapshot(journal=bundle['journal'],
+                source_files=bundle['source_files'], source=args.source)
+        except (ValueError, TypeError, KeyError, OSError) as exc:
+            parser.error(str(exc))
+        print(json.dumps(result, indent=2))
     elif args.command == "combat-context":
         print(json.dumps(database.advisory_context(combat_id=args.combat_id), indent=2))
     elif args.command == "advice-check":
@@ -604,6 +629,17 @@ def main() -> int:
         print(json.dumps(database.floor_retrospective(floor_id=args.floor_id), indent=2, sort_keys=True))
     elif args.command == "floor-completeness":
         print(json.dumps(database.floor_completeness(floor_id=args.floor_id), indent=2, sort_keys=True))
+    elif args.command == "floor-time":
+        print(json.dumps(database.floor_time_report(floor_id=args.floor_id), indent=2, sort_keys=True))
+    elif args.command == "run-timing":
+        print(json.dumps(database.run_timing_report(run_id=args.run_id, target_seconds=args.target_seconds), indent=2, sort_keys=True))
+    elif args.command == "reward-collect":
+        if not isinstance(args.events, list):
+            parser.error("--events must be a JSON list")
+        print(json.dumps(database.record_inventory_events_batch(
+            run_id=args.run_id, events=args.events, floor_id=args.floor_id,
+            screenshot_path=args.screenshot, source=args.source, confidence=args.confidence,
+        )))
     return 0
 
 

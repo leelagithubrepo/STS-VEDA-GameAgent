@@ -54,6 +54,48 @@ all input, and releases every button/stick when it exits. VEDA should capture
 the screen once after a completed decision—not after every focus movement—unless
 the UI is ambiguous or the predicted transition fails to appear.
 
+The tracked `scripts/bridge_health.py` adapter retires the dependency's controller
+thread and sends feedback on one event loop. While the armed session is open, it
+refreshes the **current stick state every 200 ms**, including unchanged centered
+sticks. It does not invent movement, replay button events, or reconnect after a
+fault. Both feedback channels use a wrapping 16-bit wire sequence. This follows
+the periodic state approach in
+[Chiaki-ng's feedback sender](https://github.com/streetpea/chiaki-ng/blob/main/lib/src/feedbacksender.c).
+The repair still needs a live idle-and-resume check before claiming that it fixes
+this console's observed idle failure.
+
+`ready` and `status` responses include a sanitized `health` object: refresh/send
+counts, transport readiness, send/receive/heartbeat ages in milliseconds, the
+last requested input's age, and a fixed error code if a fault was detected.
+Unobserved ages are `null`. Server AFK values are reported as `afk_raw`, with
+`afk_units: "unknown"`; no duration is inferred from those values. A local send
+or cached `session_ready` flag does **not** verify delivery to the game, so
+`input_delivery_verified` remains false and screen verification is still required.
+
+Known transport closure or errors interrupt both idle waits and active commands,
+emit a sanitized `controller_fault`, and close the session after best-effort input
+release. The adapter does not infer a connection failure from an unverified
+heartbeat cadence. A fresh session requires an explicit new launch after the
+failure has been inspected. `--idle-timeout 0` disables the wrapper's command
+inactivity timeout; a positive value closes the session after that many seconds
+without a JSON command. This option does not change a physical DualSense's power
+settings.
+
+When the launcher cannot provide a persistent stdin/PTY, use the Unix-socket command channel instead:
+
+```zsh
+./scripts/warm_bridge --idle-timeout 0 --socket /tmp/veda-ps5-bridge.sock
+python3 scripts/bridge_command.py /tmp/veda-ps5-bridge.sock '{"action":"status"}'
+```
+
+The socket stays available across client process or shell stdin closure. Transport faults still close the session and release inputs.
+
+Offline verification (no Remote Play SDK or console required):
+
+```zsh
+python3 -B -m unittest tests.test_bridge_health -v
+```
+
 ## Standalone watcher (no controller)
 
 For VEDA outside VS Code, use `scripts/veda_watch`. It never imports this
@@ -67,3 +109,22 @@ captures and `artifacts/standalone-status.json`.
 
 The optional launchd service starts at user login. Stop or remove it with
 `./scripts/manage_veda_watcher.sh stop` or `uninstall`.
+
+## Verified card input sequencing
+
+The PS5 card UI can treat the first Cross as selection and a later Cross as
+play or target confirmation. Use `veda.controller_state_machine.ControllerStateMachine`
+to plan one input from each fresh observation. The planner clears tooltip/card
+focus with `up` before End Turn and returns `triangle` only after a clean combat
+observation. The warm bridge remains transport-only; never send the planner's
+next step without capturing a fresh screen after the previous step.
+
+## Timing and reward batching
+
+Open and close every floor with `floor-start` and `floor-finish`; use
+`run-timing --run-id RUN_ID` to see measured floors, missing evidence, and
+floors over the 25-minute target. Missing finish evidence stays explicitly
+unmeasured. At a reward screen, capture once, make the required visible UI
+selections, then record all confirmed acquisitions with one `reward-collect`
+transaction. This removes repeated screenshot and SQLite work while keeping
+each item in the inventory ledger.

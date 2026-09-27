@@ -936,7 +936,7 @@ class VedaTests(unittest.TestCase):
         self.assertFalse(plan.ready)
         self.assertIn("local vision has not earned combat-planning authorization", plan.reasons)
 
-    def test_routine_planner_owns_a_calibrated_familiar_lethal(self):
+    def test_routine_planner_requires_effect_context_even_with_calibrated_visuals(self):
         class Perfect:
             def observe(self, frame_id): return {field: "ok" for field in COMBAT_CRITICAL_FIELDS}
         frames = tuple(LabeledFrame(str(index), {field: "ok" for field in COMBAT_CRITICAL_FIELDS}) for index in range(12))
@@ -947,8 +947,8 @@ class VedaTests(unittest.TestCase):
             enemies=(VisibleEnemy("Cultist", 6, 50, "attack 6", block=0, intent_total_damage=6, intent_damage_confidence=1.0),),
         )
         plan = plan_routine_combat(state, calibrate(Perfect(), frames), encounter_name="Cultist")
-        self.assertTrue(plan.ready)
-        self.assertEqual(plan.instructions, ("Play Strike targeting Cultist",))
+        self.assertFalse(plan.ready)
+        self.assertTrue(any("context" in reason for reason in plan.reasons))
 
     def test_preflight_requires_observation_and_arithmetic(self):
         observation = StructuredGameState(

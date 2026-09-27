@@ -41,6 +41,11 @@ def play(ident='c1', target='Cultist', **kwargs):
     return dict(kind='card', card_id=ident, target=target, **kwargs)
 
 
+def dazed(ident='d1'):
+    return dict(card('Dazed', 'Status', None, ident), playable=False,
+                unplayable=True, ethereal=True)
+
+
 class AdvisoryTests(unittest.TestCase):
     def test_corruption_skill_cost_does_not_make_barricade_free(self):
         c=context([card('Defend+', 'Skill', 1), card('Barricade+', 'Power', 2,'bar')])
@@ -96,6 +101,50 @@ class AdvisoryTests(unittest.TestCase):
         c['state']['hp']=10
         self.assertFalse(check_plan(c,{'steps':[play(target='Time Eater')]})['allowed'])
 
+    def test_end_turn_accepts_verified_costless_dazed_without_changing_hand(self):
+        c=context([dazed(f'd{i}') for i in range(3)])
+        c['state'].update(hp=77, energy=0, block=10)
+        c['state']['enemies']=[
+            dict(id='e2', name='Sentry', hp=23, block=0, vulnerable=0,
+                 intent='debuff', intent_hits=[]),
+            dict(id='e3', name='Sentry', hp=41, block=0, vulnerable=0,
+                 intent='attack 9', intent_hits=[9])]
+        before=copy.deepcopy(c)
+        result=check_plan(c, {'steps':[{'kind':'end_turn'}]})
+        self.assertTrue(result['allowed'], result['reasons'])
+        self.assertEqual(result['forecast']['player_hp'],77)
+        self.assertEqual(c,before)
+        self.assertFalse(check_plan(c, {'steps':[play('d0', target='e2')]})['allowed'])
+
+    def test_dazed_does_not_hide_unknown_cards_or_zero_cost_review(self):
+        plan={'steps':[{'kind':'end_turn'}]}
+        for extra in (card('Strike',cost=None), dict(card('Strike'),playable=None),
+                      dict(card('Strike',cost=None),playable=False),
+                      dict(card('Burn','Status',None),playable=False),
+                      dict(card('Regret','Curse',None),playable=False)):
+            with self.subTest(extra=extra):
+                self.assertFalse(check_plan(context([dazed(),extra]),plan)['allowed'])
+        c=context([dazed(),card('Body Slam+',cost=0)])
+        self.assertFalse(check_plan(c,plan)['allowed'])
+        self.assertTrue(check_plan(c,{**plan,'zero_cost_review':{'c1':'Preserve card-count limit'}})['allowed'])
+        c=context([dazed(),dict(card('Strike'),playable=False)])
+        self.assertTrue(check_plan(c,plan)['allowed'])
+
+    def test_costless_dazed_needs_full_verification_and_survival_forecast(self):
+        plan={'steps':[{'kind':'end_turn'}]}
+        for field in ('name','type','upgraded','title_color','playable','unplayable','ethereal'):
+            c=context([dazed()]); c['state']['hand'][0][field]=None
+            with self.subTest(field=field):
+                self.assertFalse(check_plan(c,plan)['allowed'])
+        c=context([dazed()]); del c['state']['hand'][0]['cost']
+        self.assertFalse(check_plan(c,plan)['allowed'])
+        for change in ({'unmodeled_effects':['Burn end-turn damage']},
+                       {'end_turn_damage':None}, {'end_turn_damage':2},
+                       {'hp':1,'block':0}):
+            c=context([dazed()]); c['state'].update(change)
+            with self.subTest(change=change):
+                self.assertFalse(check_plan(c,plan)['allowed'])
+
     def test_dual_wield_capacity_potion_boundary_and_hp_loss(self):
         c=context([card('Dual Wield+','Skill',1)] + [card('Strike',ident=f's{i}') for i in range(9)])
         self.assertFalse(check_plan(c,{'steps':[play(copy_card_id='s0')]})['allowed'])
@@ -106,6 +155,37 @@ class AdvisoryTests(unittest.TestCase):
         self.assertFalse(check_plan(c,{'steps':[{'kind':'potion','name':'Energy Potion'},play()]})['allowed'])
         c=context([card('Offering','Skill',0)]);c['state']['hp']=6
         self.assertFalse(check_plan(c,{'steps':[play()]})['allowed'])
+
+    def test_potions_must_be_reviewed_before_hp_loss_or_damaging_end_turn(self):
+        c=context([]); c['state']['block']=0
+        c['inventory']['current']['potion']=['Energy Potion','Power Potion','Fairy in a Bottle']
+        p={'steps':[{'kind':'end_turn'}]}
+        r=check_plan(c,p)
+        self.assertFalse(r['allowed']); self.assertEqual(2,len(r['reasons']))
+        p['potion_review']={'Energy Potion':'No playable cards remain.',
+                            'Power Potion':'Retain for the boss; this displayed hit is survivable.'}
+        self.assertTrue(check_plan(c,p)['allowed'])
+        self.assertTrue(any('automatically' in note for note in check_plan(c,p)['notes']))
+        for malformed in (None, [], {'Energy Potion':' '}):
+            self.assertFalse(check_plan(c,{**p,'potion_review':malformed})['allowed'])
+        c['state']['block']=10
+        self.assertTrue(check_plan(c,{'steps':[{'kind':'end_turn'}]})['allowed'])
+        c['state']['hand']=[card('Offering','Skill',0)]
+        self.assertFalse(check_plan(c,{'steps':[play()]})['allowed'])
+        self.assertTrue(check_plan(c,{'steps':[play()],'potion_review':p['potion_review']})['allowed'])
+        self.assertTrue(check_plan(c,{'steps':[{'kind':'potion','name':'Energy Potion'}]})['allowed'])
+
+    def test_potion_review_required_before_time_warp_even_with_enough_block(self):
+        c=context([card('Strike')]); c['state']['block']=100
+        c['state']['enemies']=[dict(name='Time Eater',hp=200,block=0,vulnerable=0,
+            strength=0,weak=0,intent='7x3',intent_hits=[7,7,7],move='Reverberate')]
+        c['state']['counters']['time_warp']=11;c['encounter_type']='boss'
+        c['boss_manifest']=boss_manifest('Time Eater',1)
+        c['inventory']['current']['potion']=['Energy Potion']
+        p={'steps':[play(target='Time Eater')]}
+        self.assertFalse(check_plan(c,p)['allowed'])
+        p['potion_review']={'Energy Potion':'The next card ends the turn; extra energy has no useful play.'}
+        self.assertTrue(check_plan(c,p)['allowed'])
 
     def test_boss_manifest_and_campfire_boundaries(self):
         self.assertEqual(boss_manifest('Bronze Automaton',3)['boost_strength'],3)
@@ -218,6 +298,18 @@ class AdvisoryMemoryTests(unittest.TestCase):
         self.db.resolve_decision(decision_id=result['decision_id'],chosen_action={'card':'Strike'},actual_outcome={'hp':50})
         self.observe();self.db.start_combat_turn(combat_id=self.combat,turn_number=2,phase='combat',opening_state={})
         self.assertFalse(self.db.advisory_context(combat_id=self.combat)['fresh'])
+
+    def test_checked_dazed_end_turn_records_and_consumes_truthful_snapshot(self):
+        observed=state([dazed('d1'),dazed('d2'),dazed('d3')])
+        observed.update(hp=77, energy=0)
+        snap=self.db.record_advisory_snapshot(run_id=self.run,floor_id=self.floor,
+            combat_id=self.combat,turn_id=self.turn,state=observed,source='inspected Dazed hand')
+        result=self.db.record_checked_advice(combat_id=self.combat,snapshot_id=snap,
+            plan={'steps':[{'kind':'end_turn'}]},reasoning='All cards are confirmed unplayable Dazed')
+        self.assertIn('decision_id',result)
+        current=self.db.advisory_context(combat_id=self.combat)
+        self.assertFalse(current['fresh'])
+        self.assertEqual(current['state']['hand'],observed['hand'])
 
     def test_resolved_action_invalidates_image_captured_before_resolution(self):
         snap=self.observe()

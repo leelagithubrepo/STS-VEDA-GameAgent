@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import base64
+from contextlib import nullcontext
 import json
 import subprocess
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Protocol
+from uuid import uuid4
 
 
 SCREEN_TYPES = frozenset({
@@ -217,6 +220,10 @@ class VisionProvider(Protocol):
     def observe(self, image_path: Path) -> StructuredGameState: ...
 
 
+class IncompleteVisionResponse(ValueError):
+    """The model explicitly reported truncation; never complete its missing facts."""
+
+
 class LocalOllamaVisionProvider:
     """Local-only multimodal provider served at localhost by Ollama.
 
@@ -225,15 +232,24 @@ class LocalOllamaVisionProvider:
     """
     def __init__(
         self,
-        model: str = "blaifa/InternVL3_5:4B",
+        model: str = "blaifa/InternVL3_5:4b",
         endpoint: str = "http://127.0.0.1:11434/api/chat",
         timeout_seconds: float = 30,
         request: Callable[[bytes], bytes] | None = None,
+        trace: Any | None = None,
+        context_tokens: int = 8192,
+        max_output_tokens: int = 2048,
     ) -> None:
+        if (type(context_tokens) is not int or not 4096 <= context_tokens <= 32768
+                or type(max_output_tokens) is not int or not 256 <= max_output_tokens < context_tokens):
+            raise ValueError("vision context and response budgets must be bounded integers")
         self.model, self.endpoint, self.timeout_seconds = model, endpoint, timeout_seconds
+        self.context_tokens, self.max_output_tokens = context_tokens, max_output_tokens
         self._request_override = request
+        self.trace = trace
         self.last_error: str | None = None
         self.last_raw_response: str | None = None
+        self.last_latency_ms: float | None = None
 
     def _request(self, body: bytes) -> bytes:
         if self._request_override:
@@ -258,7 +274,9 @@ class LocalOllamaVisionProvider:
             normalized["confidence"] = confidence / 100
         return normalized
 
-    def observe(self, image_path: Path) -> StructuredGameState:
+    def observe(self, image_path: Path, *, frame_id: str | None = None) -> StructuredGameState:
+        started = time.perf_counter()
+        request_id = uuid4().hex
         prompt = """You are a read-only Slay the Spire screen interpreter. Inspect only the game content;
 ignore the Mac menu bar, dock, editor, terminal, chat, and all non-game windows. Do not invent values.
 
@@ -294,27 +312,40 @@ recommend or execute any action. Set hand_complete true only if the whole hand i
 For each visible card, report hand_details with name, title_color, upgraded, and current_cost.
 Green/teal titles mean upgraded; white means base. Unreadable color, upgrade or cost is null.
 Displayed intent already includes visible damage modifiers: do not apply Vulnerable a second time."""
+        def span(stage):
+            return self.trace.span(stage, frame_id=frame_id, request_id=request_id) if self.trace else nullcontext()
+        with span("image_preparation"):
+            encoded_image = base64.b64encode(image_path.read_bytes()).decode("ascii")
         payload = json.dumps({
             "model": self.model,
             "messages": [{
                 "role": "user", "content": prompt,
-                "images": [base64.b64encode(image_path.read_bytes()).decode("ascii")],
+                "images": [encoded_image],
             }],
             # Qwen3-VL otherwise spends its response budget on hidden reasoning
             # and can return an empty visible JSON response. The same switch is
             # harmless for non-thinking local models.
             "format": OBSERVATION_SCHEMA, "stream": False, "think": False,
-            "options": {"temperature": 0},
+            # The schema/prompt can occupy ~4K tokens. Explicit capacity avoids
+            # inheriting a model default that leaves almost no response room.
+            "options": {"temperature": 0, "num_ctx": self.context_tokens,
+                        "num_predict": self.max_output_tokens},
         }).encode("utf-8")
         try:
-            self.last_raw_response = self._request(payload).decode("utf-8")
-            response = json.loads(self.last_raw_response)
+            with span("model_request_round_trip"):
+                self.last_raw_response = self._request(payload).decode("utf-8")
+            with span("parsing"):
+                response = json.loads(self.last_raw_response)
+                if response.get("done_reason") == "length":
+                    raise IncompleteVisionResponse("model response exhausted its output budget")
+                result = StructuredGameState.from_dict(
+                    self._normalize_model_state(json.loads(response["message"]["content"])))
             self.last_error = None
-            return StructuredGameState.from_dict(
-                self._normalize_model_state(json.loads(response["message"]["content"]))
-            )
+            return result
         except (subprocess.SubprocessError, OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
             self.last_error = type(error).__name__
             return self._fallback(
                 f"Local vision unavailable or returned an invalid state ({self.last_error}); no state was guessed."
             )
+        finally:
+            self.last_latency_ms = round((time.perf_counter() - started) * 1000, 2)

@@ -1387,6 +1387,118 @@ class TelemetryDatabase(AdvisoryMemory):
             "missing": missing,
         }
 
+    def floor_time_report(self, *, floor_id: str) -> dict[str, Any]:
+        """Return record-time intervals, not an estimate of active gameplay.
+
+        Floor recorded_at and combat opened_at/closed_at may be delayed ledger
+        writes. Use the execution trace for measured active/paused stage time.
+        """
+        self.initialize()
+        with self._connection() as db:
+            floor = db.execute(
+                "SELECT id, run_id, recorded_at, outcome FROM floors WHERE id = ?", (floor_id,)
+            ).fetchone()
+            if floor is None:
+                raise ValueError("unknown floor")
+            completion = db.execute(
+                "SELECT observed_at FROM evidence_events "
+                "WHERE floor_id = ? AND kind = 'floor_completion_evidence' "
+                "ORDER BY observed_at DESC LIMIT 1", (floor_id,)
+            ).fetchone()
+            combats = db.execute(
+                "SELECT id, encounter_name, opened_at, closed_at, outcome "
+                "FROM combats WHERE floor_id = ? ORDER BY opened_at", (floor_id,)
+            ).fetchall()
+        start = datetime.fromisoformat(floor["recorded_at"])
+        end_value = completion["observed_at"] if completion else None
+        end = datetime.fromisoformat(end_value) if end_value else None
+        combat_rows = []
+        for combat in combats:
+            opened = datetime.fromisoformat(combat["opened_at"])
+            closed = datetime.fromisoformat(combat["closed_at"]) if combat["closed_at"] else None
+            combat_rows.append({
+                "combat_id": combat["id"],
+                "encounter_name": combat["encounter_name"],
+                "outcome": combat["outcome"],
+                "seconds": max(0.0, (closed - opened).total_seconds()) if closed else None,
+            })
+        return {
+            "floor_id": floor_id,
+            "run_id": floor["run_id"],
+            "outcome": floor["outcome"],
+            "timing_basis": "ledger_record_times",
+            "active_autonomous_seconds": None,
+            "timing_warning": "Record-time intervals include unmeasured delays and pauses; use pipeline traces for active execution time.",
+            "started_at": floor["recorded_at"],
+            "completed_at": end_value,
+            "seconds": max(0.0, (end - start).total_seconds()) if end else None,
+            "combats": combat_rows,
+            "timing_complete": end is not None and all(row["seconds"] is not None for row in combat_rows),
+        }
+
+    def run_timing_report(self, *, run_id: str, target_seconds: float = 1500.0) -> dict[str, Any]:
+        """Summarize per-floor timing and identify missing timing evidence.
+
+        These legacy record-time intervals do not subtract pauses or delayed
+        recording. A floor is complete only when its finish evidence is present;
+        pipeline traces are required to measure active autonomous time.
+        """
+        if target_seconds <= 0:
+            raise ValueError("target_seconds must be positive")
+        self.initialize()
+        with self._connection() as db:
+            floors = db.execute(
+                "SELECT id, act, floor, outcome, recorded_at FROM floors "
+                "WHERE run_id = ? ORDER BY act, floor", (run_id,)
+            ).fetchall()
+        rows = [self.floor_time_report(floor_id=row["id"]) for row in floors]
+        measured = [row for row in rows if row["timing_complete"] and row["seconds"] is not None]
+        over_target = [row["floor_id"] for row in measured if row["seconds"] > target_seconds]
+        return {
+            "run_id": run_id,
+            "target_seconds": target_seconds,
+            "floors": rows,
+            "measured_floor_count": len(measured),
+            "missing_timing_floor_ids": [row["floor_id"] for row in rows if not row["timing_complete"]],
+            "over_target_floor_ids": over_target,
+            "mean_seconds": (sum(row["seconds"] for row in measured) / len(measured)) if measured else None,
+            "median_seconds": (__import__("statistics").median(row["seconds"] for row in measured) if measured else None),
+        }
+
+    def record_inventory_events_batch(
+        self, *, run_id: str, events: list[dict[str, Any]], source: str,
+        floor_id: str | None = None, screenshot_path: str | None = None,
+        confidence: float | None = None,
+    ) -> list[str]:
+        """Record one visible reward collection as a single transaction.
+
+        The UI may still require individual selections, but telemetry and
+        evidence no longer repeat a capture and database round-trip per item.
+        """
+        if not isinstance(events, list) or not events or not source.strip():
+            raise ValueError("events and source are required")
+        if confidence is not None and not 0 <= confidence <= 1:
+            raise ValueError("inventory confidence must be between 0 and 1")
+        ids: list[str] = []
+        self.initialize()
+        with self._connection() as db:
+            self._validate_event_context(db, run_id=run_id, floor_id=floor_id, combat_id=None, turn_id=None)
+            for event in events:
+                kind, action, item = event.get("kind"), event.get("action"), event.get("item")
+                prop = event.get("property")
+                if kind not in {"card", "relic", "potion"} or action not in {"acquired", "removed", "consumed", "replaced", "property_confirmed"} or not isinstance(item, str) or not item.strip():
+                    raise ValueError("each batch event needs a valid kind, action, and item")
+                if action == "property_confirmed" and not isinstance(prop, str):
+                    raise ValueError("property confirmation requires property text")
+                event_id = str(uuid4())
+                ids.append(event_id)
+                db.execute(
+                    "INSERT INTO inventory_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (event_id, run_id, floor_id, kind, action, item.strip(), prop.strip() if prop else None,
+                     event.get("related_item"), screenshot_path, source.strip(), confidence, _now()),
+                )
+        return ids
+
     def resolve_decision(
         self, *, decision_id: str, chosen_action: dict[str, Any], actual_outcome: dict[str, Any], status: str = "resolved"
     ) -> None:

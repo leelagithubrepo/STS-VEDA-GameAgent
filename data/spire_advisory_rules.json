@@ -1,6 +1,6 @@
 {
-  "version": "spire-rules-2026-09-22.1",
-  "reviewed_at": "2026-09-22",
+  "version": "spire-rules-2026-09-25.1",
+  "reviewed_at": "2026-09-25",
   "game": "Slay the Spire 1",
   "provenance": "Community references and game-extracted database; console build not independently verified. Live evidence overrides predictions.",
   "rules": [
@@ -94,6 +94,23 @@
       ]
     },
     {
+      "id": "low-hp-risk-budget",
+      "tags": [
+        "hp",
+        "events",
+        "merchant",
+        "rest-site"
+      ],
+      "statement": "When HP is below half, treat optional fights and costly events as risk-budget decisions. Prefer a reachable rest site, use confirmed healing or defensive potions before lethal turns, and spend merchant gold on clearly identified survival or consistency upgrades rather than hoarding for an uncertain future shop.",
+      "kind": "situational_strategy",
+      "conditions": "Current HP, enemy intent, potion effects, route and merchant offers must be visible. A low-HP threshold does not automatically mean skipping a card reward: take a clearly identified defensive card when its immediate survival value exceeds its deck cost.",
+      "sources": [
+        ".veda/workflows/spire-advisory.md",
+        "artifacts/observations/ps5_observation_20260926T024005Z.png",
+        "artifacts/observations/ps5_observation_20260926T032502Z.png"
+      ]
+    },
+    {
       "id": "time-warp",
       "tags": [
         "time eater"
@@ -142,6 +159,70 @@
       "sources": [
         "https://slay-the-spire.fandom.com/wiki/Rest_Site",
         "https://slay-the-spire.fandom.com/wiki/Pantograph"
+      ]
+    },
+    {
+      "id": "anger-generation",
+      "tags": [
+        "anger"
+      ],
+      "statement": "Observed base Anger is a 0-cost Attack dealing 6 base damage and creating a copy in the combat discard pile. Observe after play; record the original play and generated copy separately, without changing permanent deck inventory.",
+      "kind": "game_fact",
+      "conditions": "Base Anger was inspected in this run; unsupported variants require separate review.",
+      "sources": [
+        "artifacts/observations/ps5_observation_20260924T162549Z.png"
+      ]
+    },
+    {
+      "id": "hemokinesis-plus-hp-cost",
+      "tags": [
+        "hemokinesis"
+      ],
+      "statement": "Observed Hemokinesis+ is a 1-cost Attack that loses 2 HP and deals 20 base damage. Block does not pay its HP cost. Require more than 2 HP and observe after the play.",
+      "kind": "game_fact",
+      "conditions": "Upgraded green-title card confirmed in this run; do not silently substitute base or modified card effects.",
+      "sources": [
+        "artifacts/observations/ps5_observation_20260924T093543Z.png"
+      ]
+    },
+    {
+      "id": "spike-slime-a2-intents",
+      "tags": [
+        "spike slime (l)",
+        "spike slime (m)",
+        "slimed"
+      ],
+      "statement": "At Ascension 2, Spike Slime (L) Flame Tackle attacks for 18 base damage and adds 2 Slimed to discard; Lick applies 2 Frail. Spike Slime (M) Flame Tackle attacks for 10 and adds 1 Slimed; Lick applies 1 Frail. Use displayed modified damage and current visible intent, not a predicted move.",
+      "kind": "game_fact",
+      "conditions": "Reviewed community reference for Slay the Spire 1, Ascension 2 only. Confirm identity, intent and resulting status changes on the live console.",
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Spike_Slime"
+      ]
+    },
+    {
+      "id": "spike-slime-split-boundary",
+      "tags": [
+        "spike slime (l)",
+        "spike slime (m)"
+      ],
+      "statement": "Spike Slime (L) at or below half HP changes intent to Split and produces two smaller slimes with its current HP. Any threshold-crossing attack requires a new observation before using an incoming-damage prediction. Observe actual child identities, HP and intents; Spike Slime (M) has no Split.",
+      "kind": "game_fact",
+      "conditions": "Current large-slime Split tooltip must be inspected; transformations and child state are observation boundaries.",
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Spike_Slime",
+        "artifacts/observations/ps5_observation_20260924T162643Z.png"
+      ]
+    },
+    {
+      "id": "slimed-exhaust",
+      "tags": [
+        "slimed"
+      ],
+      "statement": "In Slay the Spire 1, Slimed is a playable 1-cost Status whose effect is Exhaust. It has no card-draw effect. Observe and log the move to the combat exhaust pile when played.",
+      "kind": "game_fact",
+      "conditions": "Confirm current card title, type, cost, playability and Exhaust text on drawing it; unrelated exhaust triggers remain separate.",
+      "sources": [
+        "https://slay-the-spire.fandom.com/wiki/Slimed"
       ]
     }
   ],
