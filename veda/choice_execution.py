@@ -62,6 +62,12 @@ def _digest(value):
                                      allow_nan=False).encode()).hexdigest()
 
 
+def _same_json(left, right):
+    """Compare bounded JSON facts without Python's True == 1 coercion."""
+    return (json.dumps(left, sort_keys=True, separators=(",", ":"), allow_nan=False) ==
+            json.dumps(right, sort_keys=True, separators=(",", ":"), allow_nan=False))
+
+
 def _json(value):
     try:
         raw = json.dumps(value, allow_nan=False)
@@ -176,8 +182,7 @@ def _observation(value, now, age_limit):
     return obs
 
 
-def _postconditions(choice, before):
-    post = choice.get("postconditions")
+def _postconditions(post, before):
     _require(isinstance(post, dict) and set(post) == {
         "screen", "phase", "context", "resources", "inventory_digest", "facts", "allow_changed_facts"},
         "explicit outcome conditions and allowed changes required")
@@ -199,6 +204,31 @@ def _postconditions(choice, before):
     return post
 
 
+def _outcome_branches(choice, before):
+    """Validate complete alternatives; never combine their individual fields."""
+    post = choice.get("postconditions")
+    if not isinstance(post, dict) or "alternatives" not in post:
+        return [{"id": None, "postconditions": _postconditions(post, before)}]
+    _require(set(post) == {"alternatives"} and choice.get("kind") in {"map", "event", "reward"},
+             "alternative outcomes are supported only for map, event and reward choices")
+    branches = post["alternatives"]
+    _require(isinstance(branches, list) and 2 <= len(branches) <= 8,
+             "declare between two and eight complete outcome alternatives")
+    labels, contracts = set(), []
+    for branch in branches:
+        _require(isinstance(branch, dict) and set(branch) == {"id", "postconditions"}
+                 and _text(branch.get("id")) and branch["id"] not in labels,
+                 "each outcome alternative needs a distinct named identity and complete conditions")
+        conditions = _postconditions(branch["postconditions"], before)
+        canonical = deepcopy(conditions)
+        canonical["allow_changed_facts"] = sorted(canonical["allow_changed_facts"])
+        _require(not any(_same_json(canonical, existing) for existing in contracts),
+                 "duplicate outcome conditions are not alternatives")
+        labels.add(branch["id"])
+        contracts.append(canonical)
+    return branches
+
+
 def _choice(value, obs):
     choice = _json(value)
     _require(isinstance(choice, dict) and _text(choice.get("choice_id"))
@@ -216,7 +246,7 @@ def _choice(value, obs):
     if choice["kind"] == "continue_run":
         _require(len(wanted) == 1 and options[wanted[0]]["label"] == "Continue"
                  and options[wanted[0]].get("role") == "continue_run", "only the visible current-run Continue is supported")
-    post = _postconditions(choice, obs)
+    branches = _outcome_branches(choice, obs)
     from .neow_start import uses_neow_control_rule, validate_neow_choice
     if uses_neow_control_rule(obs):
         validate_neow_choice(choice, obs)
@@ -224,7 +254,8 @@ def _choice(value, obs):
         cost = sum(options[k]["costs"].get(key, 0) for k in wanted)
         _require(cost <= available, "choice exceeds observed " + key)
         if cost:
-            _require(post["resources"][key] == available - cost, "paid resource needs its exact reviewed debit")
+            _require(all(branch["postconditions"]["resources"][key] == available - cost for branch in branches),
+                     "paid resource needs its exact reviewed debit in every outcome")
     return choice
 
 
@@ -310,6 +341,44 @@ def _stable(obs):
     return {k: obs[k] for k in ("context", "resources", "inventory_digest", "facts")}
 
 
+def _verify_postconditions(post, before, after):
+    _require(after["ui"]["screen"] == post["screen"] and after["ui"]["phase"] == post["phase"]
+             and after["context"] == post["context"], "unexpected committed choice UI/context")
+    _require(set(after["resources"]) == set(post["resources"]), "resource fields changed")
+    for key, expected in post["resources"].items():
+        actual = after["resources"][key]
+        _require(actual == expected if _integer(expected) else expected["min"] <= actual <= expected["max"],
+                 "resource outcome differs: " + key)
+    inventory = before["inventory_digest"] if post["inventory_digest"] == "unchanged" else post["inventory_digest"]
+    _require(after["inventory_digest"] == inventory, "unexpected inventory outcome")
+    allowed = set(post["allow_changed_facts"])
+    for key in set(before["facts"]) | set(after["facts"]) | set(post["facts"]):
+        if key in post["facts"]:
+            _require(key in after["facts"] and _same_json(after["facts"][key], post["facts"][key]),
+                     "outcome fact differs: " + key)
+        elif key not in allowed:
+            _require(key in before["facts"] and key in after["facts"]
+                     and _same_json(after["facts"][key], before["facts"][key]),
+                     "undeclared fact change: " + key)
+
+
+def _match_outcome(choice, before, after):
+    branches = _outcome_branches(choice, before)
+    if len(branches) == 1:
+        _verify_postconditions(branches[0]["postconditions"], before, after)
+        return None
+    matched = []
+    for branch in branches:
+        try:
+            _verify_postconditions(branch["postconditions"], before, after)
+        except ChoiceError:
+            continue
+        matched.append(branch["id"])
+    _require(matched, "observed result matches no declared outcome alternative")
+    _require(len(matched) == 1, "observed result matches overlapping outcome alternatives")
+    return matched[0]
+
+
 @_checked
 def verify_choice_step(proposal, before, after, *, now=None):
     """Verify observed semantics, never just a bridge ack or a different image.
@@ -326,8 +395,9 @@ def verify_choice_step(proposal, before, after, *, now=None):
              and _time(after["frame"]["observed_at"]) > _time(before["frame"]["observed_at"]),
              "verification needs a later distinct source")
     kind, ui = proposal["step_kind"], deepcopy(before["ui"])
+    matched_outcome_id = None
     if kind in {"focus", "select"}:
-        _require(_stable(after) == _stable(before), "game context/resources/inventory changed during choice navigation")
+        _require(_same_json(_stable(after), _stable(before)), "game context/resources/inventory changed during choice navigation")
         if kind == "focus":
             ui["focused_id"] = proposal["expectation"]["focused_id"]
         else:
@@ -343,23 +413,7 @@ def verify_choice_step(proposal, before, after, *, now=None):
             return value
         _require(semantics(after["ui"]) == semantics(ui), "choice focus/selection/UI transition differs")
     else:
-        post = proposal["choice"]["postconditions"]
-        _require(after["ui"]["screen"] == post["screen"] and after["ui"]["phase"] == post["phase"]
-                 and after["context"] == post["context"], "unexpected committed choice UI/context")
-        _require(set(after["resources"]) == set(post["resources"]), "resource fields changed")
-        for key, expected in post["resources"].items():
-            actual = after["resources"][key]
-            _require(actual == expected if _integer(expected) else expected["min"] <= actual <= expected["max"],
-                     "resource outcome differs: " + key)
-        inventory = before["inventory_digest"] if post["inventory_digest"] == "unchanged" else post["inventory_digest"]
-        _require(after["inventory_digest"] == inventory, "unexpected inventory outcome")
-        allowed = set(post["allow_changed_facts"])
-        for key in set(before["facts"]) | set(after["facts"]) | set(post["facts"]):
-            if key in post["facts"]:
-                _require(key in after["facts"] and after["facts"][key] == post["facts"][key], "outcome fact differs: " + key)
-            elif key not in allowed:
-                _require(key in before["facts"] and key in after["facts"] and after["facts"][key] == before["facts"][key],
-                         "undeclared fact change: " + key)
+        matched_outcome_id = _match_outcome(proposal["choice"], before, after)
         outcome = after["review"].get("outcome")
         _require(isinstance(outcome, dict) and outcome.get("action_id") == proposal["action_id"]
                  and outcome.get("before_frame_id") == before["frame"]["frame_id"]
@@ -370,7 +424,7 @@ def verify_choice_step(proposal, before, after, *, now=None):
         def option_facts(ui):
             return [{k: o.get(k) for k in ("id", "label", "enabled", "costs", "role")}
                     for o in ui["options"]]
-        _require(_stable(after) != _stable(before) or
+        _require(not _same_json(_stable(after), _stable(before)) or
                  any(after["ui"][k] != before["ui"][k] for k in ("screen", "phase")) or
                  option_facts(after["ui"]) != option_facts(before["ui"]),
                  "no observed semantic choice result")
@@ -380,5 +434,6 @@ def verify_choice_step(proposal, before, after, *, now=None):
     return {"schema": "veda.choice-verification.v1", "action_id": proposal["action_id"],
         "step_verified": True, "choice_complete": kind == "commit", "before_frame": before["frame"],
         "after_frame": after["frame"], "after_digest": _digest(after),
+        "matched_outcome_id": matched_outcome_id,
         "evidence_kind": "explicit_reviewed_evidence_not_automated_recognition",
         "runtime_authorized": False, "controller_authorized": False}

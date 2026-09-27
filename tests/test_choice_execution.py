@@ -73,6 +73,33 @@ def plan(obs, goal=None, **kwargs):
     return plan_choice_step(obs, goal or choice(obs), now=NOW, **kwargs)
 
 
+def alternative_choice(obs, kind='event'):
+    goal = choice(obs, kind=kind)
+    combat = deepcopy(goal['postconditions'])
+    combat['context'].update(combat_id='revealed-combat', turn_id='revealed-turn')
+    combat['resources']['hp'] = 30
+    combat['facts'] = {'stage': 'combat-revealed'}
+    reward = deepcopy(goal['postconditions'])
+    reward.update(screen='reward', phase='choose', inventory_digest='d' * 64)
+    reward['resources']['gold'] = 125
+    reward['facts'] = {'stage': 'reward-revealed'}
+    goal['postconditions'] = {'alternatives': [
+        {'id': 'combat', 'postconditions': combat},
+        {'id': 'reward', 'postconditions': reward},
+    ]}
+    return goal
+
+
+def alternative_outcome(obs, step, branch=0):
+    synthetic_step = deepcopy(step)
+    synthetic_step['choice']['postconditions'] = step['choice']['postconditions']['alternatives'][branch]['postconditions']
+    after = outcome(obs, synthetic_step)
+    if after['ui']['phase'] != 'result':
+        after['ui'].update(options=[{'id': 'observed-next', 'label': 'Observed next option',
+            'enabled': True, 'costs': {}}], order=['observed-next'], focused_id='observed-next', required_count=1)
+    return after
+
+
 class ChoiceExecutionTests(unittest.TestCase):
     def verify(self, step, before, after):
         return verify_choice_step(step, before, after, now=NOW + timedelta(seconds=3))
@@ -329,6 +356,212 @@ class ChoiceExecutionTests(unittest.TestCase):
             'frame_id': before['frame']['frame_id'], 'image_sha256': before['frame']['image_sha256']}
         with self.assertRaisesRegex(ChoiceError, 'Neow opening'):
             plan(before, choice(before, kind='event'))
+
+    def test_event_outcome_branches_match_complete_combat_or_reward_result(self):
+        before = observation(screen='event'); before['context'].update(combat_id=None, turn_id=None)
+        goal = alternative_choice(before); original = deepcopy((before, goal))
+        step = plan(before, goal)
+        for index, expected in enumerate(('combat', 'reward')):
+            after = alternative_outcome(before, step, index)
+            # An externally supplied name is not ground truth for matching.
+            after['review']['outcome']['matched_outcome_id'] = 'wrong-claim'
+            result = self.verify(step, before, after)
+            self.assertTrue(result['choice_complete'])
+            self.assertEqual(result['matched_outcome_id'], expected)
+            self.assertFalse(result['controller_authorized'])
+        self.assertEqual((before, goal), original)
+
+    def test_map_and_reward_choices_can_also_declare_bounded_outcomes(self):
+        for kind in ('map', 'reward'):
+            before = observation(screen=kind); before['context'].update(combat_id=None, turn_id=None)
+            step = plan(before, alternative_choice(before, kind))
+            result = self.verify(step, before, alternative_outcome(before, step, 1))
+            self.assertEqual(result['matched_outcome_id'], 'reward')
+
+    def test_finite_fact_values_are_separate_exact_branches(self):
+        before = observation(screen='event')
+        goal = choice(before, kind='event'); first = deepcopy(goal['postconditions'])
+        first.update(screen='event', facts={'stage': 'first-result'})
+        second = deepcopy(first); second['facts']['stage'] = 'second-result'
+        goal['postconditions'] = {'alternatives': [
+            {'id': 'first', 'postconditions': first}, {'id': 'second', 'postconditions': second}]}
+        step = plan(before, goal)
+        for index, expected in enumerate(('first', 'second')):
+            after = alternative_outcome(before, step, index)
+            self.assertEqual(self.verify(step, before, after)['matched_outcome_id'], expected)
+        after['facts']['stage'] = 'unlisted-result'
+        with self.assertRaisesRegex(ChoiceError, 'no declared outcome'):
+            self.verify(step, before, after)
+
+    def test_outcome_fields_from_different_branches_cannot_be_mixed(self):
+        before = observation(screen='event'); before['context'].update(combat_id=None, turn_id=None)
+        step = plan(before, alternative_choice(before))
+        combat, reward = (alternative_outcome(before, step, i) for i in (0, 1))
+        for key in ('context', 'resources', 'inventory_digest', 'facts', 'ui'):
+            mixed = deepcopy(combat); mixed[key] = deepcopy(reward[key])
+            with self.subTest(key=key), self.assertRaisesRegex(ChoiceError, 'no declared outcome'):
+                self.verify(step, before, mixed)
+        for mutate in (
+            lambda a: a['ui'].update(screen='shop'),
+            lambda a: a['context'].update(run_id='different-run'),
+            lambda a: a['facts'].update(unlisted_change=True),
+            lambda a: a['resources'].update(hp=29),
+            lambda a: a.update(inventory_digest='f' * 64),
+        ):
+            after = deepcopy(combat); mutate(after)
+            with self.subTest(mutate=mutate), self.assertRaisesRegex(ChoiceError, 'no declared outcome'):
+                self.verify(step, before, after)
+
+    def test_every_alternative_must_preserve_run_and_exact_paid_costs(self):
+        before = observation(screen='event')
+        before['ui']['options'][0]['costs'] = {'gold': 10}
+        goal = alternative_choice(before)
+        for branch in goal['postconditions']['alternatives']:
+            branch['postconditions']['resources']['gold'] = 90
+        step = plan(before, goal)
+        self.assertEqual(self.verify(step, before, alternative_outcome(before, step, 0))['matched_outcome_id'], 'combat')
+        for mutate in (
+            lambda p: p['resources'].update(gold=91),
+            lambda p: p['resources'].update(gold={'min': 80, 'max': 90}),
+            lambda p: p['context'].update(run_id='other-run'),
+            lambda p: p.update(inventory_digest='unknown'),
+            lambda p: p['resources'].pop('hp'),
+            lambda p: p.update(screen='any'),
+        ):
+            bad = deepcopy(goal); mutate(bad['postconditions']['alternatives'][1]['postconditions'])
+            with self.subTest(mutate=mutate), self.assertRaises(ChoiceError):
+                plan(before, bad)
+
+    def test_multiple_matching_alternatives_cannot_be_claimed_as_success(self):
+        before = observation(screen='event'); goal = choice(before, kind='event')
+        first = deepcopy(goal['postconditions']); first['resources']['hp'] = {'min': 20, 'max': 35}
+        second = deepcopy(first); second['resources']['hp'] = {'min': 30, 'max': 40}
+        goal['postconditions'] = {'alternatives': [
+            {'id': 'lower-range', 'postconditions': first}, {'id': 'upper-range', 'postconditions': second}]}
+        step = plan(before, goal); after = alternative_outcome(before, step, 0)
+        after['resources']['hp'] = 32
+        with self.assertRaisesRegex(ChoiceError, 'overlapping outcome'):
+            self.verify(step, before, after)
+        after['resources']['hp'] = 25
+        self.assertEqual(self.verify(step, before, after)['matched_outcome_id'], 'lower-range')
+        after['resources']['hp'] = 38
+        self.assertEqual(self.verify(step, before, after)['matched_outcome_id'], 'upper-range')
+
+    def test_malformed_duplicate_nested_or_excessive_branches_are_rejected(self):
+        before = observation(screen='event'); goal = alternative_choice(before)
+        mutations = [
+            lambda p: p.update(extra=True),
+            lambda p: p.update(alternatives=[]),
+            lambda p: p.update(alternatives=p['alternatives'][:1]),
+            lambda p: p.update(alternatives='unknown'),
+            lambda p: p.update(alternatives=[None, None]),
+            lambda p: p['alternatives'][0].update(id=''),
+            lambda p: p['alternatives'][1].update(id='combat'),
+            lambda p: p['alternatives'][0].update(extra=True),
+            lambda p: p['alternatives'][0].pop('postconditions'),
+            lambda p: p['alternatives'][0].update(postconditions={'alternatives': []}),
+            lambda p: p['alternatives'][1].update(postconditions=deepcopy(p['alternatives'][0]['postconditions'])),
+            lambda p: p.update(alternatives=[{'id': str(i), 'postconditions': dict(deepcopy(p['alternatives'][0]['postconditions']),
+                facts={'stage': str(i)})} for i in range(9)]),
+        ]
+        for mutate in mutations:
+            bad = deepcopy(goal); mutate(bad['postconditions'])
+            with self.subTest(mutate=mutate), self.assertRaises(ChoiceError):
+                plan(before, bad)
+        # Eight distinct complete alternatives are accepted at the bound.
+        goal['postconditions']['alternatives'] = [
+            {'id': str(i), 'postconditions': dict(deepcopy(goal['postconditions']['alternatives'][0]['postconditions']),
+                facts={'stage': str(i)})} for i in range(8)]
+        self.assertEqual(plan(before, goal)['step_kind'], 'commit')
+
+    def test_alternatives_do_not_expand_other_choice_kinds_or_neow_rule(self):
+        for kind, screen in (('selection', 'selection'), ('potion', 'potion_slots'), ('rest', 'rest'), ('shop', 'shop')):
+            before = observation(screen=screen)
+            with self.subTest(kind=kind), self.assertRaisesRegex(ChoiceError, 'only for map, event and reward'):
+                plan(before, alternative_choice(before, kind))
+        from tests.test_neow_start import review_input
+        from veda.neow_start import build_neow_talk_from_review
+        inputs = review_input(); packet = build_neow_talk_from_review(**inputs)
+        goal = deepcopy(packet['choice']); exact = deepcopy(goal['postconditions'])
+        other = deepcopy(exact); other['resources']['gold'] += 1
+        goal['postconditions'] = {'alternatives': [
+            {'id': 'normal-talk', 'postconditions': exact}, {'id': 'expanded-talk', 'postconditions': other}]}
+        with self.assertRaisesRegex(ChoiceError, 'Neow Talk only advances'):
+            plan_choice_step(packet['observation'], goal, now=inputs['now'])
+
+    def test_alternatives_keep_source_integrity_outcome_review_and_progress_checks(self):
+        before = observation(screen='event'); goal = alternative_choice(before); step = plan(before, goal)
+        after = alternative_outcome(before, step)
+        after['review']['outcome']['action_id'] = 'wrong-input'
+        with self.assertRaisesRegex(ChoiceError, 'outcome review'):
+            self.verify(step, before, after)
+        after = alternative_outcome(before, step)
+        after['frame']['observed_at'] = NOW.isoformat()
+        with self.assertRaisesRegex(ChoiceError, 'later distinct'):
+            self.verify(step, before, after)
+        changed = deepcopy(step)
+        changed['choice']['postconditions']['alternatives'][0]['postconditions']['resources']['hp'] = 99
+        with self.assertRaisesRegex(ChoiceError, 'modified'):
+            validate_choice_proposal(changed, before, now=NOW)
+        # A permitted branch that merely repeats all before semantics is not a
+        # successful commit, even when it is the unique matching branch.
+        same = choice(before, kind='event')['postconditions']
+        same.update(screen='event', phase='choose', facts=deepcopy(before['facts']))
+        other = deepcopy(same); other['facts']['stage'] = 'different'
+        goal['postconditions'] = {'alternatives': [
+            {'id': 'unchanged', 'postconditions': same}, {'id': 'changed', 'postconditions': other}]}
+        step = plan(before, goal); after = alternative_outcome(before, step)
+        after['ui'] = deepcopy(before['ui'])
+        with self.assertRaisesRegex(ChoiceError, 'no observed semantic'):
+            self.verify(step, before, after)
+
+    def test_exact_outcome_and_navigation_return_no_matched_branch(self):
+        before = observation(); step = plan(before)
+        self.assertIsNone(self.verify(step, before, outcome(before, step))['matched_outcome_id'])
+        before = observation(screen='event'); goal = alternative_choice(before); goal['option_ids'] = ['2']
+        step = plan(before, goal); after = later(before); after['ui']['focused_id'] = '1'
+        result = self.verify(step, before, after)
+        self.assertFalse(result['choice_complete'])
+        self.assertIsNone(result['matched_outcome_id'])
+
+    def test_exact_fact_values_do_not_coerce_booleans_or_nested_json_types(self):
+        for expected, actual in ((1, True), (False, 0), (1, 1.0),
+                                 ({'count': 1}, {'count': True}),
+                                 ([{'count': 1}], [{'count': True}])):
+            before = observation(); goal = choice(before)
+            goal['postconditions']['facts'] = {'stage': 'resolved', 'typed_value': expected}
+            step = plan(before, goal); after = outcome(before, step)
+            after['facts']['typed_value'] = actual
+            with self.subTest(expected=expected, actual=actual), self.assertRaisesRegex(ChoiceError, 'outcome fact differs'):
+                self.verify(step, before, after)
+
+    def test_unchanged_facts_and_navigation_also_preserve_exact_json_types(self):
+        before = observation(); before['facts']['nested'] = {'counts': [1]}
+        step = plan(before); after = outcome(before, step)
+        after['facts']['nested']['counts'] = [True]
+        with self.assertRaisesRegex(ChoiceError, 'undeclared fact change'):
+            self.verify(step, before, after)
+        step = plan(before, choice(before, ['2']))
+        after = later(before); after['ui']['focused_id'] = '1'
+        after['facts']['nested']['counts'] = [True]
+        with self.assertRaisesRegex(ChoiceError, 'changed during choice navigation'):
+            self.verify(step, before, after)
+
+    def test_alternative_fact_matching_and_duplicate_checks_are_type_sensitive(self):
+        before = observation(screen='event'); goal = choice(before, kind='event')
+        first = deepcopy(goal['postconditions']); first['facts']['typed_value'] = {'values': [1]}
+        second = deepcopy(first); second['facts']['typed_value'] = {'values': [True]}
+        goal['postconditions'] = {'alternatives': [
+            {'id': 'integer', 'postconditions': first}, {'id': 'boolean', 'postconditions': second}]}
+        step = plan(before, goal)
+        for index, expected in enumerate(('integer', 'boolean')):
+            after = alternative_outcome(before, step, index)
+            self.assertEqual(self.verify(step, before, after)['matched_outcome_id'], expected)
+        goal['postconditions']['alternatives'][1]['postconditions']['facts']['typed_value'] = {'values': [2]}
+        step = plan(before, goal); after = alternative_outcome(before, step)
+        after['facts']['typed_value'] = {'values': [True]}
+        with self.assertRaisesRegex(ChoiceError, 'no declared outcome'):
+            self.verify(step, before, after)
 
 
 if __name__=='__main__':unittest.main()

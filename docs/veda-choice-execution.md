@@ -8,7 +8,7 @@ Supported choice types are card selection, potion slots/menus/targets, map, rewa
 
 - `plan_choice_step(observation, choice, now=..., max_age_seconds=5, action_id=None)` returns one `tap` command with one button and its source-bound expectation. It emits a focus step, a selection step, or a commit.
 - `validate_choice_proposal(proposal, before, now=...)` repeats source, review, cost and freshness checks immediately before the caller sends. A modified proposal or observation is rejected.
-- `verify_choice_step(proposal, before, after, now=...)` checks a later distinct source and its observed semantics. It returns `step_verified` and `choice_complete`; these do not authorize the next input. The next step needs fresh review.
+- `verify_choice_step(proposal, before, after, now=...)` checks a later distinct source and its observed semantics. It returns `step_verified`, `choice_complete`, and `matched_outcome_id` (a derived branch ID, or null for an exact outcome or navigation). These do not authorize the next input. The next step needs fresh review.
 
 All three raise `ChoiceError` on incomplete, stale, conflicting or unsupported evidence. Returned `runtime_authorized` and `controller_authorized` fields remain false. The proposal digest detects accidental mutation; it is not an authentication signature. The caller must retain the original proposal and prevent reused request IDs.
 
@@ -62,12 +62,74 @@ The choice names its `kind`, matching `choice_id`, exact ordered `option_ids`, a
 
 This permits map entry into combat without inventing the new hand or enemy roll: screen/floor/resources/inventory remain constrained, while specifically named new-hand/roster facts are inspected afterward. It does not make those unknowns sufficient for a subsequent combat decision.
 
+For `map`, `event`, and `reward` choices, `postconditions` may instead contain
+exactly `alternatives`, a list of two to eight `{id, postconditions}` objects.
+Each ID must be distinct, and each branch must contain the complete ordinary
+contract above. Duplicate contracts and nested alternatives are rejected.
+The original single-contract form remains valid for every supported choice.
+Neow's named Talk control rule retains its exact contract and cannot use
+alternatives to authorize additional effects.
+
+For example, this synthetic structure permits two different revealed menus
+without claiming which one will appear or collecting any reward:
+
+```json
+{
+  "postconditions": {
+    "alternatives": [
+      {
+        "id": "follow-up-dialogue",
+        "postconditions": {
+          "screen": "event",
+          "phase": "choose",
+          "context": {"run_id": "synthetic-run", "floor_id": "synthetic-floor", "combat_id": null, "turn_id": null},
+          "resources": {"hp": 35, "gold": 99},
+          "inventory_digest": "unchanged",
+          "facts": {"event_stage": "follow-up"},
+          "allow_changed_facts": ["dialogue_text"]
+        }
+      },
+      {
+        "id": "reward-menu",
+        "postconditions": {
+          "screen": "reward",
+          "phase": "choose",
+          "context": {"run_id": "synthetic-run", "floor_id": "synthetic-floor", "combat_id": null, "turn_id": null},
+          "resources": {"hp": 35, "gold": 99},
+          "inventory_digest": "unchanged",
+          "facts": {"event_stage": "reward-revealed"},
+          "allow_changed_facts": ["dialogue_text"]
+        }
+      }
+    ]
+  }
+}
+```
+
+The caller must obtain every branch from applicable reviewed rules and include
+every resource field present in its actual observation. Every branch must keep
+the same run and satisfy the exact debit for each paid resource. A branch can
+use a resource range already supported by the ordinary contract, but ranges
+must not replace exact paid debits. Finite fact values can be represented by
+separate exact branches; `allow_changed_facts` remains an explicit allowance
+for named unpredictable values, not a finite-value constraint.
+Exact and unchanged facts preserve JSON types, including nested values:
+an observed `true` cannot satisfy an expected integer `1`.
+
+Verification matches the complete observed result against every branch. Exactly
+one must match. It never combines one branch's screen with another branch's
+resources or inventory, and a caller-supplied branch name cannot select the
+result. No match or multiple matches leaves the input unresolved. The adapter
+then applies the usual lifecycle and inventory-evidence checks before saving
+the derived ID as `choice_outcome_id` in the observed outcome. Recovery can
+repeat an idempotent telemetry write, never the controller input.
+
 Every commit also needs `after.review.outcome` containing the `action_id`, `before_frame_id`, `before_sha256`, original `choice_id`, exact `option_ids`, and a named `observed_result`. The outer review binds the after-frame. A bridge acknowledgement, changed image, renamed choice ID, different review metadata or highlighted card alone is insufficient. The named review is retained as reviewed evidence, never presented as automated recognition.
 
-Headbutt/Warcry return selection should constrain the observed selected card's destination and preserved surrounding zone facts. Potion slot opening and Drink are separate reviewed steps; drinking Explosive Potion must also match its slot/inventory change and reviewed enemy outcome. A shop purchase checks its current price, exact gold debit and resulting inventory. Random or ambiguous outcomes that cannot meet the declared contract stop for explicit reconciliation.
+Headbutt/Warcry return selection should constrain the observed selected card's destination and preserved surrounding zone facts. Potion slot opening and Drink are separate reviewed steps; drinking Explosive Potion must also match its slot/inventory change and reviewed enemy outcome. A shop purchase checks its current price, exact gold debit and resulting inventory. A random result that matches one complete declared branch can be verified after inspection. Results outside all declared branches, overlapping branches, and unknown inventory mutations still require explicit reconciliation. Alternatives do not supply missing menu controls, recognize pixels, predict hidden rewards, or weaken the freshness and pending-action checks.
 
 ## Evidence and limits
 
 Archived game pixels inspected during implementation show a potion Drink/Discard menu, a clipped Headbutt grid, a card reward with **Circle Skip**, a rest menu, and a shop with **Circle Leave**. They support distinct UI contracts and the need for current hints, complete grids and costs. They do not validate all navigation edges or complete end-to-end hardware flows. Private source/hash notes are in `artifacts/play-readiness-20260927/choice-source-review.json`.
 
-Synthetic tests cover focus routing, no invented wrap, selection counts/order, confirmation, source freshness/mutation, changed context/resources/inventory, after-review correlation, unknown map outcomes, Headbutt/Warcry facts, potion stages, paid shop choices, visible shortcuts and title Continue restrictions. Hardware, live recognition and full-run readiness require separate evidence.
+Synthetic tests cover focus routing, no invented wrap, selection counts/order, confirmation, source freshness/mutation, changed context/resources/inventory, after-review correlation, unknown map outcomes, Headbutt/Warcry facts, potion stages, paid shop choices, visible shortcuts and title Continue restrictions. Alternative-outcome tests cover finite fact values, complete branch matching, rejected mixed or overlapping results, exact costs in every branch, unchanged Neow scope, and temporary SQLite persistence/recovery with a fake controller. Hardware, live recognition and full-run readiness require separate evidence.

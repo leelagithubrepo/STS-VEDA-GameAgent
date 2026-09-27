@@ -1,0 +1,937 @@
+{
+  "schema": "veda.dynamic-map-scenarios.v1",
+  "purpose": "Independent, manually traced graph facts for offline route summaries; not strategic rankings or live evidence.",
+  "confidence_threshold": 0.9,
+  "conventions": {
+    "first_nodes": "Confirmed directed outgoing neighbors of current_node_id. Compare IDs as sets; array order and ID spelling are not route preference.",
+    "distance": "Minimum number of directed edges from the first node to a target, including first-node targets at distance zero. Paths for distance maps require confirmed edge and node classification evidence.",
+    "target_kinds": "rest identifies a rest map node; shop explicitly normalizes to merchant. Merchant/shop/elite entries include nonempty synthetic classification_evidence.",
+    "topology_only": "has_rest_path_avoiding_known_elites asks whether displayed sufficiently confident edges admit a path to rest without a known elite node, including first-node classification. Unknown kinds may occur on this topology-only path. Null means the partial graph cannot establish either existence or absence; false requires a justified negative.",
+    "confirmed_elite_free": "has_confirmed_elite_free_rest_path additionally requires classified path nodes. This means no elite map NODE; a known event can still have an unknown encounter/outcome. Neither predicate means safe. The predicate is three-valued: true confirms a path, null preserves unresolved existence, and false requires confirmed impossibility.",
+    "unknowns": "Empty target maps report absence of a confirmed path only. rest_reachable=null requires uncertainty, not false. Event outcomes and unclassified nodes remain distinct.",
+    "resources": "Preserve supplied context. All graph expectations are invariant across resource_profiles; no affordability, healing availability, damage, reward or strategy score is inferred.",
+    "invalid": "invalid_cases are separate rejection fixtures, not eligible first choices.",
+    "evidence": "All nodes/edges and resources are synthetic fixtures. classification_evidence is a declared fixture label, never a real-screen observation."
+  },
+  "resource_profiles": {
+    "low_hp": {
+      "hp": 12,
+      "max_hp": 80,
+      "gold": 20,
+      "deck_strength": "unassessed",
+      "potions": [
+        "Block Potion"
+      ],
+      "relics": []
+    },
+    "high_gold": {
+      "hp": 60,
+      "max_hp": 80,
+      "gold": 240,
+      "deck_strength": "unassessed",
+      "potions": [],
+      "relics": []
+    },
+    "rest_disabled": {
+      "hp": 12,
+      "max_hp": 80,
+      "gold": 100,
+      "deck_strength": "unassessed",
+      "potions": [],
+      "relics": [
+        "Coffee Dripper"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "case_id": "branch_merge",
+      "input": {
+        "current_node_id": "start",
+        "visible_nodes": [
+          {
+            "node_id": "start",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "left",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "right",
+            "kind": "rest",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "merge",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "last-rest",
+            "kind": "rest",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "last-market",
+            "kind": "merchant",
+            "confidence": 0.99,
+            "outgoing_complete": true,
+            "classification_evidence": "Synthetic fixture explicitly labels last-market as merchant; not a live icon observation."
+          }
+        ],
+        "visible_edges": [
+          {
+            "from_node_id": "start",
+            "to_node_id": "left",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "start",
+            "to_node_id": "right",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "left",
+            "to_node_id": "merge",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "right",
+            "to_node_id": "merge",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "merge",
+            "to_node_id": "last-rest",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "merge",
+            "to_node_id": "last-market",
+            "confidence": 0.99
+          }
+        ],
+        "resources": {
+          "hp": 60,
+          "max_hp": 80,
+          "gold": 240,
+          "deck_strength": "unassessed",
+          "potions": [],
+          "relics": []
+        },
+        "graph_complete": true
+      },
+      "expected": {
+        "confirmed_first_node_ids": [
+          "left",
+          "right"
+        ],
+        "per_first_node": {
+          "left": {
+            "reachable_rest_min_distance": {
+              "last-rest": 2
+            },
+            "reachable_merchant_min_distance": {
+              "last-market": 2
+            },
+            "has_rest_path_avoiding_known_elites": true,
+            "has_confirmed_elite_free_rest_path": true,
+            "rest_reachable": true,
+            "manual_notes": [
+              "left\u2192merge\u2192last-rest and left\u2192merge\u2192last-market each have two edges."
+            ]
+          },
+          "right": {
+            "reachable_rest_min_distance": {
+              "right": 0,
+              "last-rest": 2
+            },
+            "reachable_merchant_min_distance": {
+              "last-market": 2
+            },
+            "has_rest_path_avoiding_known_elites": true,
+            "has_confirmed_elite_free_rest_path": true,
+            "rest_reachable": true,
+            "manual_notes": [
+              "right is itself a rest at distance zero; both later targets are two edges via merge."
+            ]
+          }
+        }
+      },
+      "manual_notes": [
+        "A shared merge is counted once per target, not once per path. No route preference is implied."
+      ]
+    },
+    {
+      "case_id": "rest_before_elite_vs_forced_elite",
+      "input": {
+        "current_node_id": "current",
+        "visible_nodes": [
+          {
+            "node_id": "current",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "rest-first",
+            "kind": "rest",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "elite-after-rest",
+            "kind": "elite",
+            "confidence": 0.99,
+            "outgoing_complete": true,
+            "classification_evidence": "Synthetic fixture explicitly labels elite-after-rest as elite; not a live icon observation."
+          },
+          {
+            "node_id": "rest-after-elite",
+            "kind": "rest",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "elite-first",
+            "kind": "elite",
+            "confidence": 0.99,
+            "outgoing_complete": true,
+            "classification_evidence": "Synthetic fixture explicitly labels elite-first as elite; not a live icon observation."
+          },
+          {
+            "node_id": "merchant-after-elite",
+            "kind": "merchant",
+            "confidence": 0.99,
+            "outgoing_complete": true,
+            "classification_evidence": "Synthetic fixture explicitly labels merchant-after-elite as merchant; not a live icon observation."
+          },
+          {
+            "node_id": "late-rest",
+            "kind": "rest",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          }
+        ],
+        "visible_edges": [
+          {
+            "from_node_id": "current",
+            "to_node_id": "rest-first",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "current",
+            "to_node_id": "elite-first",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "rest-first",
+            "to_node_id": "elite-after-rest",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "elite-after-rest",
+            "to_node_id": "rest-after-elite",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "elite-first",
+            "to_node_id": "merchant-after-elite",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "merchant-after-elite",
+            "to_node_id": "late-rest",
+            "confidence": 0.99
+          }
+        ],
+        "resources": {
+          "hp": 60,
+          "max_hp": 80,
+          "gold": 240,
+          "deck_strength": "unassessed",
+          "potions": [],
+          "relics": []
+        },
+        "graph_complete": true
+      },
+      "expected": {
+        "confirmed_first_node_ids": [
+          "rest-first",
+          "elite-first"
+        ],
+        "per_first_node": {
+          "rest-first": {
+            "reachable_rest_min_distance": {
+              "rest-first": 0,
+              "rest-after-elite": 2
+            },
+            "reachable_merchant_min_distance": {},
+            "has_rest_path_avoiding_known_elites": true,
+            "has_confirmed_elite_free_rest_path": true,
+            "rest_reachable": true,
+            "manual_notes": [
+              "The first node is already a rest. The later rest requires passing elite-after-rest."
+            ]
+          },
+          "elite-first": {
+            "reachable_rest_min_distance": {
+              "late-rest": 2
+            },
+            "reachable_merchant_min_distance": {
+              "merchant-after-elite": 1
+            },
+            "has_rest_path_avoiding_known_elites": false,
+            "has_confirmed_elite_free_rest_path": false,
+            "rest_reachable": true,
+            "manual_notes": [
+              "The first node itself counts as a known elite; no route to late-rest avoids it."
+            ]
+          }
+        }
+      },
+      "manual_notes": [
+        "Rest-before-elite is topological only. The rest_disabled resource profile must not turn this into a healing claim."
+      ]
+    },
+    {
+      "case_id": "merchant_gold_context",
+      "input": {
+        "current_node_id": "origin",
+        "visible_nodes": [
+          {
+            "node_id": "origin",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "alias-shop",
+            "kind": "shop",
+            "confidence": 0.99,
+            "outgoing_complete": true,
+            "classification_evidence": "Synthetic fixture explicitly labels alias-shop as shop; not a live icon observation."
+          },
+          {
+            "node_id": "detour",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "market",
+            "kind": "merchant",
+            "confidence": 0.99,
+            "outgoing_complete": true,
+            "classification_evidence": "Synthetic fixture explicitly labels market as merchant; not a live icon observation."
+          },
+          {
+            "node_id": "rest",
+            "kind": "rest",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          }
+        ],
+        "visible_edges": [
+          {
+            "from_node_id": "origin",
+            "to_node_id": "alias-shop",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "origin",
+            "to_node_id": "detour",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "alias-shop",
+            "to_node_id": "rest",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "detour",
+            "to_node_id": "market",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "market",
+            "to_node_id": "rest",
+            "confidence": 0.99
+          }
+        ],
+        "resources": {
+          "hp": 60,
+          "max_hp": 80,
+          "gold": 240,
+          "deck_strength": "unassessed",
+          "potions": [],
+          "relics": []
+        },
+        "graph_complete": true
+      },
+      "expected": {
+        "confirmed_first_node_ids": [
+          "alias-shop",
+          "detour"
+        ],
+        "per_first_node": {
+          "alias-shop": {
+            "reachable_rest_min_distance": {
+              "rest": 1
+            },
+            "reachable_merchant_min_distance": {
+              "alias-shop": 0
+            },
+            "has_rest_path_avoiding_known_elites": true,
+            "has_confirmed_elite_free_rest_path": true,
+            "rest_reachable": true,
+            "manual_notes": [
+              "shop normalizes to merchant; the first node itself is the merchant at distance zero."
+            ]
+          },
+          "detour": {
+            "reachable_rest_min_distance": {
+              "rest": 2
+            },
+            "reachable_merchant_min_distance": {
+              "market": 1
+            },
+            "has_rest_path_avoiding_known_elites": true,
+            "has_confirmed_elite_free_rest_path": true,
+            "rest_reachable": true,
+            "manual_notes": [
+              "detour\u2192market\u2192rest yields merchant distance one and rest distance two."
+            ]
+          }
+        }
+      },
+      "manual_notes": [
+        "Run under all three resource_profiles. Reachable merchant topology is invariant at gold 20, 240 and 100; item prices, affordability, purchases and preferred routes remain unspecified."
+      ]
+    },
+    {
+      "case_id": "partial_frontier",
+      "input": {
+        "current_node_id": "origin",
+        "visible_nodes": [
+          {
+            "node_id": "origin",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "known-path",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "known-rest",
+            "kind": "rest",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "frontier",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": false
+          },
+          {
+            "node_id": "frontier-market",
+            "kind": "merchant",
+            "confidence": 0.99,
+            "outgoing_complete": false,
+            "classification_evidence": "Synthetic fixture explicitly labels frontier-market as merchant; not a live icon observation."
+          }
+        ],
+        "visible_edges": [
+          {
+            "from_node_id": "origin",
+            "to_node_id": "known-path",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "origin",
+            "to_node_id": "frontier",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "known-path",
+            "to_node_id": "known-rest",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "frontier",
+            "to_node_id": "frontier-market",
+            "confidence": 0.99
+          }
+        ],
+        "resources": {
+          "hp": 60,
+          "max_hp": 80,
+          "gold": 240,
+          "deck_strength": "unassessed",
+          "potions": [],
+          "relics": []
+        },
+        "graph_complete": false
+      },
+      "expected": {
+        "confirmed_first_node_ids": [
+          "known-path",
+          "frontier"
+        ],
+        "per_first_node": {
+          "known-path": {
+            "reachable_rest_min_distance": {
+              "known-rest": 1
+            },
+            "reachable_merchant_min_distance": {},
+            "has_rest_path_avoiding_known_elites": true,
+            "has_confirmed_elite_free_rest_path": true,
+            "rest_reachable": true,
+            "manual_notes": [
+              "known-path\u2192known-rest is visible and confirmed."
+            ]
+          },
+          "frontier": {
+            "reachable_rest_min_distance": {},
+            "reachable_merchant_min_distance": {
+              "frontier-market": 1
+            },
+            "has_rest_path_avoiding_known_elites": null,
+            "has_confirmed_elite_free_rest_path": null,
+            "rest_reachable": null,
+            "manual_notes": [
+              "frontier\u2192frontier-market is confirmed; either node may have unobserved outgoing edges. No confirmed rest is shown, but absence is not established.",
+              "Unseen outgoing edges leave both path-existence predicates unknown, not false."
+            ]
+          }
+        }
+      },
+      "manual_notes": [
+        "An empty distance map means no confirmed reachable target in the supplied evidence, not that no such target exists.",
+        "Partial evidence cannot establish forced elite encounters or guaranteed lack of rest/merchant opportunities."
+      ]
+    },
+    {
+      "case_id": "uncertain_option_beside_confirmed_rest",
+      "input": {
+        "current_node_id": "origin",
+        "visible_nodes": [
+          {
+            "node_id": "origin",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "confirmed-rest",
+            "kind": "rest",
+            "confidence": 0.9,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "uncertain-option",
+            "kind": "enemy",
+            "confidence": 0.899,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "market-beyond-uncertain",
+            "kind": "merchant",
+            "confidence": 0.99,
+            "outgoing_complete": true,
+            "classification_evidence": "Synthetic fixture explicitly labels market-beyond-uncertain as merchant; not a live icon observation."
+          }
+        ],
+        "visible_edges": [
+          {
+            "from_node_id": "origin",
+            "to_node_id": "confirmed-rest",
+            "confidence": 0.9
+          },
+          {
+            "from_node_id": "origin",
+            "to_node_id": "uncertain-option",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "uncertain-option",
+            "to_node_id": "market-beyond-uncertain",
+            "confidence": 0.99
+          }
+        ],
+        "resources": {
+          "hp": 60,
+          "max_hp": 80,
+          "gold": 240,
+          "deck_strength": "unassessed",
+          "potions": [],
+          "relics": []
+        },
+        "graph_complete": true
+      },
+      "expected": {
+        "confirmed_first_node_ids": [
+          "confirmed-rest"
+        ],
+        "per_first_node": {
+          "confirmed-rest": {
+            "reachable_rest_min_distance": {
+              "confirmed-rest": 0
+            },
+            "reachable_merchant_min_distance": {},
+            "has_rest_path_avoiding_known_elites": true,
+            "has_confirmed_elite_free_rest_path": true,
+            "rest_reachable": true,
+            "manual_notes": [
+              "Exactly .90 node/edge confidence is accepted. The .899 neighboring node must not contaminate the valid rest option."
+            ]
+          }
+        },
+        "unconfirmed_first_node_ids": [
+          "uncertain-option"
+        ]
+      },
+      "manual_notes": [
+        "The uncertain first node is withheld locally. Its downstream merchant is not a confirmed route from any accepted first node."
+      ]
+    },
+    {
+      "case_id": "question_event_and_unknown_classification",
+      "input": {
+        "current_node_id": "origin",
+        "visible_nodes": [
+          {
+            "node_id": "origin",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "via-event",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "question-room",
+            "kind": "event",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "via-unknown",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "unclassified-room",
+            "kind": "unknown",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "rest",
+            "kind": "rest",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          }
+        ],
+        "visible_edges": [
+          {
+            "from_node_id": "origin",
+            "to_node_id": "via-event",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "origin",
+            "to_node_id": "via-unknown",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "via-event",
+            "to_node_id": "question-room",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "question-room",
+            "to_node_id": "rest",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "via-unknown",
+            "to_node_id": "unclassified-room",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "unclassified-room",
+            "to_node_id": "rest",
+            "confidence": 0.99
+          }
+        ],
+        "resources": {
+          "hp": 60,
+          "max_hp": 80,
+          "gold": 240,
+          "deck_strength": "unassessed",
+          "potions": [],
+          "relics": []
+        },
+        "graph_complete": true
+      },
+      "expected": {
+        "confirmed_first_node_ids": [
+          "via-event",
+          "via-unknown"
+        ],
+        "per_first_node": {
+          "via-event": {
+            "reachable_rest_min_distance": {
+              "rest": 2
+            },
+            "reachable_merchant_min_distance": {},
+            "has_rest_path_avoiding_known_elites": true,
+            "has_confirmed_elite_free_rest_path": true,
+            "rest_reachable": true,
+            "manual_notes": [
+              "via-event\u2192question-room\u2192rest has two confirmed edges and classified nodes. The known '?' event node is not a known elite map node; its actual event/combat outcome remains unknown."
+            ],
+            "event_node_ids": [
+              "question-room"
+            ]
+          },
+          "via-unknown": {
+            "reachable_rest_min_distance": {},
+            "reachable_merchant_min_distance": {},
+            "has_rest_path_avoiding_known_elites": true,
+            "has_confirmed_elite_free_rest_path": null,
+            "rest_reachable": null,
+            "manual_notes": [
+              "via-unknown\u2192unclassified-room\u2192rest avoids any KNOWN elite node topologically, but the unknown classification stops confirmed reachability.",
+              "The topology-only existence predicate is true; confirmed target distances stay empty and reachability is unknown.",
+              "Unresolved node classification leaves confirmed elite-free path existence unknown, not false."
+            ],
+            "uncertain_node_ids": [
+              "unclassified-room"
+            ]
+          }
+        }
+      },
+      "manual_notes": [
+        "Neither predicate certifies a safe room, healing, survival or an event outcome. In particular the known event path is only elite-node-free on the displayed map.",
+        "The unknown node has high observation confidence but an unresolved kind; it must not be promoted into a known safe room."
+      ]
+    },
+    {
+      "case_id": "shuffled_opaque_ids",
+      "input": {
+        "current_node_id": "v17",
+        "visible_nodes": [
+          {
+            "node_id": "q4",
+            "kind": "merchant",
+            "confidence": 0.99,
+            "outgoing_complete": true,
+            "classification_evidence": "Synthetic fixture explicitly labels q4 as merchant; not a live icon observation."
+          },
+          {
+            "node_id": "u3",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "a92",
+            "kind": "rest",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "v17",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "n0",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "k88",
+            "kind": "rest",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          }
+        ],
+        "visible_edges": [
+          {
+            "from_node_id": "n0",
+            "to_node_id": "q4",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "k88",
+            "to_node_id": "n0",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "v17",
+            "to_node_id": "k88",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "u3",
+            "to_node_id": "n0",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "n0",
+            "to_node_id": "a92",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "v17",
+            "to_node_id": "u3",
+            "confidence": 0.99
+          }
+        ],
+        "resources": {
+          "hp": 60,
+          "max_hp": 80,
+          "gold": 240,
+          "deck_strength": "unassessed",
+          "potions": [],
+          "relics": []
+        },
+        "graph_complete": true
+      },
+      "expected": {
+        "confirmed_first_node_ids": [
+          "u3",
+          "k88"
+        ],
+        "per_first_node": {
+          "u3": {
+            "reachable_rest_min_distance": {
+              "a92": 2
+            },
+            "reachable_merchant_min_distance": {
+              "q4": 2
+            },
+            "has_rest_path_avoiding_known_elites": true,
+            "has_confirmed_elite_free_rest_path": true,
+            "rest_reachable": true,
+            "manual_notes": [
+              "u3\u2192n0\u2192a92/q4 are two edges."
+            ]
+          },
+          "k88": {
+            "reachable_rest_min_distance": {
+              "k88": 0,
+              "a92": 2
+            },
+            "reachable_merchant_min_distance": {
+              "q4": 2
+            },
+            "has_rest_path_avoiding_known_elites": true,
+            "has_confirmed_elite_free_rest_path": true,
+            "rest_reachable": true,
+            "manual_notes": [
+              "k88 is a rest at zero; later rest/merchant are two edges via n0."
+            ]
+          }
+        },
+        "isomorphic_to": {
+          "case_id": "branch_merge",
+          "node_id_mapping": {
+            "start": "v17",
+            "left": "u3",
+            "right": "k88",
+            "merge": "n0",
+            "last-rest": "a92",
+            "last-market": "q4"
+          }
+        }
+      },
+      "manual_notes": [
+        "Isomorphic to branch_merge despite shuffled arrays and arbitrary IDs. Expected first IDs are a set, not a recommendation or ordering."
+      ]
+    }
+  ],
+  "invalid_cases": [
+    {
+      "case_id": "directed_cycle",
+      "input": {
+        "current_node_id": "start",
+        "visible_nodes": [
+          {
+            "node_id": "start",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "a",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          },
+          {
+            "node_id": "b",
+            "kind": "enemy",
+            "confidence": 0.99,
+            "outgoing_complete": true
+          }
+        ],
+        "visible_edges": [
+          {
+            "from_node_id": "start",
+            "to_node_id": "a",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "a",
+            "to_node_id": "b",
+            "confidence": 0.99
+          },
+          {
+            "from_node_id": "b",
+            "to_node_id": "a",
+            "confidence": 0.99
+          }
+        ],
+        "resources": {
+          "hp": 60,
+          "max_hp": 80,
+          "gold": 240,
+          "deck_strength": "unassessed",
+          "potions": [],
+          "relics": []
+        },
+        "graph_complete": true
+      },
+      "expected": {
+        "must_reject": true,
+        "reason_category": "directed_cycle"
+      },
+      "manual_notes": [
+        "The reachable a\u2192b\u2192a cycle contradicts a forward-only map graph. Reject this invalid input rather than selecting a route or silently truncating traversal."
+      ]
+    }
+  ]
+}

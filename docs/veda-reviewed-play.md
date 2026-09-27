@@ -221,6 +221,15 @@ attacks. Offline tests validate these contracts, not live screen recognition.
 
 ## Other choices and verification
 
+For unfamiliar layouts and readable random outcomes, use the
+[general-decision workflow](veda-general-decisions.md). Its route brief reports
+visible connections and uncertainty without selecting a path. A verified option
+can remain usable when another reachable icon is unclear. Map/event/reward
+choices can declare 2–8 complete outcome alternatives; verification must match
+exactly one and persists its derived `choice_outcome_id`. Keep every branch's
+run, costs, resources and inventory constrained. This does not authorize new
+controller bindings or arbitrary random inventory additions.
+
 For menus, include the [choice observation and planned choice](veda-choice-execution.md)
 as `observation` and `choice`, plus the reviewed `inventory`. Its semantic digest
 must match the observation. Controller bindings require a current visible hint

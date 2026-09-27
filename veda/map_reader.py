@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 
 NODE_KINDS = frozenset({"enemy", "elite", "event", "merchant", "treasure", "rest", "boss"})
+MAP_CHOICE_CONFIDENCE = 0.90
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,8 @@ class MapAssessment:
     reasons: tuple[str, ...]
     reachable: tuple[MapNode, ...]
     boss_confirmed: bool
+    unverified_reachable: tuple[MapNode, ...] = ()
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -47,13 +50,13 @@ class EncounterAssessment:
 
 def assess_map(*, boss: str | None, boss_confidence: float, nodes: tuple[MapNode, ...]) -> MapAssessment:
     reasons: list[str] = []
-    reachable = tuple(node for node in nodes if node.reachable)
+    reachable = tuple(node for node in nodes if node.reachable and node.confidence >= MAP_CHOICE_CONFIDENCE)
+    unverified = tuple(node for node in nodes if node.reachable and node.confidence < MAP_CHOICE_CONFIDENCE)
     if not reachable:
         reasons.append("no reachable map node is confirmed")
-    if any(node.confidence < 0.85 for node in reachable):
-        reasons.append("a reachable node type is below the confidence threshold")
+    warnings = ("some reachable node types remain unverified and are excluded from confirmed choices",) if unverified else ()
     boss_confirmed = bool(boss and boss_confidence >= 0.85)
-    return MapAssessment(not reasons, tuple(reasons), reachable, boss_confirmed)
+    return MapAssessment(not reasons, tuple(reasons), reachable, boss_confirmed, unverified, warnings)
 
 
 def assess_encounter_transition(
@@ -62,7 +65,7 @@ def assess_encounter_transition(
     """Authorize encounter-specific advice only after two independent facts agree."""
     reasons: list[str] = []
     expected = selected_node.kind if selected_node else None
-    if selected_node is None or not selected_node.reachable or selected_node.confidence < 0.85:
+    if selected_node is None or not selected_node.reachable or selected_node.confidence < MAP_CHOICE_CONFIDENCE:
         reasons.append("the selected map node is not confidently confirmed")
     if observed_kind not in {"enemy", "elite", "boss"} or observed_confidence < 0.9:
         reasons.append("the entered encounter type is not confidently confirmed")

@@ -414,6 +414,9 @@ class ReviewedPlaySession(CombatInputAdapter):
             verified = verify_choice_step(pending["proposal"], before["observation"], observed, now=self.clock())
             complete = verified["choice_complete"]
             state = {"resources": observed["resources"], "facts": observed["facts"], "ui": observed["ui"]}
+            if verified.get("matched_outcome_id") is not None:
+                # Derived by matching the complete branch; never a caller-selected outcome.
+                state["choice_outcome_id"] = verified["matched_outcome_id"]
         elif after["kind"] == "combat":
             original = Reading.from_dict(before["reading"])
             complete = self._verify(original, observed, before["plan"]["steps"][0],

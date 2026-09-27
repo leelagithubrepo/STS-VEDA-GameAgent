@@ -2,14 +2,18 @@
 
 ## Current boundary
 
-VEDA is a human-guided agent: the player supplies controller input; VEDA may
-observe, retrieve knowledge, validate a proposed sequence, predict its direct
-result, and compare the result after the action. No PS5 input is emitted by this
-repository.
+VEDA supports advisory play and explicitly armed Codex-reviewed play. In advisory
+mode the player supplies controller input. In reviewed play the adapter can send
+one source-reviewed input through the isolated PS5 bridge, then requires a fresh
+observed result. See [reviewed play](veda-reviewed-play.md) for the operating
+contract. The separate automatic screen reader is not certified for standalone
+play; offline checks do not establish live recognition or controller reliability.
 
 ## What VEDA owns now
 
 - source-backed facts and separate hypotheses;
+- visible-graph route facts with uncertain options isolated from confirmed ones,
+  and bounded alternative choice outcomes with exactly one observed match;
 - an encounter-transition gate: selected map node must agree with the entered
   encounter type before Elite- or boss-specific reasoning;
 - verified combat arithmetic, including energy, target validity, Block,
@@ -28,6 +32,9 @@ repository.
 The LLM still recognizes the live QuickTime image, proposes strategic candidate
 lines, and handles unfamiliar screens. This is intentional until local vision
 is calibrated on real frames and VEDA has enough verified trajectory data.
+The [general-decision benchmark](veda-general-decisions.md) checks declared
+graph facts, not the LLM's image reading or strategic choices. Recorded experience
+does not retrain the model or automatically promote new rules.
 
 ## Handoff gates
 
@@ -39,5 +46,8 @@ is calibrated on real frames and VEDA has enough verified trajectory data.
    repeatable enemy-profile decisions only after prediction outcomes are
    measured over multiple runs.
 
-Failure at any gate returns control to human-guided, LLM-audited play; it never
-silently turns an assumption into an automated action.
+These gates govern expansion of standalone automation. Reviewed play retains
+its own source, authorization and verification requirements. An unresolved
+action stays pending until inspected and reconciled; it is never replayed merely
+because verification failed. Ordinary game randomness can be handled with
+reviewed bounds, while genuinely missing evidence remains explicit.
