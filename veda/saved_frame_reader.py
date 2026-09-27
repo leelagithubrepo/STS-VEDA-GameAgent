@@ -6,6 +6,7 @@ runtime state can be constructed by this module.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import math
@@ -96,6 +97,25 @@ def read_saved_frame(image_path: Path, *, viewport: list[float],
                                            reader=reader, frame_id=path.stem)
             hud = energy["hud"]
             result["timing_ms"]["energy_refinement"] = energy["refinement"]["timing_ms"]
+        hp = None
+        hud = deepcopy(hud)
+        try:
+            from .hp_evidence import refine_hp_reading
+            hp = refine_hp_reading(path, viewport=list(viewport), native=native, frame_id=path.stem)
+            hud["hp"], hud["max_hp"] = hp["hp"], hp["max_hp"]
+            hud.setdefault("errors", {}).update(hp=hp["error"], max_hp=hp["error"])
+            hud.setdefault("evidence", {})["hp"] = hp["refinement"]
+            result["timing_ms"]["hp_evidence"] = hp["refinement"]["timing_ms"]
+            if hp["error"] is not None:
+                result["issues"].append("hp_unknown:"+hp["error"])
+        except ImportError:
+            hud["hp"], hud["max_hp"] = None, None
+            hud.setdefault("errors", {}).update(hp="hp_analysis_dependency_unavailable",
+                                                max_hp="hp_analysis_dependency_unavailable")
+            hud.setdefault("evidence", {})["hp"] = {"fraction": None,
+                "error": "hp_analysis_dependency_unavailable",
+                "previous_full_pass_evidence": deepcopy(hud.get("evidence", {}).get("hp"))}
+            result["issues"].append("hp_analysis_dependency_unavailable")
         cards_began = time.monotonic()
         cards_available = True
         try:
@@ -170,6 +190,8 @@ def read_saved_frame(image_path: Path, *, viewport: list[float],
         result["energy_reading_mode"] = "focused_energy" if refine_energy else "whole_image_only"
         if energy is not None:
             result["energy_refinement"] = energy["refinement"]
+        if hp is not None:
+            result["hp_refinement"] = hp["refinement"]
         result["native_evidence"] = {
             "engine": native.get("engine"), "recognition": native.get("recognition"),
             "observations": native["observations"],

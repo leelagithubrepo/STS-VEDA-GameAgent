@@ -26,9 +26,9 @@ command is not a complete or actionable game-state reading.
 
 ## Setup and use
 
-Use Python 3.11 or newer. Card and combat pixel analysis also need Pillow (the
-project's optional `vision` dependency). Without Pillow, HP and energy can still
-be read; unavailable pixel analyses are reported. No dependencies or
+Use Python 3.11 or newer. HP, card and combat pixel analysis also need Pillow (the
+project's optional `vision` dependency). Without Pillow, energy can still
+be read; HP stays unknown and unavailable pixel analyses are reported. No dependencies or
 helpers are installed or built automatically.
 
 On macOS with Apple's command-line developer tools, explicitly build the native
@@ -60,9 +60,9 @@ not redact other desktop text from the saved result.
 The native process is limited to five seconds and bounded output by
 default per invocation. The default reader may invoke it up to four times: once
 for the image, once for energy, once for card regions, and once for combat crops.
-Card/combat stages need Pillow. Add `--single-pass` to skip all focused OCR stages
-when comparing the baseline. Combat and attack pixel checks still run on the
-whole-image text in that mode. Rebuild the helper for the new `white_text`
+HP/card/combat pixel checks need Pillow. Add `--single-pass` to skip all focused OCR stages
+when comparing the baseline. HP, combat and attack pixel checks still run on the
+whole-image text in that mode. HP adds no native OCR invocation. Rebuild the helper for the new `white_text`
 preprocessing mode; an older helper may reject the focused combat request.
 macOS Vision may be unavailable inside a restricted sandbox; a
 `native_reader_failed:helper_failed` result leaves every derived reading unknown.
@@ -83,7 +83,15 @@ The tool does not retry outside the sandbox itself.
 - `image_sha256`, dimensions, and the caller-supplied viewport identify the
   evidence. Source mismatches clear all derived readings. The viewport is not
   located or verified automatically.
-- HP and energy require literal fraction text inside predefined HUD regions.
+- HP requires a literal fraction as the top OCR reading with confidence at least
+  0.8, red numeral pixels and an adjacent heart shape in the reviewed top HUD.
+  This allows the HP display to shift with player-name length. Exact conflicting
+  alternatives or disagreement with the original nominal-region reading veto
+  acceptance; missing or ambiguous evidence stays unknown. `hp_refinement`
+  retains the original pixels' proof, source identity and timing. The same checks
+  apply in `--single-pass` mode. A missing or invalid heart template leaves HP
+  unknown while preserving other usable evidence.
+- Energy requires literal fraction text in its predefined HUD region.
   Conflicting readings remain unknown. A missing energy orb is not zero energy;
   an observed `0/3` is zero.
 - In the default refined mode, energy requires one complete literal fraction as the top OCR

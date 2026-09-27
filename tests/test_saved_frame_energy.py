@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from PIL import Image, ImageDraw, ImageFont
+
 from tests.test_native_ocr import observation, png_bytes
 from veda.native_ocr import NativeTextReader
 from veda.saved_frame_reader import read_saved_frame
@@ -18,9 +20,20 @@ class SavedFrameEnergyTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.image = (Path(temp.name)/"energy.png").resolve()
-        self.image.write_bytes(png_bytes())
+        # HP must have matching source pixels even when OCR transport is mocked.
+        source = Image.new("RGB", (1000,600), (65,72,78))
+        template = json.loads((Path(__file__).resolve().parents[1]/"data/hp_heart_template.json").read_text())
+        heart = Image.new("L", (24,24))
+        heart.putdata([255 if c == "1" else 0 for c in "".join(template["mask_rows"])])
+        heart = heart.resize((28,21), Image.Resampling.NEAREST)
+        source.paste((210,60,65), (245,10,273,31), heart)
+        draw = ImageDraw.Draw(source)
+        font = ImageFont.load_default(size=20)
+        bounds = draw.textbbox((280,13), "17/91", font=font, anchor="lt")
+        draw.text((280,13), "17/91", font=font, anchor="lt", fill=(210,90,90))
+        source.save(self.image)
         self.sha = hashlib.sha256(self.image.read_bytes()).hexdigest()
-        self.full = [observation("17/91", [280,15,55,15]), observation("3", [70,490,40,20])]
+        self.full = [observation("17/91", [280,13,max(bounds[2]-280,45),20]), observation("3", [70,490,40,20])]
         self.focused = [observation("0/3", [70,490,40,20])]
         self.mutate_region = None
         self.batch_exit = 0

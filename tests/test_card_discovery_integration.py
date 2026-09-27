@@ -6,12 +6,15 @@ import tempfile
 import unittest
 from unittest.mock import Mock
 
+from tests.test_native_ocr import observation
+
 try:
     from PIL import Image, ImageDraw, ImageFont
 except ImportError:
     Image = None
 
 from veda.saved_frame_reader import read_saved_frame
+from veda.native_ocr import SCHEMA, REGIONS_SCHEMA, extract_hud
 
 
 @unittest.skipIf(Image is None, "Pillow is required; use bundled Python for pixel integration tests")
@@ -24,6 +27,7 @@ class CardDiscoveryIntegrationTests(unittest.TestCase):
         self.draw = ImageDraw.Draw(self.image)
         self.font = ImageFont.load_default(size=24)
         self.viewport = [0, 0, *self.image.size]
+        self.energy_row = self.text("0/3", 140, y=990)
         self.initial_rows = []
         self.hand_rows = []
         self.focused_rows = []
@@ -38,8 +42,7 @@ class CardDiscoveryIntegrationTests(unittest.TestCase):
         self.draw.text((x, y), text, font=self.font,
                        fill=(135, 225, 35) if green else (235, 235, 235))
         left, top, right, bottom = self.draw.textbbox((x, y), text, font=self.font)
-        return {"box_original_pixels_top_left": [left, top, right-left, bottom-top],
-                "candidates": [{"text": raw or text, "confidence": 1}]}
+        return observation(raw or text, [left, top, right-left, bottom-top])
 
     def add_card(self, name, x, *, y=980, green=False, raw=None, initial=True):
         row = self.text(name, x, y=y, green=green, raw=raw)
@@ -53,8 +56,7 @@ class CardDiscoveryIntegrationTests(unittest.TestCase):
         self.draw.ellipse((cx-22, cy-22, cx+22, cy+22), fill=(185, 110, 15))
         self.draw.text((cx, cy), digit, font=self.font, anchor="mm", fill=(240, 240, 240))
         left, top, right, bottom = self.draw.textbbox((cx, cy), digit, font=self.font, anchor="mm")
-        row = {"box_original_pixels_top_left": [left, top, right-left, bottom-top],
-               "candidates": [{"text": digit, "confidence": 1}]}
+        row = observation(digit, [left, top, right-left, bottom-top])
         for rows in (self.initial_rows, self.focused_rows, self.hand_rows):
             rows.append(deepcopy(row))
         if duplicate_in_discovery:
@@ -62,13 +64,17 @@ class CardDiscoveryIntegrationTests(unittest.TestCase):
         return row
 
     def source(self, frame_id):
+        digest = hashlib.sha256(self.path.read_bytes()).hexdigest()
         return {"image_path": str(self.path.resolve()), "frame_id": frame_id,
-                "image_sha256": hashlib.sha256(self.path.read_bytes()).hexdigest(),
-                "source_dimensions": list(self.image.size)}
+                "parent_frame_id": frame_id, "image_sha256": digest,
+                "parent_image_sha256": digest, "source_dimensions": list(self.image.size),
+                "runtime_authorization_eligible": False}
 
     def native_observe(self, path, *, frame_id, regions):
-        return {**self.source(frame_id), "ok": True, "observations": deepcopy(self.initial_rows),
-                "hud": {"hp": 17, "max_hp": 91, "energy": 0, "energy_max": 3},
+        rows = deepcopy([self.energy_row, *self.initial_rows])
+        return {**self.source(frame_id), "schema": SCHEMA, "ok": True, "error": None,
+                "observations": rows,
+                "hud": extract_hud(rows, source_dimensions=list(self.image.size), regions=regions),
                 "timing_ms": {"total": 0}}
 
     @staticmethod
@@ -89,7 +95,7 @@ class CardDiscoveryIntegrationTests(unittest.TestCase):
             if self.region_mutation:
                 self.region_mutation(region)
             output.append(region)
-        response = {**source, "ok": self.batch_error is None, "regions": output,
+        response = {**source, "schema": REGIONS_SCHEMA, "ok": self.batch_error is None, "regions": output,
                     "error": self.batch_error, "timing_ms": {"total": 0}}
         if self.batch_mutation:
             self.batch_mutation(response)
@@ -97,7 +103,14 @@ class CardDiscoveryIntegrationTests(unittest.TestCase):
 
     def read(self):
         self.image.save(self.path)
-        return read_saved_frame(self.path, viewport=self.viewport, reader=self.reader, refine_energy=False, read_combat=False)
+        result = read_saved_frame(self.path, viewport=self.viewport, reader=self.reader,
+                                  refine_energy=False, read_combat=False)
+        if result["ok"]:
+            # The fixture has card/energy pixels but no heart-backed HP evidence.
+            self.assertIsNone(result["hud"]["hp"])
+            self.assertIsNone(result["hud"]["max_hp"])
+            self.assertEqual(0, result["hud"]["energy"])
+        return result
 
     def assert_no_readings(self, result):
         self.assertFalse(result["ok"])

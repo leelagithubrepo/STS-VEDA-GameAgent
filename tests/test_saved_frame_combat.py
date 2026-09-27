@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tests.test_native_ocr import observation, png_bytes
-from veda.native_ocr import extract_hud
+from veda.native_ocr import SCHEMA, extract_hud
 from veda.saved_frame_reader import read_saved_frame
 
 
@@ -18,10 +18,15 @@ class SavedFrameCombatTests(unittest.TestCase):
         self.path.write_bytes(png_bytes())
         self.sha = hashlib.sha256(self.path.read_bytes()).hexdigest()
         self.viewport = [0, 0, 1000, 600]
-        self.observations = [observation("17/91", [280, 15, 55, 15])]
+        # A literal OCR HP fraction on blank pixels is insufficient HP proof.
+        self.observations = [observation("17/91", [280, 15, 55, 15]),
+                             observation("0/3", [70, 490, 40, 20])]
         self.reader = Mock()
         self.reader.observe.return_value = {
-            "ok": True, "image_path": str(self.path), "image_sha256": self.sha,
+            "schema": SCHEMA, "ok": True, "error": None,
+            "image_path": str(self.path), "image_sha256": self.sha,
+            "parent_image_sha256": self.sha, "parent_frame_id": "saved",
+            "runtime_authorization_eligible": False,
             "source_dimensions": [1000, 600], "frame_id": "saved", "observations": self.observations,
             "hud": extract_hud(self.observations, source_dimensions=[1000, 600]), "timing_ms": {},
         }
@@ -38,7 +43,9 @@ class SavedFrameCombatTests(unittest.TestCase):
         with patch("veda.combat_evidence.extract_combat_evidence", return_value=self.combat):
             result = self.read()
         self.assertTrue(result["ok"], result["issues"])
-        self.assertEqual(17, result["hud"]["hp"])
+        self.assertIsNone(result["hud"]["hp"])
+        self.assertIsNone(result["hud"]["max_hp"])
+        self.assertEqual(0, result["hud"]["energy"])
         self.assertEqual(0, result["combat_evidence"]["player_block"])
         self.assertEqual(1, result["coverage"]["enemy_health_candidate_count"])
         self.assertFalse(result["coverage"]["combat_ready"])
@@ -73,7 +80,10 @@ class SavedFrameCombatTests(unittest.TestCase):
         with patch("veda.combat_evidence.extract_combat_evidence", side_effect=ModuleNotFoundError("PIL")):
             result = self.read()
         self.assertTrue(result["ok"])
-        self.assertEqual(17, result["hud"]["hp"])
+        self.assertIsNone(result["hud"]["hp"])
+        self.assertIsNone(result["hud"]["max_hp"])
+        self.assertEqual(0, result["hud"]["energy"])
+        self.assertEqual(self.observations, result["native_evidence"]["observations"])
         self.assertNotIn("combat_evidence", result)
         self.assertIn("combat_analysis_dependency_unavailable", result["issues"])
         self.assertNotIn("player_block", result["coverage"]["read_fields"])

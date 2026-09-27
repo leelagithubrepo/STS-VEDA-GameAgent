@@ -11,7 +11,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts.read_saved_frame import main
-from tests.test_native_ocr import png_bytes
+from tests.test_native_ocr import png_bytes, observation
+from veda.native_ocr import SCHEMA, extract_hud
 from veda.saved_frame_reader import read_saved_frame
 
 
@@ -28,6 +29,11 @@ class SavedFrameReaderTests(unittest.TestCase):
             "hud": {"hp": 17, "max_hp": 91, "energy": 0, "energy_max": 3},
             "timing_ms": {"total": 3},
         }
+        self.native.update(schema=SCHEMA, parent_image_sha256=self.digest,
+                           parent_frame_id="saved", runtime_authorization_eligible=False)
+        self.native["observations"] = [observation("17/91", [280, 15, 55, 15]),
+                                       observation("0/3", [70, 490, 40, 20])]
+        self.native["hud"] = extract_hud(self.native["observations"], source_dimensions=[1000, 600])
         self.reader = Mock()
         self.reader.observe.return_value = self.native
         self.cards = {"card_candidates": [{"name": None, "upgraded": None, "current_cost": None}],
@@ -95,7 +101,10 @@ class SavedFrameReaderTests(unittest.TestCase):
         with patch("veda.card_regions.detect_card_regions", side_effect=ModuleNotFoundError("PIL")):
             result = read_saved_frame(self.image, viewport=[0, 0, 1000, 600], reader=self.reader, refine_energy=False, read_combat=False)
         self.assertTrue(result["ok"])
-        self.assertEqual(17, result["hud"]["hp"])
+        # No heart or red numeral pixels support the mocked HP on this blank PNG.
+        self.assertIsNone(result["hud"]["hp"])
+        self.assertEqual(0, result["hud"]["energy"])
+        self.assertIn("hp_unknown:missing_heart_backed_hp_fraction", result["issues"])
         self.assertEqual([], result["cards"]["card_candidates"])
         self.assertIn("card_analysis_dependency_unavailable", result["issues"])
 
