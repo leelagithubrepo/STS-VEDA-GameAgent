@@ -190,7 +190,7 @@ class CollectorTurnTests(unittest.TestCase):
         c['state']['enemies'][1].update(hp=5, weak=1, intent_hits=[5])
         rank = _boundary_rank(c['state'], c['state']['hand'][0],
                               {'target':'torch0'}, [])
-        self.assertEqual(rank[1], -66)  # two possible fresh7 hits; not old5+7
+        self.assertEqual(rank[0], -66)  # survival is primary: two fresh7 hits; not old5+7
 
     def test_manifest_has_same_exact_typed_effects_and_no_raw_fireball_substitution(self):
         m = boss_manifest('The Collector', 2)

@@ -26,7 +26,7 @@ itself. Keep the preview open and confirm each captured frame is current.
 
 When ready to play, tell the active Codex task:
 
-> Use Orchestrator for the current saved Slay the Spire run. ARM ORCHESTRATOR FOR THIS RUN. Check the live screen and SQLite, resume with Continue, and verify every move. Stop if a state or result is uncertain.
+> Use Orchestrator for the currently visible Slay the Spire attempt. ARM ORCHESTRATOR FOR THIS RUN. Check the live screen and SQLite, bind that attempt, and verify every move through the reviewed adapter. Re-plan conservatively under uncertain game state: favor survival and the lowest defensible damage risk among supported actions. Use reviewed bounds, inspections and protective alternatives. Preserve unresolved input and report exact technical blockers; do not replay input or bypass checks. Stop at victory or defeat.
 
 The installed Orchestrator skill requires that current-run arming statement.
 General development approval does not start the controller. Codex first checks
@@ -39,6 +39,9 @@ If play stops, Codex reports the last verified move and the unresolved result.
 It inspects and reconciles that result before another input. It does not repeat
 a button because a reply or animation was slow. Reopening a session leaves it
 disarmed. A bridge acknowledgement means delivery only, not that a card played.
+Use the [action-evidence policy](veda-action-evidence.md) to distinguish
+supported game uncertainty, a recoverable inspection need and a session stop.
+It preserves every existing adapter requirement.
 
 ## Bounded startup for the operator
 
@@ -175,6 +178,13 @@ not accept caller-provided “allowed” flags. Full hand, current costs, enemy 
 powers, and confirmed relic/potion inventory are required. Strategy remains
 Codex's responsibility, including relevant draw/discard inspections and potion
 review; local arithmetic does not guarantee the best move or a win.
+
+A non-turn-ending card uses the shared checker's immediate-action scope. Its
+conditional enemy-turn forecast may still show insufficient defense; that does
+not imply the card itself causes those incoming hits. Verify the card and re-plan
+the remaining defense from a fresh frame. Actual End Turn, forced turn endings,
+immediate lethal HP costs and every source/inventory/control check retain their
+guards. See [forecast horizons and defensive prefixes](veda-action-evidence.md#a-card-action-is-not-automatically-end-turn).
 
 ## Game uncertainty and unreadable evidence
 

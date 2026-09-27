@@ -219,7 +219,7 @@ class ExecutionLoop(CombatInputAdapter):
             self.trace.record_decision(decision_id, handled_locally=False,
                                        escalation_reason="; ".join(reasons))
             raise RuntimeStop("; ".join(reasons))
-        checked = check_plan(reading.context, {"steps": [action]})
+        checked = check_plan(reading.context, {"steps": [action]}, survival_scope='action_prefix')
         if not checked.get("allowed"):
             reason = "; ".join(checked.get("reasons", ["shared validation rejected action"]))
             self.trace.record_decision(decision_id, handled_locally=False, escalation_reason=reason)

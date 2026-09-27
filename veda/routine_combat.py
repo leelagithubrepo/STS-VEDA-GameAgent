@@ -47,6 +47,7 @@ class RoutinePlan:
     support_notes: tuple[str, ...] = ()
     supported_card_count: int = 0
     deferred_card_count: int = 0
+    prediction_horizon: str | None = None
 
     @property
     def instructions(self) -> tuple[str, ...]:
@@ -253,7 +254,7 @@ def _boundary_rank(state: dict, card: dict, action: dict, relics: list[str] | No
     hp -= max(0, incoming - block)
     if hp <= 0:
         return None
-    return remaining, -hp, current_cost(card, state['powers']), 1
+    return -hp, remaining, current_cost(card, state['powers']), 1
 
 
 def plan_routine_combat(state: StructuredGameState, calibration: CalibrationReport, *,
@@ -264,6 +265,9 @@ def plan_routine_combat(state: StructuredGameState, calibration: CalibrationRepo
     ``context`` is the fresh full advisory context for this exact frame. The
     legacy call remains valid but cannot authorize play without those fields.
     Search is deterministic and bounded by both candidate count and hand depth.
+    Among supported survivable continuations, prioritize the conservative player
+    HP bound before damage dealt, then energy/card economy. This is one-enemy-turn
+    risk ranking, not a whole-fight optimum or a prediction of random benefits.
     """
     reasons: list[str] = []
     if not calibration.authorized_for(ROUTINE_CRITICAL_FIELDS):
@@ -310,7 +314,8 @@ def plan_routine_combat(state: StructuredGameState, calibration: CalibrationRepo
         checked = check_plan(context, {'steps': [action]})
         if checked['allowed'] and checked.get('forecast') is not None:
             return RoutinePlan(True, (), (), _prediction(checked, current), action, checked,
-                               1, False, notes, supported, sum(deferred.values()))
+                               1, False, notes, supported, sum(deferred.values()),
+                               checked['forecast'].get('horizon', 'committed_enemy_turn'))
         return RoutinePlan(False, tuple(checked['reasons']), evaluated_candidates=1,
                            support_notes=notes, supported_card_count=supported,
                            deferred_card_count=sum(deferred.values()))
@@ -321,7 +326,7 @@ def plan_routine_combat(state: StructuredGameState, calibration: CalibrationRepo
     rejection_reasons: list[str] = []
     while queue and evaluated < max_candidates:
         line = queue.popleft()
-        checked = check_plan(context, {'steps': list(line)})
+        checked = check_plan(context, {'steps': list(line)}, survival_scope='action_prefix')
         evaluated += 1
         key = repr(line[0])
         if len(line) == 1:
@@ -330,10 +335,14 @@ def plan_routine_combat(state: StructuredGameState, calibration: CalibrationRepo
             rejection_reasons.extend(checked['reasons'])
             continue
         forecast = checked.get('forecast')
-        rank = ((sum(e['hp'] for e in forecast['enemies']), -forecast['player_hp'],
-                 current['energy'] - checked['steps'][-1]['energy_after'], len(line)) if forecast else
+        # An incomplete defensive prefix can be legal even when ending the turn
+        # immediately would be fatal. Explore its remaining direct cards; only
+        # rank it as a completed continuation when its bound survives.
+        rank = ((-forecast['player_hp'], sum(e['hp'] for e in forecast['enemies']),
+                 current['energy'] - checked['steps'][-1]['energy_after'], len(line))
+                if forecast and forecast['player_hp'] > 0 else
                 _boundary_rank(current, hand[line[0]['card_id']], line[0],
-                               context['inventory']['current']['relic']) if len(line) == 1 else None)
+                               context['inventory']['current']['relic']) if not forecast and len(line) == 1 else None)
         if rank is not None and (best is None or rank < best[0]):
             best = rank, line[0], first_checks[key]
         if (forecast and not forecast['lethal_to_enemies'] and len(line) < max_depth
@@ -356,5 +365,9 @@ def plan_routine_combat(state: StructuredGameState, calibration: CalibrationRepo
     effect = _effect_for(hand[action['card_id']], current, action.get('target'))
     if checked['steps'][-1]['observe_after']:
         notes += ('effect boundary: observe HP, hand, piles and intent before replanning',)
+    horizon = (checked.get('forecast') or {}).get('horizon')
+    if horizon == 'if_turn_ended_now':
+        notes += ('HP projection assumes ending the turn after this one card; it is not the immediate card result. '
+                  'Re-observe and re-plan the remaining defense before End Turn.',)
     return RoutinePlan(True, (), (effect,), _prediction(checked, current), dict(action), checked,
-                       evaluated, truncated, notes, supported, sum(deferred.values()))
+                       evaluated, truncated, notes, supported, sum(deferred.values()), horizon)

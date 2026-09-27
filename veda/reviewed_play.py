@@ -227,7 +227,7 @@ class ReviewedPlaySession(CombatInputAdapter):
             plan = request["plan"]
             _require(len(plan.get("steps", [])) == 1 and plan["steps"][0].get("kind") in {"card", "end_turn"},
                      "exactly one card or End Turn; potions use the choice flow")
-            checked = check_plan(reading.context, plan)
+            checked = check_plan(reading.context, plan, survival_scope='action_prefix')
             _require(checked["allowed"], "move rejected: " + "; ".join(checked["reasons"]))
         return reading
 
@@ -335,7 +335,7 @@ class ReviewedPlaySession(CombatInputAdapter):
             action = request["plan"]["steps"][0]
             step, expected = self._input(before, action)
             command = {"action": "tap", "buttons": step["buttons"], "request_id": action_id}
-            proposal = {"expected": expected, "checked": check_plan(before.context, request["plan"])}
+            proposal = {"expected": expected, "checked": check_plan(before.context, request["plan"], survival_scope='action_prefix')}
             semantic = {"kind": "navigation" if expected["kind"] in {"clear", "card_focus", "target_focus"}
                         else action["kind"], "requested_action": action, "expected": expected}
         request["source"] = self._source(request["source"], retain=True)

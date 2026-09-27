@@ -520,8 +520,18 @@ def _explosive_effect(state: dict, relics: list[str], step: dict) -> tuple[dict 
             'scope': 'immediate_damage_only', 'observe_after': True}, []
 
 
-def check_plan(context: dict, plan: dict) -> dict:
-    """Check legality and dependencies; approval never means automatic input."""
+def check_plan(context: dict, plan: dict, *, survival_scope: str = 'complete_line') -> dict:
+    """Check legality and dependencies; approval never means automatic input.
+
+    The default requires the proposed line's enemy-turn forecast to survive.
+    Internal one-action executors and bounded lookahead use ``action_prefix``:
+    hypothetical incoming damage cannot invalidate a non-turn-ending prefix.
+    Actual End Turn, forced turn endings and immediate HP costs retain their
+    checks. This keyword is not read from the caller's plan payload.
+    """
+    if survival_scope not in ('complete_line', 'action_prefix'):
+        return {'allowed': False, 'reasons': ['unknown survival checking scope'],
+                'notes': [], 'steps': [], 'forecast': None}
     if not isinstance(plan, dict):
         return {'allowed': False, 'reasons': ['plan must be an object'], 'notes': [], 'steps': [], 'forecast': None}
     state = context.get('state') or {}
@@ -537,6 +547,8 @@ def check_plan(context: dict, plan: dict) -> dict:
     for key in ('hp', 'energy', 'block', 'strength', 'dexterity', 'weak', 'vulnerable', 'frail', 'no_block'):
         if state.get(key) is None:
             reasons.append(f'{key} is unknown')
+    if type(state.get('hp')) is int and state['hp'] <= 0:
+        reasons.append('the observed player has no HP; no combat action is legal')
     if state.get('hand_complete') is not True:
         reasons.append('the complete current hand is unconfirmed')
     if state.get('powers_complete') is not True:
@@ -752,6 +764,8 @@ def check_plan(context: dict, plan: dict) -> dict:
             checked[-1]['reviewed_effect'] = json.loads(json.dumps(immediate_effect))
         if split_boundary:
             checked[-1]['observation_reason'] = 'Split threshold reached; intent may have changed'
+    ends_turn = forced_end or any(s.get('kind') == 'end_turn' for s in steps)
+    survival_required = survival_scope == 'complete_line' or ends_turn
     forecast = None
     if numeric and not reasons:
         kill = all(e['hp'] == 0 for e in forecast_enemies)
@@ -776,7 +790,10 @@ def check_plan(context: dict, plan: dict) -> dict:
             forecast = {'block': block, 'end_turn_block': end_block if not kill else 0,
                         'survival_block': survival_block, 'incoming_displayed': incoming,
                         'player_hp': state['hp'] - max(0, incoming - survival_block),
-                        'enemies': forecast_enemies, 'lethal_to_enemies': kill}
+                        'enemies': forecast_enemies, 'lethal_to_enemies': kill,
+                        'horizon': 'committed_enemy_turn' if ends_turn else 'if_turn_ended_now',
+                        'survival_required': survival_required}
+            forecast['survival_established'] = forecast['player_hp'] > 0
             if collector_bound is not None:
                 forecast.update(collector_bound)
                 forecast['incoming_upper_bound'] = 0 if kill else incoming
@@ -785,15 +802,16 @@ def check_plan(context: dict, plan: dict) -> dict:
                 notes.append('Collector survival uses a conservative one-turn damage upper bound, not exact enemy order or future state; observe the resolved roster and statuses before continuing')
             if any(e.get('intent_effects') or e.get('move') == 'Split' for e in enemies):
                 notes.append('The survival bound covers this displayed enemy turn only; observe status/debuff changes and any Split children before further advice')
-            if forecast['player_hp'] <= 0:
+            if forecast['player_hp'] <= 0 and survival_required:
                 reasons.append('the checked line does not survive the displayed incoming damage')
-    if (forced_end or any(s.get('kind') == 'end_turn' for s in steps)) and forecast is None:
+            elif forecast['player_hp'] <= 0:
+                notes.append('This bound does not establish survival if the turn ends now; the non-turn-ending action is only a prefix. Observe and complete defense before End Turn.')
+    if ends_turn and forecast is None:
         reasons.append('ending the turn requires a verified survival forecast; inspect unmodeled effects first')
     if plan.get('claims_lethal') and not (forecast and forecast['lethal_to_enemies']):
         reasons.append('lethal is not verified for the complete proposed line')
     # A stored rule is not enough: make the potion comparison part of the
     # checked decision before committing HP or spending the twelfth card.
-    ends_turn = forced_end or any(s.get('kind') == 'end_turn' for s in steps)
     exposes_hp = ends_turn and (forecast is None or forecast['player_hp'] < state['hp'])
     if pays_hp or forced_end or exposes_hp:
         reviews = plan.get('potion_review', {})
@@ -807,7 +825,7 @@ def check_plan(context: dict, plan: dict) -> dict:
     if forecast is None:
         notes.append('Full damage/Block/survival forecast is unavailable for these interactions; observe before extending the line')
     return {'allowed': not reasons, 'reasons': list(dict.fromkeys(reasons)), 'notes': notes, 'steps': checked,
-            'forecast': forecast, 'boss_manifest': boss,
+            'forecast': forecast, 'boss_manifest': boss, 'survival_scope': survival_scope,
             'abort_if': 'Any shown card, cost, target, counter, intent or resource differs; record a fresh snapshot.'}
 
 

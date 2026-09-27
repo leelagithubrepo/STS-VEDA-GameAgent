@@ -74,7 +74,7 @@ def choose_verified_sequence(snapshot: CombatSnapshot, candidates: tuple[tuple[C
 
     A future policy or local planner proposes legal-looking sequences.  VEDA
     owns the deterministic selection: reject lethal/illegal candidates, then
-    prefer lower remaining enemy HP, higher projected player HP, and lower
+    prefer higher projected player HP, lower remaining enemy HP, and lower
     energy spend.  Unknown combat effects are intentionally outside this
     calculator and must be escalated rather than guessed.
     """
@@ -85,8 +85,8 @@ def choose_verified_sequence(snapshot: CombatSnapshot, candidates: tuple[tuple[C
     return min(
         allowed,
         key=lambda check: (
-            sum(enemy.hp for enemy in check.enemies),
             -(check.projected_player_hp if check.projected_player_hp is not None else -10_000),
+            sum(enemy.hp for enemy in check.enemies),
             check.energy_spent,
         ),
     )

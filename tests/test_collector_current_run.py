@@ -51,9 +51,9 @@ class CollectorCurrentRunTests(unittest.TestCase):
         state = c['state']; state.update(hp=30, block=0, dexterity=1, frail=1)
         state['enemies'][0]['intent_hits'] = [10]
         rank = _boundary_rank(state, state['hand'][0], {'kind': 'card', 'card_id': 'a'})
-        self.assertEqual(rank[1], -26)  # floor((7 + 1) * .75) == 6; no exhaust benefit.
+        self.assertEqual(rank[0], -26)  # HP first; floor((7+1)*.75)==6, no exhaust benefit.
         state['no_block'] = True
-        self.assertEqual(_boundary_rank(state, state['hand'][0], play())[1], -20)
+        self.assertEqual(_boundary_rank(state, state['hand'][0], play())[0], -20)
         c['state']['hand'][0] = card('True Grit+', 'Skill')
         self.assertFalse(plan(c).ready)
 

@@ -53,6 +53,10 @@ def contract_manifest(directory):
     """Synthetic state-machine contract fixture; never vision calibration evidence."""
     directory = Path(directory)
     base = context()
+    # Cover the displayed attack so Strike remains the intended conservative
+    # choice. This fixture exercises focus/target/input verification; separate
+    # planner tests cover choosing Defend when it prevents additional HP loss.
+    base['state']['block'] = 6
     ui = {'screen_type': 'combat', 'phase': 'hand', 'hand_order': ['s', 'd'],
           'focused_card_id': 'd', 'selected_card_id': None, 'focused_target_id': None}
     sequence = [reading(base, dict(ui)), reading(base, {**ui, 'focused_card_id': 's'}),

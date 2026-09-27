@@ -202,7 +202,7 @@ class CollectorNonattackTests(unittest.TestCase):
         self.assertEqual(bound['incoming_upper_bound'], 12)
         self.assertEqual(bound['summon_damage_upper_bound_per_slot'], 7)
         rank = _boundary_rank(c['state'], c['state']['hand'][0], {'target': 'torch0'}, [])
-        self.assertEqual(rank[1], -66)  # 12 upper bound + (new7 - old5) =14.
+        self.assertEqual(rank[0], -66)  # survival is primary:12 upper + (new7-old5) =14.
 
     def test_new_thorns_threshold_adds_replacement_without_double_counting(self):
         for move in (COLLECTOR_NONATTACK_MOVE, 'Spawn', 'Revive'):
@@ -217,7 +217,7 @@ class CollectorNonattackTests(unittest.TestCase):
                     c['state']['powers'] = {'Thorns': 3} if scales else {}
                     before = deepcopy(c)
                     rank = _boundary_rank(c['state'], c['state']['hand'][0], {'target': 'torch0'}, relics)
-                    self.assertEqual(rank[1], -(80 - expected_incoming))
+                    self.assertEqual(rank[0], -(80 - expected_incoming))
                     self.assertEqual(c, before)
 
     def test_new_thorns_replacement_can_withhold_unsafe_card_rank(self):

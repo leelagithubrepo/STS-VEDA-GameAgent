@@ -5,6 +5,8 @@ outcomes of one choice. The operator still reads the screen and chooses the
 strategy. An unfamiliar layout or readable random outcome is not, by itself,
 a reason to stop. Missing evidence that affects the next action needs a
 specific explanation and a fresh inspection or supported recovery.
+Use the [action-evidence policy](veda-action-evidence.md) for recovery limits
+and a concrete blocker record when play cannot continue.
 
 ## Operator workflow
 
