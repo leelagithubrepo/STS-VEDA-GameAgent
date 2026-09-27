@@ -21,6 +21,8 @@ Synthetic tests and a highlighted option do not establish the mapping.
 Keep the PS5 feed open in QuickTime's **Movie Recording** window and leave other
 Remote Play clients disconnected. Recording the video is not required. Codex
 can now capture that window even while its own window covers it.
+The QuickTime window may be on a second monitor; capture selects the window
+itself. Keep the preview open and confirm each captured frame is current.
 
 When ready to play, tell the active Codex task:
 
@@ -69,6 +71,15 @@ complete named review, `game: "Slay the Spire"`, identifiable `screen`, and
 `exclusive_client_confirmed: true`. It checks the existing warm bridge's live
 status without sending a gameplay button. The field is the operator's explicit
 client inspection, not an automatic scan of other controller software.
+
+The startup `ready` event and the later `status` response now check the same
+owned live transport and running refresh loop. They do not repeat the separate
+console-discovery query after connecting. `on: null` means power state was not
+probed; it does not mean the console is off. Arming requires the correlated
+status response, ready transport and running refresh, with no reported health
+fault. A startup event alone is insufficient. A failed check stores a sanitized
+`last_bridge_preflight` reason in the session summary/state so the next stop
+report can distinguish a timeout, connection failure and unhealthy transport.
 
 Common preparation fields are `operation: "prepare"`, `kind` (`combat` or
 `choice`), `context` (run/floor/combat/turn IDs), `source`, and `reasoning`.

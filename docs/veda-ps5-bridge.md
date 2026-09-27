@@ -83,6 +83,10 @@ Unobserved ages are `null`. Server AFK values are reported as `afk_raw`, with
 `afk_units: "unknown"`; no duration is inferred from those values. A local send
 or cached `session_ready` flag does **not** verify delivery to the game, so
 `input_delivery_verified` remains false and screen verification is still required.
+Startup and status use the same `owned_live_transport` readiness contract:
+ready transport, an active refresh loop and no health fault. Status does not
+launch a second UDP discovery query; `on` is null and `power_state_probed` is
+false. Arming uses this current transport response, not a discovery power flag.
 
 Known transport closure or errors interrupt both idle waits and active commands,
 emit a sanitized `controller_fault`, and close the session after best-effort input

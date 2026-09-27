@@ -49,6 +49,33 @@ def _time(value):
     return result
 
 
+def _bridge_readiness_problem(response, request_id):
+    """Return only fixed diagnostic codes; never echo SDK/device identifiers."""
+    if not isinstance(response, dict):
+        return "invalid_status_response"
+    if response.get("request_id") != request_id:
+        return "status_request_mismatch"
+    if response.get("ok") is not True or response.get("status") != "ok":
+        known = {"connect_failed", "command_timeout", "session_stopped", "controller_transport_failed",
+                 "response_unconfirmed", "client_closed", "reconciliation_required", "transport_unavailable"}
+        error = response.get("error")
+        return error if isinstance(error, str) and error in known else "status_not_confirmed"
+    if response.get("action") != "status" or response.get("readiness_source") != "owned_live_transport":
+        return "unsupported_readiness_contract"
+    if response.get("session_ready") is not True:
+        return "session_not_ready"
+    health = response.get("health")
+    if not isinstance(health, dict):
+        return "transport_health_missing"
+    if health.get("transport_ready") is not True:
+        return "transport_not_ready"
+    if health.get("refresh_running") is not True:
+        return "refresh_not_running"
+    if health.get("error_present") is not False or "error_code" not in health or health["error_code"] is not None:
+        return "transport_health_fault_or_unknown"
+    return None
+
+
 def inventory_digest(inventory):
     return hashlib.sha256(json.dumps(_inventory_semantics(inventory), sort_keys=True,
         separators=(",", ":"), allow_nan=False).encode()).hexdigest()
@@ -219,7 +246,8 @@ class ReviewedPlaySession(CombatInputAdapter):
                 "armed": self.armed, "pending": deepcopy(brief),
                 "recovery": recovery, "automatic_recognition_complete": False,
                 "runtime_authorized": False, "completed_inputs": self.state["completed"],
-                "cleanup": deepcopy(self.cleanup)}
+                "cleanup": deepcopy(self.cleanup),
+                "last_bridge_preflight": deepcopy(self.state.get("last_bridge_preflight"))}
 
     def arm(self, request):
         _require(not self.closed and not self.poisoned and self.mode == "codex", "shadow/closed/failed sessions cannot arm")
@@ -235,12 +263,22 @@ class ReviewedPlaySession(CombatInputAdapter):
         recovery = self.telemetry.recover(run_id=self.state["run_id"])
         _require(not recovery.get("pending"), "unresolved database decision requires reconciliation")
         _require(self.factory is not None, "existing warm bridge adapter required")
-        self.controller = self.factory()
-        response = self.controller.call({"action": "status", "request_id": str(uuid4())})
-        if not (response.get("ok") is True and response.get("on") is True
-                and response.get("session_ready") is True):
+        request_id = str(uuid4())
+        exception_code = "bridge_client_initialization_failed"
+        try:
+            self.controller = self.factory()
+            exception_code = "bridge_status_exception"
+            response = self.controller.call({"action": "status", "request_id": request_id})
+            problem = _bridge_readiness_problem(response, request_id)
+        except Exception:
+            problem = exception_code
+        self.state["last_bridge_preflight"] = {"checked_at": self.clock().isoformat(),
+            "request_id": request_id, "ready": problem is None, "reason": problem,
+            "controller_input_sent": False}
+        self._save()
+        if problem is not None:
             self.disarm()
-            raise RuntimeStop("warm bridge is not ready; no gameplay input sent")
+            raise RuntimeStop(f"warm bridge is not ready ({problem}); no gameplay input sent") from None
         self.armed = True
         self.cleanup = None
         return {"status": "armed_codex_reviewed", "run_id": self.state["run_id"],

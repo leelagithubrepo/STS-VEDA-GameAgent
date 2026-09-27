@@ -213,6 +213,22 @@ async def _serve_client(reader: Any, writer: Any, dispatcher: _CommandDispatcher
             pass
 
 
+def _owned_readiness(health: BridgeHealth) -> dict[str, Any]:
+    """Inspect the connected transport without another discovery/network poll.
+
+    PS5Service.status() performs DDP discovery with a timeout as long as this
+    wrapper's entire command deadline. Discovery is not the health of the owned
+    authenticated session and must not shut that session down during arming.
+    """
+    health.check_ready()
+    snapshot = health.status()
+    if (snapshot.get("transport_ready") is not True or snapshot.get("refresh_running") is not True
+            or snapshot.get("error_present") is not False or snapshot.get("error_code") is not None):
+        raise BridgeHealthError("owned bridge transport or refresh is not ready")
+    return {"readiness_source": "owned_live_transport", "on": None, "power_state_probed": False,
+            "session_ready": True, "health": snapshot}
+
+
 async def _handle(service: Any, health: BridgeHealth, command: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     action = command.get("action")
     if action == "tap":
@@ -232,10 +248,7 @@ async def _handle(service: Any, health: BridgeHealth, command: dict[str, Any]) -
         ), input_action="stick")
         return {"action": action, "stick": result}, False
     if action == "status":
-        status = await health.execute(service.status)
-        # Avoid returning identifiers that are irrelevant to the decision loop.
-        return {"action": action, "on": status["on"], "session_ready": status["session_ready"],
-                "health": health.status()}, False
+        return {"action": action, **_owned_readiness(health)}, False
     if action == "close":
         return {"action": action}, True
     raise ValueError("action must be one of: tap, stick, status, close")
@@ -307,7 +320,7 @@ async def _run(args: argparse.Namespace) -> int:
             stdin_transport, _ = await asyncio.get_running_loop().connect_read_pipe(
                 lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
         _emit({"ok": True, "event": "ready", "connect_ms": round((time.monotonic() - started) * 1000),
-               "health": health.status()})
+               **_owned_readiness(health)})
         if socket_path:
             stopped_task = asyncio.create_task(dispatcher.stopped.wait())
             fault_task = asyncio.create_task(health.failed.wait())

@@ -22,8 +22,13 @@ class FakeHealth:
     async def execute(self, operation, *, input_action=None):
         return await operation()
 
+    def check_ready(self):
+        if self.failed.is_set():
+            raise RuntimeError("synthetic transport stopped")
+
     def status(self):
-        return {"transport_ready": True, "input_delivery_verified": False}
+        return {"transport_ready": True, "refresh_running": True, "error_present": False,
+                "error_code": None, "input_delivery_verified": False}
 
 
 class FakeService:

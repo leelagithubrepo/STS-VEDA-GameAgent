@@ -45,7 +45,11 @@ class FakeController:
     def call(self, command):
         self.calls.append(deepcopy(command))
         if command["action"] == "status":
-            return {"ok": True, "on": True, "session_ready": self.ready, "request_id": command["request_id"]}
+            return {"ok": True, "status": "ok", "action": "status", "on": None,
+                    "readiness_source": "owned_live_transport", "power_state_probed": False,
+                    "session_ready": self.ready, "request_id": command["request_id"],
+                    "health": {"transport_ready": self.ready, "refresh_running": True,
+                               "error_present": False, "error_code": None}}
         if command["action"] == "tap":
             if self.before_tap:
                 self.before_tap(command)
@@ -208,6 +212,71 @@ class ReviewedPlayTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeStop, "arming"):
             self.session.handle(bad)
         self.assertEqual(1, self.factories)
+
+    def test_failed_status_keeps_a_sanitized_reason_across_restart(self):
+        original = self.controller.call
+        def timeout(command):
+            if command["action"] == "status":
+                return {"ok": False, "status": "unknown_outcome", "error": "command_timeout",
+                        "request_id": command["request_id"], "host": "DO_NOT_PRINT", "user": "DO_NOT_PRINT"}
+            return original(command)
+        self.controller.call = timeout
+        self.create()
+        with self.assertRaisesRegex(RuntimeStop, "command_timeout"):
+            self.arm()
+        self.assertEqual([], self.controller.inputs)
+        self.session.close(); self.create()
+        report = self.session.summary()["last_bridge_preflight"]
+        self.assertEqual("command_timeout", report["reason"])
+        self.assertFalse(report["ready"])
+        self.assertFalse(report["controller_input_sent"])
+        self.assertFalse(self.session.armed)
+        self.assertNotIn("DO_NOT_PRINT", self.session.path.read_text())
+
+    def test_unknown_sdk_error_text_is_never_persisted_or_echoed(self):
+        original = self.controller.call
+        def failure(command):
+            if command["action"] == "status":
+                return {"ok": False, "status": "error", "error": "DO_NOT_PRINT",
+                        "request_id": command["request_id"]}
+            return original(command)
+        self.controller.call = failure
+        self.create()
+        with self.assertRaisesRegex(RuntimeStop, "status_not_confirmed") as error:
+            self.arm()
+        self.assertNotIn("DO_NOT_PRINT", str(error.exception))
+        self.assertNotIn("DO_NOT_PRINT", self.session.path.read_text())
+        self.assertEqual([], self.controller.inputs)
+
+    def test_controller_factory_exception_is_sanitized_and_recorded(self):
+        def broken_factory():
+            raise OSError("PRIVATE_FACTORY_DETAIL")
+        self.factory = broken_factory
+        self.create()
+        with self.assertRaisesRegex(RuntimeStop, "bridge_client_initialization_failed") as error:
+            self.arm()
+        self.assertNotIn("PRIVATE_", str(error.exception))
+        self.assertNotIn("PRIVATE_", self.session.path.read_text())
+        self.assertFalse(self.session.armed)
+        self.assertEqual("bridge_client_initialization_failed", self.session.summary()["last_bridge_preflight"]["reason"])
+        self.assertEqual([], self.controller.inputs)
+
+    def test_controller_status_exception_is_sanitized_recorded_and_closed(self):
+        original = self.controller.call
+        def broken_status(command):
+            if command["action"] == "status":
+                raise OSError("PRIVATE_STATUS_DETAIL")
+            return original(command)
+        self.controller.call = broken_status
+        self.create()
+        with self.assertRaisesRegex(RuntimeStop, "bridge_status_exception") as error:
+            self.arm()
+        self.assertNotIn("PRIVATE_", str(error.exception))
+        self.assertNotIn("PRIVATE_", self.session.path.read_text())
+        self.assertFalse(self.session.armed)
+        self.assertTrue(self.controller.closed)
+        self.assertEqual("bridge_status_exception", self.session.summary()["last_bridge_preflight"]["reason"])
+        self.assertEqual([], self.controller.inputs)
 
     def test_real_pending_decision_and_durable_attempt_exist_before_fake_input(self):
         self.create(); self.arm()
