@@ -39,6 +39,11 @@ may retain earlier instructions or permission settings. In an existing task,
 `/permissions` can select **Approve for me**, but that alone does not reload
 product changes or resolve an outstanding game action.
 
+For live menu decisions, use the [draft-first preparation path](veda-menu-controls.md#prepare-the-decision-before-taking-the-action-image).
+Validate the compact decision before capture, inspect one image, then let the
+helper generate every matching source/review field from that image's receipt.
+Do not reconstruct the full JSON packet or search source code after capture.
+
 Keep the PS5 feed open in QuickTime's **Movie Recording** window and leave other
 Remote Play clients disconnected. Recording the video is not required. Codex
 can now capture that window even while its own window covers it.

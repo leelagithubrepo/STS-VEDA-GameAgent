@@ -51,6 +51,13 @@ Do not replay Talk, re-register the run or ask the player to choose the card
 merely because an activation hint is absent. Unknown/remapped controls still
 need their actual mapping established.
 
+For menu preparation, validate a compact source-free draft with `veda_menu.py
+--draft ... --validate` before the action image. Then capture, view, and use
+`--draft ... --capture ... --reviewed` to bind the exact image and submit the
+returned pointer immediately. Do not hand-build frame hashes/review objects,
+patch old source fields, or continue packaging after a failed capture. Complete
+setup outside the 30-second evidence window; the limit itself is unchanged.
+
 Read `docs/veda-general-decisions.md` and `docs/veda-action-evidence.md`. Keep three cases separate:
 
 - **Supported game uncertainty:** hidden draws, event outcomes and readable nonattack categories may remain unknown when the existing checked contract covers the action. Use applicable reviewed bounds or complete alternatives; record the actual result afterward. Bare unknown intent does not prove zero attack.

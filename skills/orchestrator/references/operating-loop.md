@@ -4,8 +4,16 @@ Use this checklist only after the current run has been explicitly armed and the 
 
 ## Before each decision
 
-1. Take a new passive screenshot with `python3 scripts/capture_observation.py --game-window`. Open and inspect the resulting image. A capture path alone is not proof that the game screen was captured correctly. Finish request setup before the action frame so the 30-second source window is not spent rediscovering schemas.
-2. Read the current confirmed run, floor, inventory, map, combat, and zone records from `scripts/veda_memory.py` as appropriate. Follow `.veda/workflows/spire-telemetry-v4.md`; link evidence IDs rather than duplicating or inventing evidence.
+For menus, validate the source-free draft before taking the action frame; use
+the exact compact commands in `docs/veda-menu-controls.md`. After viewing the
+fresh frame, bind it in one helper call and immediately prepare/send through
+the adapter. Read the capture path from the standalone capture command; never
+combine capture and packet rewriting in a shell substitution pipeline. If the
+capture fails, do not touch a draft or output packet. Diagnose the actual failing
+stage before spending another capture attempt.
+
+1. Read the current confirmed run, floor, inventory, map, combat, and zone records from `scripts/veda_memory.py` as appropriate. Follow `.veda/workflows/spire-telemetry-v4.md`; link evidence IDs rather than duplicating or inventing evidence. Finish schema discovery and request setup now. For menus, use a planning observation if needed, then finish strategy and draft validation before the fresh action image.
+2. Take a new passive screenshot with `python3 scripts/capture_observation.py --game-window`. Open and inspect the resulting image. A capture path alone is not proof that the game screen was captured correctly. For menus, confirm the prepared draft still matches, then use the compact binding/prepare/send path above immediately; if the state changed, revise and validate before a new action image. Do not repeat ledger lookup or schema discovery inside that 30-second window.
 3. If in combat, provide Spire with the current screenshot and relevant confirmed ledger state. Request one next action only. Do not ask it to perform inputs.
    When state is uncertain, compare supported actions conservatively: avoid death
    where possible, then lower damage risk while accounting for potions and future
@@ -15,6 +23,11 @@ Use this checklist only after the current run has been explicitly armed and the 
 5. Pass only the accepted next action through the reviewed adapter's prepare → send → verify cycle. Use one checked input at a time; never send raw strategic taps to the bridge or batch across a draw, turn boundary, enemy action, or other material transition.
 
 ## After each action
+
+The menu draft helper creates prepare requests only. Review the actual result
+through the existing reviewed-play after/outcome contract; never rebind the
+before-action draft as proof of an outcome. Read that contract and prepare its
+structure before input, then fill only actually observed results after capture.
 
 1. Capture and inspect the resulting screen. Verify the action actually occurred and update the ledger with observed card movement, HP/Block/energy, enemy health/status/intent, inventory changes, and outcome as applicable.
 2. Resolve the pending decision only from its observed outcome. A supported random result may differ from a preferred prediction but still match exactly one complete declared branch. An outcome outside the checked contract remains pending; inspect/reconcile it and never replay input. Do not begin a new plan while that action is unresolved.

@@ -1,0 +1,42 @@
+{
+  "schema": "veda.menu-draft.v1",
+  "context": {
+    "run_id": "CURRENT_RUN_ID",
+    "floor_id": "CURRENT_FLOOR_ID",
+    "combat_id": null,
+    "turn_id": null
+  },
+  "inventory": {
+    "current": {"card": [], "relic": ["Burning Blood"], "potion": []},
+    "coverage": {"card": "unknown", "relic": "complete", "potion": "complete"},
+    "properties": {}
+  },
+  "resources": {"hp": 80, "max_hp": 80, "gold": 99, "deck_size": 10},
+  "facts": {
+    "event_id": "neow", "event_phase": "reward_options", "act": 1, "floor": 0,
+    "character": "Ironclad", "ascension": 2, "dialogue_text": "Choose..."
+  },
+  "ui": {
+    "choice_id": "neow-rewards",
+    "layout_id": "neow-rewards-ps5-default",
+    "menu_family": "event_options",
+    "focused_id": "upgrade_card",
+    "options": [
+      {"id": "upgrade_card", "label": "Upgrade a Card", "enabled": true, "costs": {}},
+      {"id": "potions", "label": "Obtain 3 random Potions", "enabled": true, "costs": {}},
+      {"id": "colorless", "label": "Lose 8 Max HP: Choose a rare colorless Card", "enabled": true, "costs": {"max_hp": 8}},
+      {"id": "boss_relic", "label": "Lose your starting Relic: Obtain a random boss Relic", "enabled": true, "costs": {}}
+    ]
+  },
+  "choice": {
+    "kind": "event",
+    "option_ids": ["upgrade_card"],
+    "postconditions": {
+      "screen": "selection", "phase": "choose", "inventory": "unchanged",
+      "resources": {"hp": 80, "max_hp": 80, "gold": 99, "deck_size": 10},
+      "facts": {"event_id": "neow", "act": 1, "floor": 0, "character": "Ironclad", "ascension": 2},
+      "allow_changed_facts": ["event_phase", "dialogue_text"]
+    }
+  },
+  "reasoning": "Open the chosen free upgrade picker, then inspect the actual cards before selecting an upgrade."
+}

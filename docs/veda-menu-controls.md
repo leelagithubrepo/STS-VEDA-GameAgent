@@ -123,25 +123,86 @@ source-bound mutation review required by the adapter. Preserve duplicate card
 counts. If the result is unresolved, retain the pending input and inspect;
 never press confirmation again to see whether it worked.
 
-## Package the next reviewed request
+## Prepare the decision before taking the action image
 
-Prepare the ordinary `operation: "prepare", kind: "choice"` packet described
-in [choice execution](veda-choice-execution.md) with the inspected source,
-inventory, observation and strategic choice. Then attach applicable controls:
+Finish schema discovery, strategy and draft repair **before** the action image.
+The 30-second window is for inspecting, binding and submitting that image.
+Do not spend it copying hashes, rewriting source fields, or typing repeated
+review objects. Do not use shell substitutions or regex replacement to refresh
+a packet; failure can leave an old or empty source attached to a complete review.
+
+Start from [the compact opening example](../.veda/examples/menu-upgrade-open-draft.json).
+It is an example of previously seen options, not current game evidence. Replace
+the run/floor IDs and all gameplay facts with the inspected state and ledger.
+Keep the current attempt; do not replay Talk or register another run.
+
+A `veda.menu-draft.v1` contains `context`, `inventory`, `resources`, `facts`,
+`ui`, `choice`, and `reasoning`. It contains **no** capture, timestamp, hash,
+review or controller proof. The compact `ui` names its menu family, stable
+choice/layout IDs, complete options, focus, and any required grid. The builder
+derives ordinary order, selection mode, quota and screen from the menu family.
+For a preview, explicitly supply phase `confirm`, selected/pending IDs,
+`upgrade_preview`, and `confirm_hint: {"button":"actual visible button",
+"hint_text":"actual visible hint"}`. Inspection of the final image must confirm
+that hint. The helper generates its source-bound proof.
+
+The compact choice names `kind`, `option_ids` and `postconditions`. Its
+postconditions use `inventory: "unchanged"` or the exact expected inventory
+object; the builder computes the digest. Outcome resources/facts stay explicit.
+Omit outcome `context` to retain the current context. There is no reason to
+compute a frame ID or duplicate a review by hand.
+
+Validate the decision before capture:
 
 ```sh
-python3 scripts/veda_menu.py \
-  --request /absolute/path/to/fresh-reviewed-choice.json \
-  --control-profile ps5-default-cross-confirm-v1 \
-  --output /absolute/path/to/new-menu-request.json
+python3 scripts/veda_menu.py --draft /absolute/path/to/menu-draft.json \
+  --validate --control-profile ps5-default-cross-confirm-v1
 ```
 
-The helper checks source bytes, matching review/context/inventory, the menu
-profile and the next planned step. It exclusively creates the output file and
-returns its `request_file` pointer. Submit that pointer to the already-armed
-reviewed adapter. It is a prepare request, not a direct bridge command.
-After every input, refresh the observation and profile bindings from the actual
-result. A generated proof is a documented layout rule, not pixel recognition.
+This checks the choice/schema/profile only. It cannot authorize an input or
+produce an action request. Fix any reported draft errors now. Keep the adapter
+and bridge ready, with no pending action, before entering the short live path:
+
+1. Run `python3 scripts/capture_observation.py --game-window` as a standalone
+   command. If a specific Movie Recording window was already identified, add
+   `--window-id ACTUAL_WINDOW_ID`. An empty result or nonzero exit means no
+   capture; stop this attempt before packaging and read the actual error.
+2. View that exact returned image. Confirm the draft's resources, inventory,
+   options, focus and chosen action still match. If something changed, revise
+   and validate the draft before taking a new action image.
+3. Bind the reviewed image in one call, using the literal returned path:
+
+   ```sh
+   python3 scripts/veda_menu.py --draft /absolute/path/to/menu-draft.json \
+     --capture /absolute/path/to/inspected-frame.png \
+     --reviewer 'Codex Orchestrator' --evidence-note 'Actual inspected state and limitations' \
+     --reviewed --control-profile ps5-default-cross-confirm-v1 \
+     --output /absolute/path/to/new-menu-request.json
+   ```
+
+4. Immediately submit the returned `request_file` pointer to the already-armed
+   adapter, then send its one prepared action ID. Read and verify the result
+   before any next action. Avoid unrelated narration, code search or setup
+   between inspection, preparation and send.
+
+The helper reads the image's original capture receipt and derives all source,
+frame and review fields together. It rechecks bytes, receipt, time and the
+decision before exclusively creating a new file. It never overwrites the draft
+or an earlier packet, captures a replacement, or claims inspection automatically.
+An expired frame needs a new inspected capture, not a timestamp change.
+`--request` remains available for existing complete packets, but is not the
+recommended live preparation path. A generated profile rule is not pixel
+recognition, and the builder itself never dispatches input.
+
+This helper creates prepare requests only. Post-input after/outcome review uses
+the existing [reviewed-play verification contract](veda-reviewed-play.md).
+Prepare its structure before input, fill it from the actual resulting image,
+and never rebind the before-action draft as proof that the action succeeded.
+
+If preparation fails, report whether the failure came from capture, draft
+validation, packet construction, adapter prepare, or dispatch. Preserve the
+actual command error. A helper rejection is not evidence that the bridge or
+game failed, and an empty shell variable does not identify a capture failure.
 
 Custom controls, title/system menus and unsupported menu families retain their
 own evidence requirements. Do not broaden a named rule to conceal an unexpected

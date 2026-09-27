@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Attach scoped menu controls to a reviewed request. Never connects or sends input."""
+"""Validate menu decisions before capture, then bind one inspected image. No input."""
 import argparse
 from datetime import datetime, timezone
 import json
@@ -64,13 +64,45 @@ def package(request_path, output, *, control_profile, now=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--request', type=Path, required=True,
-                        help='Reviewed choice request with explicit menu family and ordinary outcome constraints.')
-    parser.add_argument('--output', type=Path, required=True, help='New request file; never overwritten.')
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument('--draft', type=Path,
+                        help='Source-free menu decision; validate it before taking the action image.')
+    inputs.add_argument('--request', type=Path,
+                        help='Legacy complete reviewed request; prefer --draft for live preparation.')
+    parser.add_argument('--validate', action='store_true',
+                        help='Check only the draft; produces no action request or controller authority.')
+    parser.add_argument('--capture', type=Path, help='Exact inspected PNG with original capture receipt.')
+    parser.add_argument('--reviewer', help='Name of the person or advisor inspecting the exact image.')
+    parser.add_argument('--evidence-note', help='What was actually inspected and any source limitations.')
+    parser.add_argument('--reviewed', action='store_true',
+                        help='Declare the draft facts and selected choice match this exact fresh image.')
+    parser.add_argument('--output', type=Path, help='New request file; never overwritten.')
     parser.add_argument('--control-profile', required=True, choices=[CONTROL_PROFILE])
     args = parser.parse_args(argv)
+    if args.request is not None:
+        if (args.validate or args.reviewed or any(value is not None for value in
+                (args.capture, args.reviewer, args.evidence_note))):
+            parser.error('draft/capture review options cannot be combined with --request')
+        if not args.output:
+            parser.error('--request requires --output')
+    elif args.validate:
+        if (args.reviewed or any(value is not None for value in
+                (args.output, args.capture, args.reviewer, args.evidence_note))):
+            parser.error('--validate checks a source-free draft only; omit capture, review and output options')
+    elif not (args.capture and args.reviewer and args.evidence_note and args.reviewed and args.output):
+        parser.error('--draft preparation requires --capture, --reviewer, --evidence-note, --reviewed and --output')
     try:
-        result = package(args.request, args.output, control_profile=args.control_profile)
+        if args.request:
+            result = package(args.request, args.output, control_profile=args.control_profile)
+        else:
+            from veda.menu_requests import read_menu_draft, validate_menu_draft, write_menu_request
+            draft = read_menu_draft(args.draft)
+            if args.validate:
+                result = validate_menu_draft(draft, control_profile=args.control_profile)
+            else:
+                result = write_menu_request(draft, capture=args.capture, reviewer=args.reviewer,
+                    evidence_note=args.evidence_note, reviewed=args.reviewed,
+                    control_profile=args.control_profile, output=args.output)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         print(json.dumps({'status': 'needs_review', 'reason': str(error),
                           'controller_input_sent': False}))
