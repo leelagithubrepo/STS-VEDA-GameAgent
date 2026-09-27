@@ -5,6 +5,13 @@ send one controller input and verify its result. The player can say **stop** at
 any time. It uses the existing saved run and does not start another run after
 victory or defeat.
 
+Start with the [compact play loop and timing targets](veda-play-hot-path.md).
+Combat uses [source-free action and result helpers](veda-combat-play.md), and
+an armed adapter accepts `execute` for one reviewed prepare/send cycle. Arming
+continues directly into play; it is not a reason to wait for another prompt.
+The targets measure actual progress and expose delays; they do not certify
+live speed or relax evidence checks.
+
 The new adapter connects reviewed combat moves, card selections, potion menus,
 map/reward/rest/event/shop choices and SQLite recovery. These paths are tested
 with recorded declarations and a fake controller. They still need their first

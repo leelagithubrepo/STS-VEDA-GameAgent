@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import sqlite3
+import sys
 from uuid import UUID
 
 
@@ -27,12 +29,19 @@ def main():
              if args.run_id else
              'Play the currently visible Slay the Spire attempt; bind its actual identity from fresh evidence. ')
     prompt = (
-        'Use $orchestrator and $spire. Read skills/orchestrator/SKILL.md and its operating-loop reference '
+        'Use $orchestrator and $spire. Read skills/orchestrator/SKILL.md '
         'from this checkout for the current play instructions. ARM ORCHESTRATOR FOR THIS RUN. '
         + scope +
         'Keep Luna High for gameplay. Check exclusive controller ownership, live game video, the ledger, '
         'pending actions and bridge readiness before arming the reviewed adapter. '
         'Use the reviewed adapter for every input, retain before/after evidence and record SQLite outcomes. '
+        'Read docs/veda-play-hot-path.md first and only the guide for the current screen. '
+        'After arming keep playing in this turn; do not stop at an armed status or wait for continue. '
+        'Use compact veda_combat.py/veda_menu.py requests with --execute and compact result helpers; '
+        'finish draft validation before the fresh image and never hand-author source hashes or Reading packets. '
+        'Track the persistent play clock: first verified input 90s, ordinary logical move 20s, '
+        'noncombat floor 90s, combat floor 240s, elite 360s, boss 480s. Report overruns and fix the named phase; '
+        'timing targets never waive source, pending-action or gameplay checks. '
         'Under uncertain game state, inspect relevant facts and choose a supported move with the lowest '
         'defensible damage risk, considering lethal, block, potions and setup. '
         'For menus without a visible hint, use the applicable reviewed default-PS5 control profile in '
@@ -55,6 +64,37 @@ def main():
     executable = shutil.which('codex')
     if executable is None:
         parser.exit(2, 'Codex CLI was not found on PATH.\n')
+    sys.path.insert(0, str(root))
+    from veda.play_context import read_play_context
+    from veda.play_timing import PlayTiming
+    measured_run = args.run_id
+    if measured_run is None:
+        try:
+            recorded = read_play_context(root / 'artifacts/veda-memory.sqlite3')
+            if recorded.get('selection_status') == 'selected':
+                # This ID selects a diagnostic clock only, never a live run or
+                # controller authority. Reject malformed directory identities.
+                measured_run = str(UUID(recorded['run']['id']))
+            else:
+                print('Startup timing unavailable: recorded run selection needs review. '
+                      'Codex will identify the current run during live preflight.', file=sys.stderr, flush=True)
+        except (ValueError, OSError, KeyError, TypeError, AttributeError, RuntimeError, sqlite3.Error) as error:
+            measured_run = None
+            print('Startup timing unavailable: recorded run selection failed '
+                  f'({type(error).__name__}). Codex will still start and must verify the current run.',
+                  file=sys.stderr, flush=True)
+    if measured_run is not None:
+        try:
+            timing = PlayTiming(root / 'artifacts/reviewed-play' / measured_run / 'timing.json', run_id=measured_run)
+            if timing.snapshot().get('pause') is not None:
+                timing.event('resume')
+            timing.event('phase', name='preflight')
+        except (ValueError, OSError, KeyError, TypeError, RuntimeError) as error:
+            # Timing is diagnostic. Preserve a corrupt/unavailable sidecar and
+            # let the normal reviewed adapter retain all live-state checks.
+            print(f'Startup timing unavailable ({type(error).__name__}). '
+                  'Codex will still start; live preflight and every input check remain required.',
+                  file=sys.stderr, flush=True)
     print('Starting Luna High with automatic approval review. Game input begins only after live preflight.',
           flush=True)
     os.execv(executable, command)

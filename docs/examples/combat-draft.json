@@ -1,0 +1,126 @@
+{
+  "schema": "veda.combat-draft.v1",
+  "context": {
+    "run_id": "example-run",
+    "floor_id": "example-floor",
+    "combat_id": "example-combat",
+    "turn_id": "example-turn"
+  },
+  "state": {
+    "hp": 40,
+    "max_hp": 80,
+    "energy": 1,
+    "block": 0,
+    "strength": 0,
+    "dexterity": 0,
+    "weak": 0,
+    "vulnerable": 0,
+    "frail": 0,
+    "no_block": 0,
+    "powers": {},
+    "powers_complete": true,
+    "hand_complete": true,
+    "hand": [
+      {
+        "id": "s",
+        "name": "Strike",
+        "type": "Attack",
+        "cost": 1,
+        "upgraded": false,
+        "title_color": "white",
+        "playable": true
+      },
+      {
+        "id": "d",
+        "name": "Defend",
+        "type": "Skill",
+        "cost": 1,
+        "upgraded": false,
+        "title_color": "white",
+        "playable": true
+      }
+    ],
+    "counters": {},
+    "piles": {
+      "draw": null,
+      "discard": [],
+      "exhaust": [],
+      "draw_order": null
+    },
+    "enemies": [
+      {
+        "id": "enemy",
+        "name": "Cultist",
+        "hp": 12,
+        "max_hp": 50,
+        "block": 0,
+        "vulnerable": 0,
+        "weak": 0,
+        "strength": 0,
+        "artifact": 0,
+        "intent": "attack 6",
+        "intent_hits": [
+          6
+        ],
+        "intent_effects": [],
+        "intent_damage_confidence": 1.0
+      }
+    ],
+    "end_turn_damage": 0,
+    "unmodeled_effects": [],
+    "character": "Ironclad",
+    "ascension": 0,
+    "act": 1,
+    "floor": 1,
+    "gold": 99,
+    "turn": 1
+  },
+  "inventory": {
+    "current": {
+      "card": [
+        "Strike",
+        "Defend"
+      ],
+      "relic": [],
+      "potion": []
+    },
+    "coverage": {
+      "card": "complete",
+      "relic": "complete",
+      "potion": "complete"
+    },
+    "properties": {}
+  },
+  "encounter": {
+    "name": "Cultist",
+    "type": "enemy",
+    "confidence": 1.0
+  },
+  "perception": {
+    "confidence": 1.0,
+    "end_turn_damage_confidence": 1.0
+  },
+  "unknowns": [],
+  "ui": {
+    "phase": "hand",
+    "focused_card_id": "s",
+    "selected_card_id": null,
+    "focused_target_id": null,
+    "hand_order": [
+      "s",
+      "d"
+    ],
+    "target_order": [
+      "enemy"
+    ]
+  },
+  "plan": {
+    "steps": [
+      {
+        "kind": "card",
+        "card_id": "d"
+      }
+    ]
+  },
+  "reasoning": "Synthetic example only: focus and then play the observed Defend; not game evidence."
+}

@@ -4,7 +4,9 @@ import argparse
 from contextlib import contextmanager
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
+import select
 import sys
 import termios
 
@@ -38,6 +40,52 @@ def jsonl_terminal(stream):
         termios.tcsetattr(descriptor, termios.TCSANOW, original)
 
 
+def timed_requests(stream, session):
+    """Read bounded JSONL while reporting deadlines even during model silence.
+
+    Use raw reads so an extra buffered line never waits on an empty OS pipe.
+    Polling emits diagnostics only; it cannot dispatch, retry or close input.
+    """
+    try:
+        descriptor = stream.fileno()
+    except (AttributeError, OSError):
+        # In-memory replay streams have no OS descriptor or waiting interval.
+        # Retain the bounded JSONL reader for these offline callers.
+        reader = getattr(stream, 'buffer', stream)
+        while not session.closed:
+            line = reader.readline(MAX_BYTES + 1)
+            if not line:
+                return
+            if len(line) > MAX_BYTES:
+                raise ValueError('request exceeds byte limit')
+            yield line
+        return
+    pending = b''
+    while not session.closed:
+        if b'\n' in pending:
+            line, pending = pending.split(b'\n', 1)
+            if len(line) > MAX_BYTES:
+                raise ValueError('request exceeds byte limit')
+            yield line
+            continue
+        if len(pending) > MAX_BYTES:
+            raise ValueError('request exceeds byte limit')
+        ready, _, _ = select.select([descriptor], [], [], 5)
+        if not ready:
+            timing = session.timing_summary(poll=True)
+            if timing.get('new_alerts'):
+                print(json.dumps({'status': 'timing_overrun', 'alerts': timing['new_alerts'],
+                    'phase': timing.get('phase'), 'controller_input_sent': False,
+                    'required': 'Resolve the named delay; preserve any pending input and ordinary checks.'}), flush=True)
+            continue
+        chunk = os.read(descriptor, min(65536, MAX_BYTES + 1 - len(pending)))
+        if not chunk:
+            if pending.strip():
+                raise ValueError('incomplete JSONL request at EOF; newline required')
+            return
+        pending += chunk
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, epilog=
         'Requests are newline-terminated JSONL; prefer a short request_file pointer. '
@@ -58,10 +106,7 @@ def main(argv=None):
             print(json.dumps({"status": "ready_unarmed", "summary": session.summary(),
                 "next_operation": "bridge_preflight" if args.mode == "codex" else "summary",
                 "request_format": "newline-terminated JSONL; request_file preferred"}), flush=True)
-            while not session.closed:
-                line = sys.stdin.buffer.readline(MAX_BYTES + 1)
-                if not line:
-                    break
+            for line in timed_requests(sys.stdin, session):
                 try:
                     if len(line) > MAX_BYTES:
                         raise ValueError("request exceeds byte limit")
@@ -78,7 +123,7 @@ def main(argv=None):
                 except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
                     session.disarm()
                     result = {"status": "stopped_for_review", "error": str(error), "armed": False,
-                              "cleanup": session.cleanup}
+                              "cleanup": session.cleanup, "timing": session.timing_summary()}
                 print(json.dumps(result, allow_nan=False), flush=True)
     except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
         parser.error(str(error))

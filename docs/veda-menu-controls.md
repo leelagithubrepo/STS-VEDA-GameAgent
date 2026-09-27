@@ -4,6 +4,11 @@ For map inspection, route comparison, node focus/activation and room-entry
 results, use [the map workflow](veda-map-play.md). The same compact request and
 result CLI handles those scoped map families.
 
+Follow the [measured play loop](veda-play-hot-path.md). When binding a validated
+draft, `--execute` packages one prepare/send request for an already armed
+adapter, avoiding a separate `send` round trip. It sends nothing from the helper
+itself. Results never use this flag; they only verify the pending input.
+
 A missing button glyph is not, by itself, missing game state. When the operator
 has explicitly selected the unchanged default PS5 control layout, use its named
 menu rules. Keep that rule separate from evidence actually seen on screen.

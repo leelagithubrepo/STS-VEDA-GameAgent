@@ -2,15 +2,22 @@
 
 Use this checklist only after the current run has been explicitly armed and the bridge is ready.
 
+Arming is a transition into play, not a completed user task. Continue in the
+same turn unless asked to arm only. Use `docs/veda-play-hot-path.md` for compact
+commands and measured deadlines. Read this reference only for applicable
+details; schema discovery, backlog review and implementation wait for Builder.
+
 ## Before each decision
 
-For menus, validate the source-free draft before taking the action frame; use
-the exact compact commands in `docs/veda-menu-controls.md`. After viewing the
+For combat and menus, validate the source-free draft before the action frame;
+use `veda_combat.py` or `veda_menu.py`. After viewing the
 fresh frame, bind it in one helper call and immediately prepare/send through
 the adapter. Read the capture path from the standalone capture command; never
 combine capture and packet rewriting in a shell substitution pipeline. If the
 capture fails, do not touch a draft or output packet. Diagnose the actual failing
-stage before spending another capture attempt.
+stage before spending another capture attempt. `--execute` combines prepare
+and send in the armed adapter for exactly one input, eliminating a redundant
+model round trip. It never combines inputs or removes result verification.
 
 1. Read the current confirmed run, floor, inventory, map, combat, and zone records from `scripts/veda_memory.py` as appropriate. Follow `.veda/workflows/spire-telemetry-v4.md`; link evidence IDs rather than duplicating or inventing evidence. Finish schema discovery and request setup now. For menus, use a planning observation if needed, then finish strategy and draft validation before the fresh action image.
 2. Take a new passive screenshot with `python3 scripts/capture_observation.py --game-window`. Open and inspect the resulting image. A capture path alone is not proof that the game screen was captured correctly. For menus, confirm the prepared draft still matches, then use the compact binding/prepare/send path above immediately; if the state changed, revise and validate before a new action image. Do not repeat ledger lookup or schema discovery inside that 30-second window.
@@ -24,8 +31,8 @@ stage before spending another capture attempt.
 
 ## After each action
 
-For menus, use `veda_menu.py --result ... --session ...` from
-`docs/veda-menu-controls.md` to generate verification from a compact actual
+Use `veda_combat.py --result ... --session ...` for combat, `veda_inspect.py`
+for tooltip inspection, or `veda_menu.py` for menus to generate verification from a compact actual
 result and the exact pending action. Never hand-build after-frame hashes,
 old-frame references or mutation reviews. Use a short file pointer, not full
 JSON in the adapter terminal. View each exact capture before declaring it
@@ -33,6 +40,14 @@ reviewed; an earlier unchanged-looking image does not review a new capture.
 The helper generates source-bound fields and required upgrade-event notes.
 Keep result schema preparation outside the capture window. Do not re-arm or
 replay when `verified_pending_log` requires finalization/metadata recovery.
+
+An ordinary move's 20-second target includes focus/selection, actual effect and
+verification; a highlighted card is not a completed move. At an overrun, report
+the current phase and specific delay, finish any pending verification first,
+then return to the compact helper. At two stale captures for the same move,
+finish draft repair/validation before another capture. Keep unknown effects
+unknown. `end_turn_damage` is additional non-attack damage, not the sum of enemy
+attack intents; record each attack in its enemy intent fields once.
 
 1. Capture and inspect the resulting screen. Verify the action actually occurred and update the ledger with observed card movement, HP/Block/energy, enemy health/status/intent, inventory changes, and outcome as applicable.
 2. Resolve the pending decision only from its observed outcome. A supported random result may differ from a preferred prediction but still match exactly one complete declared branch. An outcome outside the checked contract remains pending; inspect/reconcile it and never replay input. Do not begin a new plan while that action is unresolved.

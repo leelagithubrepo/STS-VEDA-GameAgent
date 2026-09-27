@@ -275,7 +275,11 @@ class ArmRequestTests(unittest.TestCase):
         output = io.StringIO()
         with redirect_stdout(output):
             self.assertEqual(2, main(self.cli_args()))
-        self.assertEqual({"request_file": None, "error": "capture_hash_mismatch", "controller_input_sent": False}, json.loads(output.getvalue()))
+        result = json.loads(output.getvalue())
+        timing = result.pop('timing')
+        self.assertFalse(timing['recorded'])
+        self.assertFalse(timing['controller_authorized'])
+        self.assertEqual({"request_file": None, "error": "capture_hash_mismatch", "controller_input_sent": False}, result)
 
 
 if __name__ == "__main__":

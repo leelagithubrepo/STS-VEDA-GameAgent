@@ -235,7 +235,7 @@ def validate_menu_draft(draft, control_profile):
 
 @_checked
 def write_menu_request(draft, *, capture, reviewer, evidence_note, reviewed,
-                       control_profile, output, now=None):
+                       control_profile, output, now=None, execute=False):
     """Exclusively publish a prepare request after explicit exact-image review.
 
     ``reviewed=True`` declares that this exact fresh image was inspected and all
@@ -249,6 +249,9 @@ def write_menu_request(draft, *, capture, reviewer, evidence_note, reviewed,
         evidence_note=evidence_note, reviewed=reviewed, now=now)
     clock = now if now is not None else datetime.now(timezone.utc)
     request = _request(draft, checked, control_profile, clock)
+    _require(type(execute) is bool, "execute must be an explicit boolean")
+    if execute:
+        request["operation"] = "execute"
     data = (json.dumps(request, sort_keys=True, allow_nan=False, indent=2) + "\n").encode()
     _require(len(data) <= MAX_BYTES, "menu request exceeds adapter byte bound")
     _require(isinstance(output, (str, Path)) and _text(str(output)), "output path required")

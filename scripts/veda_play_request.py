@@ -36,7 +36,10 @@ def main(argv=None):
             reviewed=args.reviewed, exclusive_client_confirmed=args.exclusive_client_confirmed,
             output=args.output)
     except PlayRequestError as error:
-        print(json.dumps({"request_file": None, "error": str(error), "controller_input_sent": False}))
+        from veda.helper_timing import record_helper_failure
+        timing = record_helper_failure(error, run_id=args.run_id, output_path=args.output, capture=args.capture)
+        print(json.dumps({"request_file": None, "error": str(error), "controller_input_sent": False,
+                          "timing": timing}))
         return 2
     print(json.dumps(result, sort_keys=True))
     return 0

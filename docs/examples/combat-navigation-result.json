@@ -1,0 +1,26 @@
+{
+  "schema": "veda.combat-result.v1",
+  "action_id": "EXACT_PENDING_ACTION_ID",
+  "state": "unchanged",
+  "inventory": "unchanged",
+  "encounter": "unchanged",
+  "perception": {
+    "confidence": 1.0,
+    "end_turn_damage_confidence": 1.0
+  },
+  "unknowns": [],
+  "ui": {
+    "phase": "hand",
+    "focused_card_id": "d",
+    "selected_card_id": null,
+    "focused_target_id": null,
+    "hand_order": [
+      "s",
+      "d"
+    ],
+    "target_order": [
+      "enemy"
+    ]
+  },
+  "observed_result": "Synthetic inspected after-state and UI; no live game was controlled."
+}

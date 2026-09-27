@@ -26,6 +26,7 @@ from .execution import ARM_PHRASE, Reading
 from .routine_combat import routine_observation_reasons
 from .play_telemetry import validate_outcome_request, outcome_request_digest
 from .saved_frame_reader import _identity
+from .play_timing import PlayTiming
 
 MAX_BYTES = 1_000_000
 MAX_AGE = 30
@@ -115,6 +116,8 @@ class ReviewedPlaySession(CombatInputAdapter):
         self.closed = False
         self.poisoned = False
         self.cleanup = None
+        self.timing = None
+        self.timing_error = None
         self.path = self.directory / "state.json"
         try:
             if self.path.exists():
@@ -125,6 +128,14 @@ class ReviewedPlaySession(CombatInputAdapter):
             else:
                 self.state = {"schema": SCHEMA, "run_id": run_id, "pending": None, "completed": 0}
                 self._save()
+            try:
+                self.timing = PlayTiming(self.directory / 'timing.json', run_id=run_id,
+                    clock=self.clock, startup_observed=False,
+                    monotonic_clock=(lambda: int(self.clock().timestamp() * 1_000_000_000)) if clock else None)
+                if mode == 'codex' and self.timing.snapshot().get('pause') is not None:
+                    self.timing.event('resume')
+            except (ValueError, OSError, KeyError, TypeError, RuntimeError) as error:
+                self.timing_error = str(error)
         except BaseException:
             self.lock.close()
             raise
@@ -199,6 +210,21 @@ class ReviewedPlaySession(CombatInputAdapter):
         context = request["context"]
         _require(set(context) == {"run_id", "floor_id", "combat_id", "turn_id"}
                  and context["run_id"] == self.state["run_id"], "exact current run context required")
+        if request['kind'] == 'combat_inspection':
+            from .combat_inspection import validate_inspection_observation
+            observation = request['observation']
+            frame = observation['frame']
+            _require(observation['context'] == context
+                     and frame['image_sha256'] == source['sha256']
+                     and frame['observed_at'] == source['captured_at'],
+                     'inspection context/frame differs from saved source')
+            self._review(request['review'], source, frame['frame_id'])
+            _require(request['review'] == observation['review'], 'inspection review differs')
+            inventory = request['inventory']
+            _require(all(inventory.get('coverage', {}).get(k) == 'complete' for k in ('relic', 'potion'))
+                     and inventory_digest(inventory) == observation['inventory_digest'],
+                     'complete reviewed inventory must match inspection digest')
+            return validate_inspection_observation(observation, now=self.clock())
         if request["kind"] == "choice":
             observation = request["observation"]
             _require(observation["context"] == context, "choice context differs")
@@ -249,7 +275,48 @@ class ReviewedPlaySession(CombatInputAdapter):
                 "recovery": recovery, "automatic_recognition_complete": False,
                 "runtime_authorized": False, "completed_inputs": self.state["completed"],
                 "cleanup": deepcopy(self.cleanup),
-                "last_bridge_preflight": deepcopy(self.state.get("last_bridge_preflight"))}
+                "last_bridge_preflight": deepcopy(self.state.get("last_bridge_preflight")),
+                "timing": self.timing_summary()}
+
+    def _timing_event(self, operation, **fields):
+        # Measurement failures are surfaced, never mistaken for game failures
+        # or allowed to conceal an already dispatched input.
+        if self.timing is not None:
+            try:
+                return self.timing.event(operation, **fields)
+            except (ValueError, OSError, KeyError, TypeError, RuntimeError) as error:
+                self.timing_error = str(error)
+
+    def timing_summary(self, *, poll=False):
+        try:
+            result = (self.timing.poll() if poll else self.timing.summary()) if self.timing else {}
+        except (ValueError, OSError, KeyError, TypeError, RuntimeError) as error:
+            self.timing_error = str(error)
+            result = {}
+        return {**result, **({'measurement_error': self.timing_error} if self.timing_error else {})}
+
+    def _begin_timed_move(self, identifier):
+        snapshot = self._timing_snapshot()
+        if snapshot is not None and snapshot.get('move') is None:
+            self._timing_event('begin_move', move_id=identifier, kind='reviewed_decision')
+
+    def _timing_snapshot(self):
+        try:
+            return self.timing.snapshot() if self.timing else None
+        except (ValueError, OSError, KeyError, TypeError, RuntimeError) as error:
+            self.timing_error = str(error)
+            return None
+
+    @staticmethod
+    def _timed_floor_kind(request):
+        context = request.get('reading', {}).get('context', {})
+        kind = context.get('encounter_type')
+        if request['kind'] == 'combat':
+            return kind if kind in {'elite', 'boss'} else 'combat'
+        if request['kind'] == 'combat_inspection':
+            return 'combat'
+        node = request.get('observation', {}).get('facts', {}).get('node_type')
+        return node if node in {'elite', 'boss'} else 'combat' if node == 'enemy' else 'noncombat'
 
     def _check_bridge_status(self, *, retain_connection):
         """Probe from this process before spending the screenshot review window."""
@@ -323,9 +390,21 @@ class ReviewedPlaySession(CombatInputAdapter):
         _require(not self.closed and not self.poisoned and not self.state["pending"], "resolve pending input or reopen failed session")
         _require(self.state["completed"] < 10000, "session input limit reached")
         request = _copy(request)
+        snapshot = self._timing_snapshot()
+        if snapshot is not None and snapshot.get('floor') is None:
+            self._timing_event('begin_floor', floor_id=request['context']['floor_id'],
+                               kind=self._timed_floor_kind(request))
+        self._begin_timed_move('decision-' + str(uuid4()))
+        self._timing_event('phase', name='prepare')
         before = self._before(request)
         action_id = str(uuid4())
-        if request["kind"] == "choice":
+        if request['kind'] == 'combat_inspection':
+            from .combat_inspection import plan_tooltip_clear
+            proposal = plan_tooltip_clear(before, control_profile=request['control_profile'],
+                now=self.clock(), action_id=action_id, progress=self.state.get('combat_inspection_progress'))
+            command = proposal['command']
+            semantic = {'kind': 'navigation', 'inspection': 'clear_tooltip', 'step_kind': 'inspect'}
+        elif request["kind"] == "choice":
             proposal = plan_choice_step(before, request["choice"], now=self.clock(),
                                         max_age_seconds=MAX_AGE, action_id=action_id)
             command = proposal["command"]
@@ -356,6 +435,17 @@ class ReviewedPlaySession(CombatInputAdapter):
         self._review(request["review"], value["source"], request["frame_id"])
         return self.telemetry.record_resume(value, now=self.clock())
 
+    def execute(self, request):
+        """Prepare and send exactly one reviewed input without a model round trip.
+
+        Both ordinary checks and durable pre-dispatch writes remain in place.
+        This never verifies, batches, retries, arms or resolves an old input.
+        """
+        _require(self.armed and self.controller is not None and not self.closed
+                 and not self.poisoned, "execute requires an already armed session")
+        prepared = self.prepare(request)
+        return self.send(prepared["action_id"])
+
     def cancel_prepared(self):
         _require(self.state["pending"] and self.state["pending"]["status"] == "prepared",
                  "only an input that never crossed dispatch can be cancelled")
@@ -369,8 +459,13 @@ class ReviewedPlaySession(CombatInputAdapter):
         _require(pending and pending["action_id"] == action_id and pending["status"] == "prepared",
                  "input already attempted or proposal unknown; never repeat")
         request = pending["request"]
+        self._timing_event('phase', name='dispatch')
         before = self._before(request)
-        if request["kind"] == "choice":
+        if request['kind'] == 'combat_inspection':
+            from .combat_inspection import validate_inspection_proposal, record_inspection_attempt
+            validate_inspection_proposal(pending['proposal'], before, now=self.clock())
+            inspection_progress = record_inspection_attempt(self.state.get('combat_inspection_progress'), before, action_id)
+        elif request["kind"] == "choice":
             validate_choice_proposal(pending["proposal"], before, now=self.clock())
             if pending["proposal"]["step_kind"] == "inspect":
                 self._map_inspection_budget(before, pending["command"]["buttons"][0])
@@ -389,6 +484,8 @@ class ReviewedPlaySession(CombatInputAdapter):
             receipt = self.telemetry.record_decision(decision, now=self.clock())
             pending.update(status="attempted", decision_id=receipt["decision_id"],
                            attempted_at=self.clock().isoformat())
+            if request['kind'] == 'combat_inspection':
+                self.state['combat_inspection_progress'] = inspection_progress
             self._save()
             self._source(request["source"])
             response = self.controller.call(pending["command"])
@@ -400,6 +497,7 @@ class ReviewedPlaySession(CombatInputAdapter):
         except BaseException:
             self.disarm()
             raise
+        self._timing_event('phase', name='verification')
         return {"status": "awaiting_fresh_review", "action_id": action_id,
                 "controller_input_sent": True, "game_outcome_verified": False}
 
@@ -416,7 +514,13 @@ class ReviewedPlaySession(CombatInputAdapter):
                  and _time(after["source"]["captured_at"]) > _time(pending["attempted_at"]),
                  "outcome needs a distinct image captured after dispatch")
         observed = self._before(after, check_plan_now=False)
-        if before["kind"] == "choice":
+        if before['kind'] == 'combat_inspection':
+            from .combat_inspection import verify_tooltip_clear
+            _require(after['kind'] == 'combat_inspection', 'tooltip result requires the same inspection contract')
+            verify_tooltip_clear(pending['proposal'], before['observation'], observed, now=self.clock())
+            complete = False
+            state = {key: observed[key] for key in ('resources', 'facts', 'ui')}
+        elif before["kind"] == "choice":
             _require(after["kind"] == "choice", "choice verification needs the reviewed choice-result contract")
             verified = verify_choice_step(pending["proposal"], before["observation"], observed, now=self.clock())
             complete = verified["choice_complete"]
@@ -433,6 +537,12 @@ class ReviewedPlaySession(CombatInputAdapter):
             complete = self._combat_boundary(pending, after)
             state = {"resources": observed["resources"], "facts": observed["facts"], "ui": observed["ui"]}
         changes = request.get("telemetry", {})
+        if before['kind'] == 'combat_inspection':
+            _require(changes in ({}, {'zone_coverage': 'complete'}),
+                     'tooltip navigation cannot assert gameplay or lifecycle changes')
+            # Verified equal facts/resources cannot move cards. Preserve any
+            # prior known zones; this creates no new baseline or hidden facts.
+            changes = {'zone_coverage': 'complete'}
         _require(set(changes) <= {"inventory_events", "inventory_baseline", "zone_events", "zone_baseline",
                                  "zone_coverage", "transitions"}, "unknown telemetry override")
         if (before['kind'] == 'choice' and before['observation']['ui'].get('menu_family') == 'map_nodes'
@@ -709,9 +819,26 @@ class ReviewedPlaySession(CombatInputAdapter):
                     "total": progress.get("total", 0) + 1, "without_viewport_progress": failures}
             self.state["last_verified"] = {"action_id": pending["action_id"],
                 "source": pending["outcome_request"]["source"], "receipt": receipt}
+            step_kind = pending['semantic']['kind']
+            self._timing_event('verified_input', action_id=pending['action_id'],
+                               step_kind=step_kind, move_complete=bool(complete))
+            if receipt['next_context']['floor_id'] != pending['request']['context']['floor_id']:
+                snapshot = self._timing_snapshot()
+                timed_floor = snapshot.get('floor') if snapshot else None
+                next_floor = receipt['next_context']['floor_id']
+                if not timed_floor or timed_floor['id'] != next_floor:
+                    if timed_floor:
+                        self._timing_event('complete_floor', floor_id=pending['request']['context']['floor_id'])
+                    ending = pending['outcome_request']['state']
+                    node = ending.get('facts', {}).get('node_type')
+                    kind = node if node in {'elite', 'boss'} else 'combat' if node == 'enemy' else 'noncombat'
+                    self._timing_event('begin_floor', floor_id=next_floor, kind=kind, observed_from_entry=True)
             self.state["pending"] = None
             self.state["completed"] += 1
             self._save()
+            if complete:
+                self._begin_timed_move('after-' + pending['action_id'])
+            self._timing_event('phase', name='planning')
         except BaseException:
             self.disarm()
             raise
@@ -768,10 +895,46 @@ class ReviewedPlaySession(CombatInputAdapter):
             try:
                 self.disarm()
             finally:
+                snapshot = self._timing_snapshot()
+                if snapshot is not None and snapshot.get('pause') is None:
+                    self._timing_event('pause', category='paused', reason='Reviewed adapter closed; no active play loop.')
                 self.closed = True
                 self.lock.close()
 
     def handle(self, request):
+        if isinstance(request, dict) and request.get('operation') == 'timing':
+            _require(set(request) == {'operation', 'event'} and isinstance(request['event'], dict),
+                     'timing needs one explicit progress event')
+            event = dict(request['event'])
+            operation = event.pop('operation', None)
+            _require(operation in {'begin_move', 'begin_floor', 'phase', 'pause', 'resume', 'stale_capture'},
+                     'operator timing cannot assert verified input or completion')
+            self._timing_event(operation, **event)
+            return {'status': 'timing_recorded', 'timing': self.timing_summary(), 'controller_input_sent': False}
+        op = request.get('operation') if isinstance(request, dict) else None
+        if op in {'bridge_preflight', 'arm'}:
+            self._timing_event('phase', name='preflight')
+        if op in {'verify', 'finalize'}:
+            self._timing_event('phase', name='verification' if op == 'verify' else 'telemetry')
+        try:
+            result = self._handle(request)
+            if op == 'arm':
+                snapshot = self._timing_snapshot()
+                if snapshot is not None and snapshot.get('pause') is not None:
+                    self._timing_event('resume')
+                self._begin_timed_move('after-arm-' + str(uuid4()))
+                self._timing_event('phase', name='planning')
+            return {**result, 'timing': self.timing_summary()}
+        except BaseException as error:
+            if isinstance(error, (ValueError, RuntimeError)):
+                self._timing_event('failure', code=type(error).__name__, reason=str(error)[:500])
+                if 'stale' in str(error).casefold() and isinstance(request, dict):
+                    source = request.get('source', request.get('after', {}).get('source', {}))
+                    identifier = source.get('captured_at', source.get('sha256', 'unidentified'))
+                    self._timing_event('stale_capture', capture_id=identifier)
+            raise
+
+    def _handle(self, request):
         request = _copy(request)
         try:
             op = request.get("operation")
@@ -784,6 +947,8 @@ class ReviewedPlaySession(CombatInputAdapter):
                 return self.arm(request)
             if op == "prepare":
                 return self.prepare(request)
+            if op == "execute":
+                return self.execute(request)
             if op == "resume":
                 return self.resume(request)
             if op == "send":

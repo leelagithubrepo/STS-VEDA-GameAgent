@@ -1,0 +1,96 @@
+{
+  "schema": "veda.combat-inspection-draft.v1",
+  "context": {
+    "run_id": "run",
+    "floor_id": "floor-one",
+    "combat_id": "combat",
+    "turn_id": "turn-one"
+  },
+  "inventory": {
+    "current": {
+      "card": [],
+      "relic": [
+        "Burning Blood"
+      ],
+      "potion": []
+    },
+    "coverage": {
+      "card": "unknown",
+      "relic": "complete",
+      "potion": "complete"
+    },
+    "properties": {}
+  },
+  "resources": {
+    "hp": 80,
+    "max_hp": 80,
+    "energy": 2,
+    "block": 0,
+    "gold": 99
+  },
+  "facts": {
+    "act": 1,
+    "floor": 1,
+    "ascension": 2,
+    "character": "Ironclad",
+    "player": {
+      "strength": 0,
+      "dexterity": 0,
+      "powers": null
+    },
+    "hand": [
+      {
+        "id": "c1",
+        "name": "Defend"
+      },
+      {
+        "id": "c2",
+        "name": "Bash+"
+      },
+      {
+        "id": "c3",
+        "name": "Strike"
+      },
+      {
+        "id": "c4",
+        "name": "Defend"
+      }
+    ],
+    "enemies": [
+      {
+        "id": "left",
+        "name": "Louse",
+        "hp": 9,
+        "max_hp": 15,
+        "block": 4,
+        "intent_hits": [
+          8
+        ]
+      },
+      {
+        "id": "right",
+        "name": null,
+        "hp": 17,
+        "max_hp": 17,
+        "block": null,
+        "intent_hits": [
+          7
+        ]
+      }
+    ],
+    "unknowns": [
+      "Right enemy species and blue icon meaning are occluded."
+    ]
+  },
+  "ui": {
+    "screen": "combat",
+    "phase": "tooltip",
+    "tooltip_visible": true,
+    "focused_card_id": null,
+    "selected_card_id": null,
+    "focused_target_id": null,
+    "selected_target_id": null,
+    "tooltip_subject_id": "left"
+  },
+  "reasoning": "Dismiss observed tooltip, then inspect the newly visible UI before selecting any card."
+}

@@ -369,10 +369,16 @@ class PlayTelemetry:
     def _state_context(self, db, state, context, source):
         floor = db.execute("SELECT act,floor FROM floors WHERE id=?", (context["floor_id"],)).fetchone()
         run = db.execute("SELECT ascension FROM runs WHERE id=?", (context["run_id"],)).fetchone()
-        for key, expected in (("act", floor[0]), ("floor", floor[1]), ("ascension", run[0])):
-            if state.get(key) is not None:
-                if type(state[key]) is not int or state[key] != expected:
-                    raise ValueError(f"observed {key} conflicts with recorded context")
+        # Choice and inspection packets place observed HUD identity in facts;
+        # it is no less binding than a combat snapshot's top-level fields.
+        facts = state.get('facts', {})
+        if not isinstance(facts, dict):
+            raise ValueError('observed facts must be an object')
+        for observed in (state, facts):
+            for key, expected in (("act", floor[0]), ("floor", floor[1]), ("ascension", run[0])):
+                if observed.get(key) is not None:
+                    if type(observed[key]) is not int or observed[key] != expected:
+                        raise ValueError(f"observed {key} conflicts with recorded context")
         if state.get("observed_at") is not None and _time(state["observed_at"]) != _time(source["captured_at"]):
             raise ValueError("state observed_at disagrees with source capture")
 

@@ -10,16 +10,19 @@ Coordinate strategic advice and game execution as two separate roles:
 - **Spire advises.** Read and follow `/Users/leela/.codex/skills/spire/SKILL.md` for game strategy and evidence discipline. Spire itself remains advisory-only and must never send controller inputs.
 - **Orchestrator executes.** You alone may translate Spire's one-step recommendation into a controller action through this repository's VEDA-owned bridge, but only after the user explicitly arms this run.
 
-This skill is a supervised, observe–advise–act–verify loop, not an always-on daemon. Invocation starts preflight; it does not by itself authorize the first input. Do not start a new run, select/change an in-game save profile, or continue into another run after defeat or victory.
+This skill is an observe–advise–act–verify loop. Invocation starts preflight;
+current-run arming authorizes continuing that loop. After successful arming,
+continue to the first checked action in the same turn and keep playing; do not
+return an "armed" final answer or wait for "continue" unless the user requested
+arming only. Do not start another run or change the in-game save profile.
 
 ## Required preflight
 
-Before planning an action, read these project instructions:
-
-1. `docs/veda-ps5-bridge.md`
-2. `.veda/team/game-agent-contract.md`
-3. `.veda/workflows/spire-telemetry-v4.md`
-4. `.veda/backlog/spire-combat-advisory.md`, when present
+Start with `docs/veda-play-hot-path.md` and the Spire skill. Load only the
+operation-specific guide it names. Do not concatenate bridge, telemetry,
+backlog, menu and combat manuals before the first move. Bridge details are
+for a failed bridge check; telemetry schema details are for a failed log
+operation; backlog and source/test discovery belong to Builder after play.
 
 Use `veda_play_context.py --run-id ...` for the compact ledger/session overview.
 Read an exact pending record only when that overview requires it. Do not dump
@@ -27,6 +30,14 @@ every historical request file or guess SQLite table names during preflight.
 Read the applicable menu helper documentation once before the first input;
 normal focus/preview/outcome handling uses its compact CLI, not source/test
 discovery after a screenshot.
+
+Measure startup and every logical move/floor with the persistent play clock.
+Targets are first verified input in 90 seconds, an ordinary card move in 20
+seconds, a noncombat floor in 90 seconds, a combat floor in 240 seconds, an
+elite in 360 seconds and a boss in 480 seconds. These are measured targets,
+not achieved performance or permission to bypass checks. Time spent reading,
+thinking, inspecting and fixing drafts counts. Report overruns and use the
+documented recovery path; never keep silently rebuilding stale packets.
 
 Then:
 
@@ -37,7 +48,8 @@ Then:
 
 ## Decision loop
 
-For each meaningful choice, follow `references/operating-loop.md`. In brief:
+For each meaningful choice, use the hot path below; consult
+`references/operating-loop.md` for a specific strategic or recovery need:
 
 1. Capture a fresh screen and read the latest confirmed run/floor/combat ledger. Never infer hidden state from a stale frame.
 2. Ask Spire for one next recommendation grounded in that frame and the ledger. Uncertain current game state triggers conservative re-planning, not a blanket session stop. Prefer survival and the lowest defensible damage risk among supported legal actions, considering block, lethal, potions and setup. Use the action-evidence policy below to inspect relevant facts or assess alternatives. A tactical decision need not predict every random outcome or guarantee a win.
@@ -71,6 +83,16 @@ exact image you bind, including replacement captures. Read this full menu loop
 once before input. Finish Neow through the distinct `event_leave` rule and
 verify map arrival. A verified result awaiting logging needs finalization or
 the supported missing-note repair, never repeated input or another verify.
+
+For combat, use `veda_combat.py --draft ... --validate` before the fresh action
+image, then its exact-capture binding with `--execute`. The armed adapter
+performs prepare and send together for one input, with all ordinary checks.
+Use the same helper's `--result ... --session ...` path to verify the observed
+result. Do not discover combat schemas in source files or hand-build Reading,
+source hashes, review fields or observed_at. A visible enemy tooltip calls for
+the bounded `veda_inspect.py` tooltip-clear flow before tactical planning;
+do not invent card focus or enemy effects hidden behind it. Read the actual
+HUD floor; reconcile a mismatch with the ledger before a card action.
 
 For maps, load `docs/veda-map-play.md` before the first map input. It covers
 bounded directional inspection, reviewed overlapping views, route comparisons,

@@ -74,6 +74,8 @@ def main(argv=None):
     parser.add_argument('--session', type=Path, help='Existing state.json; required only with --result, read-only.')
     parser.add_argument('--validate', action='store_true',
                         help='Check only the draft; produces no action request or controller authority.')
+    parser.add_argument('--execute', action='store_true',
+                        help='Package one prepare-and-send request for an already armed adapter; this helper sends nothing.')
     parser.add_argument('--capture', type=Path, help='Exact inspected PNG with original capture receipt.')
     parser.add_argument('--reviewer', help='Name of the person or advisor inspecting the exact image.')
     parser.add_argument('--evidence-note', help='What was actually inspected and any source limitations.')
@@ -82,6 +84,8 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, help='New request file; never overwritten.')
     parser.add_argument('--control-profile', required=True, choices=[CONTROL_PROFILE])
     args = parser.parse_args(argv)
+    if args.execute and (args.draft is None or args.validate):
+        parser.error('--execute is only valid when binding a fresh --draft, not for validation/results/legacy requests')
     if args.result is not None and args.session is None:
         parser.error('--result requires --session pointing to the existing state.json')
     if args.result is None and args.session is not None:
@@ -98,6 +102,7 @@ def main(argv=None):
             parser.error('--validate checks a source-free draft only; omit capture, review and output options')
     elif not (args.capture and args.reviewer and args.evidence_note and args.reviewed and args.output):
         parser.error('--draft preparation requires --capture, --reviewer, --evidence-note, --reviewed and --output')
+    draft = None
     try:
         if args.request:
             result = package(args.request, args.output, control_profile=args.control_profile)
@@ -120,10 +125,14 @@ def main(argv=None):
             else:
                 result = write_menu_request(draft, capture=args.capture, reviewer=args.reviewer,
                     evidence_note=args.evidence_note, reviewed=args.reviewed,
-                    control_profile=args.control_profile, output=args.output)
+                    control_profile=args.control_profile, output=args.output, execute=args.execute)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
+        from veda.helper_timing import record_helper_failure
+        ids = draft.get('context') if isinstance(draft, dict) else None
+        timing = record_helper_failure(error, run_id=ids.get('run_id') if isinstance(ids, dict) else None,
+            session_path=args.session, output_path=args.output, capture=args.capture)
         print(json.dumps({'status': 'needs_review', 'reason': str(error),
-                          'controller_input_sent': False}))
+                          'controller_input_sent': False, 'timing': timing}))
         return 2
     print(json.dumps(result))
     return 0
