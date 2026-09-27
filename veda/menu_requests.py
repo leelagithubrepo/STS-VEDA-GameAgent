@@ -108,14 +108,14 @@ def _ui(value):
     _require(not set(value) - allowed, "source fields and control proofs do not belong in a menu draft")
     ui = deepcopy(value)
     family = ui.get("menu_family")
-    _require(family in {"event_options", "card_upgrade"}, "unsupported draft menu family")
+    _require(family in {"event_options", "event_leave", "card_upgrade"}, "unsupported draft menu family")
     _require(isinstance(ui.get("options"), list), "complete visible draft options required")
     for option in ui["options"]:
         _require(isinstance(option, dict) and not set(option) - {"id", "label", "enabled", "costs", "card", "role"},
                  "draft options need visible semantics, not prebound controls")
-    derived = {"screen": "event" if family == "event_options" else "selection",
+    derived = {"screen": "selection" if family == "card_upgrade" else "event",
         "order": [option["id"] for option in ui["options"]], "control_layout": "ps5_default",
-        "selection_mode": "immediate" if family == "event_options" else "toggle",
+        "selection_mode": "toggle" if family == "card_upgrade" else "immediate",
         "required_count": 1, "navigation": []}
     if family == "card_upgrade":
         derived["selection_purpose"] = "upgrade"

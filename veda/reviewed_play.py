@@ -15,7 +15,7 @@ import json
 import os
 from pathlib import Path
 import shutil
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from .advisory import check_plan
 from .choice_execution import (plan_choice_step, validate_choice_proposal, verify_choice_step,
@@ -24,6 +24,7 @@ from .combat_input import CombatInputAdapter, RuntimeStop
 from .controller_state_machine import ControllerStateMachine
 from .execution import ARM_PHRASE, Reading
 from .routine_combat import routine_observation_reasons
+from .play_telemetry import validate_outcome_request, outcome_request_digest
 from .saved_frame_reader import _identity
 
 MAX_BYTES = 1_000_000
@@ -434,9 +435,17 @@ class ReviewedPlaySession(CombatInputAdapter):
             "context": before["context"], "decision_id": pending["decision_id"],
             "source": after["source"], "state": state, "status": "verified",
             "evidence_note": after["source"]["evidence_note"], **changes}
+        # Validate metadata before entering the immutable log-finalization state.
+        # A rejected note/shape remains attempted and accepts a corrected fresh
+        # review, without ever repeating the input.
+        outcome = validate_outcome_request(outcome)
+        verification = {"basis": "fresh_verified_result", "action_id": pending["action_id"],
+            "outcome_sha256": outcome_request_digest(outcome), "source": deepcopy(outcome["source"]),
+            "reviewed_at": self.clock().isoformat(),
+            "review": deepcopy(observed["review"] if before["kind"] == "choice" else after["review"])}
         # Persist exact idempotent outcome before SQLite. If a crash follows its
         # commit, finalize() repeats the same write, never the controller input.
-        pending.update(status="verified_pending_log", outcome_request=outcome,
+        pending.update(status="verified_pending_log", outcome_request=outcome, outcome_verification=verification,
                        after_context=after["context"], logical_action_complete=complete)
         self._save()
         return self.finalize()
@@ -604,11 +613,76 @@ class ReviewedPlaySession(CombatInputAdapter):
         self.disarm()
         return {"status": "unresolved", "must_not_repeat": True, "inventory_requires_inspection": True}
 
+    def repair_outcome_metadata(self, request):
+        """Add reviewed missing event notes to an uncommitted legacy outcome only.
+
+        No source time, game state, action, item, decision or operation ID can be
+        replaced. The archived source stays archived; this grants no authority.
+        """
+        _require(not self.closed, "closed session cannot repair metadata")
+        expected_keys = {"operation", "repair_id", "action_id", "outcome_operation_id",
+                         "expected_outcome_sha256", "inventory_event_notes", "review"}
+        _require(set(request) == expected_keys, "metadata repair accepts only bounded missing-note fields")
+        _require(isinstance(request["repair_id"], str) and len(request["repair_id"]) <= 128,
+                 "metadata repair ID must be a UUID")
+        UUID(request["repair_id"])
+        pending = self.state["pending"]
+        _require(pending and pending["status"] == "verified_pending_log"
+                 and pending["action_id"] == request["action_id"], "no matching verified result to repair")
+        prior_repair = pending.get("metadata_repair")
+        if prior_repair is not None:
+            _require(prior_repair["request"] == request, "this outcome already has a different metadata repair")
+            return {"status": "outcome_metadata_repaired", "idempotent_replay": True,
+                    "must_not_repeat": True, "controller_input_sent": False, "requires_finalize": True}
+        original = _copy(pending["outcome_request"])
+        _require(original["context"] == pending["request"]["context"]
+                 and original["context"]["run_id"] == self.state["run_id"],
+                 "retained action, outcome and session context must match")
+        _require(original["operation_id"] == request["outcome_operation_id"]
+                 and outcome_request_digest(original) == request["expected_outcome_sha256"],
+                 "pending outcome changed; metadata repair compare-and-swap failed")
+        review = request["review"]
+        _require(isinstance(review, dict) and set(review) == {"kind", "complete", "reviewer", "source", "evidence_note"}
+                 and review["kind"] == "reviewed_retained_outcome_metadata" and review["complete"] is True
+                 and isinstance(review["reviewer"], str) and 0 < len(review["reviewer"].strip()) <= 128
+                 and isinstance(review["evidence_note"], str) and 0 < len(review["evidence_note"].strip()) <= 2048
+                 and review["source"] == original["source"], "explicit review of the exact retained evidence is required")
+        notes = request["inventory_event_notes"]
+        _require(isinstance(notes, list) and 1 <= len(notes) <= 100, "bounded missing inventory-event notes required")
+        repaired = _copy(original)
+        events = repaired.get("inventory_events", [])
+        indexes = set()
+        for note in notes:
+            _require(isinstance(note, dict) and set(note) == {"index", "evidence_note"}
+                     and type(note["index"]) is int and 0 <= note["index"] < len(events)
+                     and note["index"] not in indexes, "metadata repair needs distinct existing event indexes")
+            index = note["index"]
+            _require(isinstance(events[index], dict) and "evidence_note" not in events[index],
+                     "metadata repair cannot replace an existing evidence note")
+            events[index]["evidence_note"] = note["evidence_note"]
+            indexes.add(index)
+        repaired = validate_outcome_request(repaired)
+        self.telemetry.check_outcome_metadata_repair(original, repaired, action_id=pending["action_id"])
+        reviewed_at = self.clock().isoformat()
+        pending["metadata_repair"] = {"request": _copy(request), "original_outcome_request": original,
+            "repaired_outcome_sha256": outcome_request_digest(repaired), "recorded_at": reviewed_at}
+        pending["outcome_request"] = repaired
+        pending["outcome_verification"] = {"basis": "reviewed_retained_verified_result",
+            "action_id": pending["action_id"], "outcome_sha256": outcome_request_digest(repaired),
+            "source": deepcopy(repaired["source"]), "reviewed_at": reviewed_at,
+            "metadata_repair": deepcopy(pending["metadata_repair"])}
+        self._save()
+        return {"status": "outcome_metadata_repaired", "idempotent_replay": False,
+                "must_not_repeat": True, "controller_input_sent": False, "requires_finalize": True}
+
     def finalize(self):
         pending = self.state["pending"]
         _require(pending and pending["status"] == "verified_pending_log", "no reviewed result to finalize")
         try:
-            receipt = self.telemetry.record_outcome(pending["outcome_request"], now=self.clock())
+            kwargs = {"now": self.clock()}
+            if pending.get("outcome_verification") is not None:
+                kwargs["verified_evidence"] = pending["outcome_verification"]
+            receipt = self.telemetry.record_outcome(pending["outcome_request"], **kwargs)
             complete = pending["logical_action_complete"]
             self.state["last_verified"] = {"action_id": pending["action_id"],
                 "source": pending["outcome_request"]["source"], "receipt": receipt}
@@ -681,6 +755,8 @@ class ReviewedPlaySession(CombatInputAdapter):
                 return self.verify(request)
             if op == "finalize":
                 return self.finalize()
+            if op == "repair_outcome_metadata":
+                return self.repair_outcome_metadata(request)
             if op == "cancel_prepared":
                 return self.cancel_prepared()
             if op == "recover_unsent":

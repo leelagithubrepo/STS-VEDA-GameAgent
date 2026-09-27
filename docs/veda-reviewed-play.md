@@ -43,6 +43,10 @@ For live menu decisions, use the [draft-first preparation path](veda-menu-contro
 Validate the compact decision before capture, inspect one image, then let the
 helper generate every matching source/review field from that image's receipt.
 Do not reconstruct the full JSON packet or search source code after capture.
+Use `veda_menu.py --result ... --session ...` for the corresponding compact
+post-input verification. It obtains exact before-frame references from the
+pending journal and generates required upgrade mutation notes. Inspect the
+exact after image and submit only its generated file pointer.
 
 Keep the PS5 feed open in QuickTime's **Movie Recording** window and leave other
 Remote Play clients disconnected. Recording the video is not required. Codex
@@ -317,3 +321,40 @@ delete either to clear a pending action. A conflicting external writer or an
 uncertain physical-controller input requires explicit inspection and recovery.
 Captured evidence and reviewed declarations remain private artifacts; tests do
 not certify screenshot interpretation or hardware performance.
+
+## Repair retained outcome metadata
+
+New verification validates the complete outcome metadata before saving
+`verified_pending_log`. A malformed note therefore leaves the action
+`attempted`; correct the actual result draft and verify from a new inspected
+image without repeating input.
+
+For an older `verified_pending_log` record with a missing inventory-event note,
+inspect the journal's exact retained before and after images. This is review
+of an already verified historical action, not a new live observation. Confirm
+the action/result identity and describe which facts each image establishes.
+Use this helper to create the supported metadata-repair request:
+
+```sh
+python3 scripts/veda_recover_outcome.py \
+  --session /absolute/path/to/current-session/state.json \
+  --action-id EXACT_PENDING_ACTION_ID --reviewer 'Codex Orchestrator' \
+  --evidence-note 'What the retained before and result images establish' \
+  --inventory-event-note 0 'Evidence supporting this exact existing inventory event' \
+  --reviewed --output /absolute/path/to/new-repair-request.json
+```
+
+Submit its `request_file` pointer to the existing reviewed adapter, then call
+`{"operation":"finalize"}`. A stopped session can perform this logging-only
+recovery in `--mode shadow`; do not start a bridge or arm it. The helper never
+changes the journal or database. The adapter permits only adding absent notes
+to existing inventory events, guarded by exact action/outcome IDs and the old
+outcome digest. Existing notes, game effects, source timestamps and IDs cannot
+be replaced. It rejects a committed operation, source change or conflicting
+ledger revision and retains the pending record on failure.
+
+After success, `summary` must show no pending action and SQLite must contain
+one outcome/replacement, with the original capture time and repair audit. An
+interrupted response may retry only the same stored finalize operation; it
+must not repeat gameplay. Archived finalization records the actual later write
+time separately and grants no controller authority or fresh-screen claim.

@@ -24,10 +24,15 @@ stage before spending another capture attempt.
 
 ## After each action
 
-The menu draft helper creates prepare requests only. Review the actual result
-through the existing reviewed-play after/outcome contract; never rebind the
-before-action draft as proof of an outcome. Read that contract and prepare its
-structure before input, then fill only actually observed results after capture.
+For menus, use `veda_menu.py --result ... --session ...` from
+`docs/veda-menu-controls.md` to generate verification from a compact actual
+result and the exact pending action. Never hand-build after-frame hashes,
+old-frame references or mutation reviews. Use a short file pointer, not full
+JSON in the adapter terminal. View each exact capture before declaring it
+reviewed; an earlier unchanged-looking image does not review a new capture.
+The helper generates source-bound fields and required upgrade-event notes.
+Keep result schema preparation outside the capture window. Do not re-arm or
+replay when `verified_pending_log` requires finalization/metadata recovery.
 
 1. Capture and inspect the resulting screen. Verify the action actually occurred and update the ledger with observed card movement, HP/Block/energy, enemy health/status/intent, inventory changes, and outcome as applicable.
 2. Resolve the pending decision only from its observed outcome. A supported random result may differ from a preferred prediction but still match exactly one complete declared branch. An outcome outside the checked contract remains pending; inspect/reconcile it and never replay input. Do not begin a new plan while that action is unresolved.

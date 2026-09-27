@@ -21,6 +21,13 @@ Before planning an action, read these project instructions:
 3. `.veda/workflows/spire-telemetry-v4.md`
 4. `.veda/backlog/spire-combat-advisory.md`, when present
 
+Use `veda_play_context.py --run-id ...` for the compact ledger/session overview.
+Read an exact pending record only when that overview requires it. Do not dump
+every historical request file or guess SQLite table names during preflight.
+Read the applicable menu helper documentation once before the first input;
+normal focus/preview/outcome handling uses its compact CLI, not source/test
+discovery after a screenshot.
+
 Then:
 
 1. Confirm explicit user authorization to arm the currently visible attempt. **“ARM ORCHESTRATOR FOR THIS RUN”** is the standard phrase; an equally explicit instruction such as “let's arm Orchestrator for the current run” also establishes that scope. A skill mention or development approval alone does not. Do not ask again for current-attempt authorization already given. Use the adapter's required literal phrase when packaging that authorized request.
@@ -57,6 +64,13 @@ For menu preparation, validate a compact source-free draft with `veda_menu.py
 returned pointer immediately. Do not hand-build frame hashes/review objects,
 patch old source fields, or continue packaging after a failed capture. Complete
 setup outside the 30-second evidence window; the limit itself is unchanged.
+After input, use the same helper's `--result ... --session ...` path for compact
+focus, preview and result reviews. It derives pending-action correlation and
+upgrade-event metadata; do not build full after packets by hand. View every
+exact image you bind, including replacement captures. Read this full menu loop
+once before input. Finish Neow through the distinct `event_leave` rule and
+verify map arrival. A verified result awaiting logging needs finalization or
+the supported missing-note repair, never repeated input or another verify.
 
 Read `docs/veda-general-decisions.md` and `docs/veda-action-evidence.md`. Keep three cases separate:
 

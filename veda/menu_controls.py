@@ -15,9 +15,10 @@ CONTROL_PROFILE = "ps5-default-cross-confirm-v1"
 RULE_KIND = "documented_control_profile"
 EVENT_RULE = "ps5-event-focused-activate-v1"
 EVENT_FOCUS_RULE = "ps5-event-adjacent-focus-v1"
+NEOW_LEAVE_RULE = "ps5-neow-granted-leave-v1"
 GRID_FOCUS_RULE = "ps5-upgrade-grid-adjacent-focus-v1"
 GRID_SELECT_RULE = "ps5-upgrade-grid-select-v1"
-_RULES = {EVENT_RULE, EVENT_FOCUS_RULE, GRID_FOCUS_RULE, GRID_SELECT_RULE}
+_RULES = {EVENT_RULE, EVENT_FOCUS_RULE, NEOW_LEAVE_RULE, GRID_FOCUS_RULE, GRID_SELECT_RULE}
 _DELTAS = {"up": (-1, 0), "down": (1, 0), "left": (0, -1), "right": (0, 1)}
 
 
@@ -67,6 +68,41 @@ def _upgrade(obs):
         _grid(ui)
     else:
         _preview(obs)
+    return ui
+
+
+def _neow_leave(obs):
+    """Only the observed post-reward Neow Leave, never a generic event exit."""
+    ui = _base(obs, "event_leave")
+    facts, resources = obs["facts"], obs["resources"]
+    _require(facts.get("event_id") == "neow"
+             and facts.get("event_phase") == "reward_resolved"
+             and type(facts.get("act")) is int and facts["act"] == 1
+             and type(facts.get("floor")) is int and facts["floor"] == 0
+             and facts.get("dialogue_text") in {"Granted...", "Granted…"},
+             "Neow Leave needs the reviewed Granted result at act 1 floor 0")
+    _require(all(type(resources.get(k)) is int and resources[k] >= 0 for k in ("hp", "max_hp", "gold"))
+             and 0 < resources["hp"] <= resources["max_hp"],
+             "Neow Leave needs reviewed living HP, maximum HP and gold")
+    _require(ui.get("screen") == "event" and ui.get("phase") == "choose"
+             and ui.get("selection_mode") == "immediate"
+             and ui.get("focused_id") == "leave" and ui.get("order") == ["leave"]
+             and ui.get("selected_ids") == [] and ui.get("pending_ids") == []
+             and ui.get("navigation") == [] and ui.get("confirm") is None
+             and ui.get("grid") is None and ui.get("upgrade_preview") is None
+             and len(ui["options"]) == 1,
+             "Neow Leave requires exactly one immediate focused option without selection or navigation")
+    option = ui["options"][0]
+    _require(option.get("id") == "leave" and option.get("label") in {"Leave", "[Leave]"}
+             and option.get("enabled") is True and option.get("costs") == {}
+             and option.get("shortcut") is None,
+             "Neow Leave must be enabled, free and focused")
+    activate = option.get("activate")
+    _require(activate is None or isinstance(activate, dict)
+             and activate.get("button") == "cross" and isinstance(activate.get("evidence"), dict)
+             and activate["evidence"].get("kind") == RULE_KIND
+             and activate["evidence"].get("rule_id") == NEOW_LEAVE_RULE,
+             "Neow Leave only uses its named default-profile Cross rule")
     return ui
 
 
@@ -128,7 +164,11 @@ def validate_menu_control_binding(binding, observation, meaning, *, navigation=F
              "known scoped control rule, selected default profile and current source required")
     _require(not any(k in proof for k in ("hint_text", "reference_id", "before_sha256", "after_sha256")),
              "control rule must not claim observed hints or hardware transitions")
-    if rule in {EVENT_RULE, EVENT_FOCUS_RULE}:
+    if rule == NEOW_LEAVE_RULE:
+        _neow_leave(observation)
+        _require(not navigation and binding["button"] == "cross" and meaning == "activate:leave",
+                 "Neow Leave rule only activates the reviewed Leave with Cross")
+    elif rule in {EVENT_RULE, EVENT_FOCUS_RULE}:
         ui = _event(observation)
         if rule == EVENT_RULE:
             # The planner invokes activation only after focus equals its target;
@@ -165,6 +205,22 @@ def validate_menu_choice(choice, observation):
     family = observation["ui"].get("menu_family")
     if family == "event_options":
         _event(observation)
+    elif family == "event_leave":
+        _neow_leave(observation)
+        post = choice.get("postconditions")
+        _require(choice.get("kind") == "event" and choice.get("option_ids") == ["leave"]
+                 and isinstance(post, dict) and post.get("screen") == "map"
+                 and post.get("phase") in {"choose", "result"}
+                 and _same_json(post.get("context"), observation["context"])
+                 and _same_json(post.get("resources"), observation["resources"])
+                 and post.get("inventory_digest") in {"unchanged", observation["inventory_digest"]},
+                 "Neow Leave only arrives at the map with unchanged context, resources and inventory")
+        changing = {"event_phase", "dialogue_text"}
+        _require(set(post.get("allow_changed_facts", [])) <= changing
+                 and all(key in changing or key in observation["facts"]
+                         and _same_json(value, observation["facts"][key])
+                         for key, value in post.get("facts", {}).items()),
+                 "Neow Leave cannot change unrelated reviewed gameplay facts")
     elif family == "card_upgrade":
         _upgrade(observation)
         post = choice.get("postconditions")
@@ -249,6 +305,11 @@ def bind_reviewed_menu_controls(observation, *, control_profile, now=None, max_a
                 option["activate"] = _binding(obs, "cross", "activate:" + option["id"], EVENT_RULE)
         if ui.get("grid") is not None:
             _bind_adjacency(obs, EVENT_FOCUS_RULE)
+    elif ui.get("menu_family") == "event_leave":
+        _neow_leave(obs)
+        option = ui["options"][0]
+        if option.get("activate") is None:
+            option["activate"] = _binding(obs, "cross", "activate:leave", NEOW_LEAVE_RULE)
     elif ui.get("menu_family") == "card_upgrade":
         _upgrade(obs)
         if ui["phase"] == "choose":

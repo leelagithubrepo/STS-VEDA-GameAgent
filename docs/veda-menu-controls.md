@@ -194,10 +194,9 @@ An expired frame needs a new inspected capture, not a timestamp change.
 recommended live preparation path. A generated profile rule is not pixel
 recognition, and the builder itself never dispatches input.
 
-This helper creates prepare requests only. Post-input after/outcome review uses
-the existing [reviewed-play verification contract](veda-reviewed-play.md).
-Prepare its structure before input, fill it from the actual resulting image,
-and never rebind the before-action draft as proof that the action succeeded.
+`--draft` creates prepare requests. After input, use the compact `--result`
+path below; it builds the normal reviewed-play verification request. Never
+rebind the before-action draft as proof that the action succeeded.
 
 If preparation fails, report whether the failure came from capture, draft
 validation, packet construction, adapter prepare, or dispatch. Preserve the
@@ -209,3 +208,128 @@ own evidence requirements. Do not broaden a named rule to conceal an unexpected
 screen. Preserve the exact failed check for Builder if no supported path exists.
 Offline tests of this flow do not establish live hardware success or a complete
 autonomous run.
+
+## Verify the result with the same helper
+
+Read this path before sending a menu input. Do not discover Python schemas,
+calculate source hashes, copy the entire grid, or type full JSON into the
+adapter terminal after an action. Submit only a short `request_file` pointer.
+
+For a navigation result, the complete source-free result draft is:
+
+```json
+{
+  "schema": "veda.menu-result.v1",
+  "action_id": "EXACT_PENDING_ACTION_ID",
+  "resources": "unchanged",
+  "inventory": "unchanged",
+  "facts": "unchanged",
+  "result": {"kind": "focus", "focused_id": "ACTUALLY_OBSERVED_CARD_ID"},
+  "observed_result": "The inspected focus moved to the named card; other declared fields are unchanged."
+}
+```
+
+`unchanged` is an explicit inspection declaration. It copies the known prior
+values only after the reviewer confirms them against the actual result. The
+helper compares observed focus to the pending action's expected destination;
+the caller never supplies the old frame ID or a verification operation UUID.
+
+For an observed upgrade preview, replace `result` with:
+
+```json
+{
+  "kind": "upgrade_preview",
+  "selected_id": "ACTUALLY_OBSERVED_CARD_ID",
+  "observed_upgrade_text": "Actual visible upgraded effect",
+  "confirm_hint": {"button": "triangle", "hint_text": "Confirm"}
+}
+```
+
+Use the actual button and text. The helper retains the selected card's identity
+and layout from the pending action, removes grid controls and binds the newly
+observed hint. A highlighted card without the preview cannot satisfy this step.
+
+For a newly opened picker, `result` is `{"kind":"menu","ui": ...}` with its
+complete compact `card_upgrade` UI: actual options, focus and grid. Keep action
+inventory `unchanged` while verifying the opening. Once the pending action is
+clear, record newly discovered card knowledge through `veda_memory.py
+inventory-baseline`, using the exact inspected picker screenshot, explicit
+items and coverage. Do not claim the opening acquired those cards or infer a
+starter deck that was not fully visible. Do this once; navigation retains it.
+
+For a completed upgrade, set `inventory` to `selected_upgrade_applied` only
+when the inspected selected-card preview and actual confirmation transition
+establish that replacement. This declares exactly one known selected card
+changed to its upgrade and everything else stayed unchanged. Supply the actual
+result `facts` and a `result` menu UI containing `screen`, `phase: "result"`,
+`choice_id`, `layout_id`, `options` and `focused_id`. Each result option has
+`id`, `label`, `enabled` and `costs`. Result-only menus have no controls.
+The helper creates the exact replacement event, its required evidence note
+and source-bound mutation review together. Describe the evidence honestly:
+Neow's Granted screen shows event advancement; Bash+ text was in the preceding
+preview, not on that result screen.
+
+Validate the compact actual result before the final evidence capture if any
+structure needs repair:
+
+```sh
+python3 scripts/veda_menu.py --result /absolute/path/to/result-draft.json \
+  --session /absolute/path/to/current-session/state.json --validate \
+  --control-profile ps5-default-cross-confirm-v1
+```
+
+Then capture and **view that exact new image**, bind and immediately submit:
+
+```sh
+python3 scripts/veda_menu.py --result /absolute/path/to/result-draft.json \
+  --session /absolute/path/to/current-session/state.json \
+  --capture /absolute/path/to/exact-inspected-after.png \
+  --reviewer 'Codex Orchestrator' --evidence-note 'Actual inspected result and limits' \
+  --reviewed --control-profile ps5-default-cross-confirm-v1 \
+  --output /absolute/path/to/new-result-request.json
+```
+
+No `send` follows a verification pointer. Read the adapter's response: only
+`verified` with cleared pending state completes that step. Each new capture
+needs its own image inspection, even when it looks unchanged; reviewing an
+earlier image is insufficient. A replacement filename never inherits review.
+
+## Finish Neow and recover a logging failure
+
+After the upgrade is logged, use `menu_family: "event_leave"` for the single
+focused free Leave option at Neow's Granted dialogue. Keep `event_id: "neow"`,
+`event_phase: "reward_resolved"`, `dialogue_text: "Granted..."` (the actual
+visible text), Act 1 and floor 0 exact. The new **action** UI uses `phase:
+"choose"`; do not copy the verification-only `result` phase or quota zero.
+For example, the compact next draft's `ui` is:
+
+```json
+{
+  "menu_family": "event_leave", "choice_id": "neow-leave",
+  "phase": "choose", "focused_id": "leave",
+  "options": [{"id":"leave", "label":"[Leave]", "enabled":true, "costs":{}}]
+}
+```
+
+Preserve the reviewed `facts` including `event_id: "neow"`,
+`event_phase: "reward_resolved"`, `dialogue_text: "Granted..."`, `act: 1`,
+`floor: 0`, and any confirmed character, ascension and upgrade facts. The
+helper derives the action quota of one. Use an event choice for `["leave"]`
+with map `result` postconditions, unchanged inventory/resources/context and
+the same other facts; only `event_phase`/`dialogue_text` may be explicitly
+allowed to change. The named default
+PS5 Leave rule supplies Cross and permits only map arrival with unchanged
+resources, inventory and context. Do not relabel this as `reward_options`.
+Verify the map arrival before planning a route. A map `result` observation can
+confirm arrival without inventing node choices; the next move requires a new
+actual map review. Neow is complete only after this transition is verified.
+
+Outcome metadata is validated before a new verified result is frozen for
+logging. If a journal is already `verified_pending_log`, do not submit another
+`verify`, replay Confirm, re-arm, or edit state.json. `finalize` retries its
+exact durable write. A legacy outcome missing an inventory-event evidence note
+has a bounded `repair_outcome_metadata` operation documented in
+[reviewed play](veda-reviewed-play.md#repair-retained-outcome-metadata).
+It preserves all game facts, IDs, original image and capture time, adds only a
+reviewed missing note, then finalizes once. Changed ledger/source or a previously
+committed operation rejects the repair and remains pending for reconciliation.

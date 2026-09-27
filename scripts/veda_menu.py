@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate menu decisions before capture, then bind one inspected image. No input."""
+"""Build compact menu actions or results from inspected images. Never sends input."""
 import argparse
 from datetime import datetime, timezone
 import json
@@ -69,6 +69,9 @@ def main(argv=None):
                         help='Source-free menu decision; validate it before taking the action image.')
     inputs.add_argument('--request', type=Path,
                         help='Legacy complete reviewed request; prefer --draft for live preparation.')
+    inputs.add_argument('--result', type=Path,
+                        help='Compact actual result; derive correlation and mutation records from the pending action.')
+    parser.add_argument('--session', type=Path, help='Existing state.json; required only with --result, read-only.')
     parser.add_argument('--validate', action='store_true',
                         help='Check only the draft; produces no action request or controller authority.')
     parser.add_argument('--capture', type=Path, help='Exact inspected PNG with original capture receipt.')
@@ -79,6 +82,10 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, help='New request file; never overwritten.')
     parser.add_argument('--control-profile', required=True, choices=[CONTROL_PROFILE])
     args = parser.parse_args(argv)
+    if args.result is not None and args.session is None:
+        parser.error('--result requires --session pointing to the existing state.json')
+    if args.result is None and args.session is not None:
+        parser.error('--session is only valid with --result')
     if args.request is not None:
         if (args.validate or args.reviewed or any(value is not None for value in
                 (args.capture, args.reviewer, args.evidence_note))):
@@ -94,6 +101,17 @@ def main(argv=None):
     try:
         if args.request:
             result = package(args.request, args.output, control_profile=args.control_profile)
+        elif args.result is not None:
+            from veda.menu_requests import read_menu_draft
+            from veda.menu_results import validate_menu_result, write_menu_result
+            draft = read_menu_draft(args.result)
+            common = dict(session=args.session, action_id=draft.get('action_id'),
+                          control_profile=args.control_profile)
+            if args.validate:
+                result = validate_menu_result(draft, **common)
+            else:
+                result = write_menu_result(draft, **common, capture=args.capture, reviewer=args.reviewer,
+                    evidence_note=args.evidence_note, reviewed=args.reviewed, output=args.output)
         else:
             from veda.menu_requests import read_menu_draft, validate_menu_draft, write_menu_request
             draft = read_menu_draft(args.draft)
