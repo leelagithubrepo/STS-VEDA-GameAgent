@@ -58,7 +58,8 @@ def uses_neow_control_rule(observation):
         bindings.extend((option.get("activate"), option.get("shortcut")))
     return any(isinstance(binding, dict)
                and isinstance(binding.get("evidence"), dict)
-               and binding["evidence"].get("kind") == RULE_KIND for binding in bindings)
+               and binding["evidence"].get("kind") == RULE_KIND
+               and binding["evidence"].get("rule_id") == CONTROL_RULE for binding in bindings)
 
 
 def validate_neow_control_binding(binding, observation, meaning, *, navigation=False):

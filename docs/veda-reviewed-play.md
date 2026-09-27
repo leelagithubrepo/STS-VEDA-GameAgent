@@ -18,17 +18,39 @@ Synthetic tests and a highlighted option do not establish the mapping.
 
 ## Resume the saved run
 
+Use the project launcher for a fresh Luna High session:
+
+```sh
+./scripts/orchestrator
+```
+
+Add `--run-id CURRENT_ATTEMPT_UUID` when resuming an identified attempt.
+`--print-command` shows the command without launching anything. The launcher
+sets Luna High and `--approve-for-me`, retaining the workspace sandbox while
+eligible shell/network/socket approval requests go through automatic review.
+It does not change global settings or promise that every request is approved.
+See [OpenAI automatic review](https://learn.chatgpt.com/docs/sandboxing/auto-review).
+The launch prompt authorizes the current attempt, but the reviewed adapter
+still needs fresh identity, screen and bridge preflight before any input.
+
+Close the old stopped Codex session before using this launcher. A fresh task
+loads `skills/orchestrator/SKILL.md` from this checkout; resuming an old task
+may retain earlier instructions or permission settings. In an existing task,
+`/permissions` can select **Approve for me**, but that alone does not reload
+product changes or resolve an outstanding game action.
+
 Keep the PS5 feed open in QuickTime's **Movie Recording** window and leave other
 Remote Play clients disconnected. Recording the video is not required. Codex
 can now capture that window even while its own window covers it.
 The QuickTime window may be on a second monitor; capture selects the window
 itself. Keep the preview open and confirm each captured frame is current.
 
-When ready to play, tell the active Codex task:
+For a manually started task that has not yet received current-run authorization,
+use the following prompt. Launcher users do not need to repeat it:
 
 > Use Orchestrator for the currently visible Slay the Spire attempt. ARM ORCHESTRATOR FOR THIS RUN. Check the live screen and SQLite, bind that attempt, and verify every move through the reviewed adapter. Re-plan conservatively under uncertain game state: favor survival and the lowest defensible damage risk among supported actions. Use reviewed bounds, inspections and protective alternatives. Preserve unresolved input and report exact technical blockers; do not replay input or bypass checks. Stop at victory or defeat.
 
-The installed Orchestrator skill requires that current-run arming statement.
+Orchestrator requires explicit current-run arming; the launcher supplies it.
 General development approval does not start the controller. Codex first checks
 the actual game and bridge, starts one persistent bridge, then sends each
 reviewed move through the adapter. A title screen does not reveal current HP,
@@ -242,9 +264,13 @@ controller bindings or arbitrary random inventory additions.
 
 For menus, include the [choice observation and planned choice](veda-choice-execution.md)
 as `observation` and `choice`, plus the reviewed `inventory`. Its semantic digest
-must match the observation. Controller bindings require a current visible hint
-or a previously reviewed transition; grid order alone is not enough. Only title
-Continue may carry unknown inventory, because it loads the same saved run.
+must match the observation. Controller bindings use a current visible hint,
+a previously reviewed transition, or an applicable explicit
+[default control profile](veda-menu-controls.md). A missing on-screen glyph
+alone is not a blocker when that profile covers the reviewed menu. Only title
+Continue may carry unknown relic or potion coverage, because it loads the same
+saved run. Opening an upgrade picker may retain unknown card coverage; inspect
+and record the actual cards before choosing the upgrade.
 
 Verification supplies `action_id`, a new UUID `operation_id`, and `after` with
 the new source and reviewed reading/choice observation. Optional `telemetry`

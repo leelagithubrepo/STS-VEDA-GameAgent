@@ -113,7 +113,12 @@ unchanged run/floor/resources/inventory and visibly advanced dialogue/options,
 then records the outcome. A changed internal ID or bridge acknowledgement alone
 cannot verify Talk. If input or outcome is unresolved, keep it pending and inspect;
 never repeat Cross automatically. After a verified result, use normal Spire
-advice for the newly visible reward choices.
+advice for the newly visible reward choices. For a focused **Upgrade a Card**
+option without a visible activation glyph, use the separate reviewed
+[event and upgrade menu controls](veda-menu-controls.md). Keep this run/floor,
+open the picker once, inspect its cards, then decide and confirm the upgrade.
+Do not replay Talk or require another run authorization simply to inspect the
+reward picker. Talk's own scoped rule remains unchanged.
 
 The helpers use explicit reviewed declarations, not automatic pixel recognition.
 Offline tests exercise separate run registration, one fake Cross dispatch and

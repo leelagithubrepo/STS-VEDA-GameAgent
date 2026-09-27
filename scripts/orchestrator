@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Start a fresh Luna High play session with automatic approval review."""
+import argparse
+import os
+from pathlib import Path
+import shlex
+import shutil
+from uuid import UUID
+
+
+def run_identity(value):
+    try:
+        return str(UUID(value))
+    except ValueError as error:
+        raise argparse.ArgumentTypeError('run ID must be a UUID') from error
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--run-id', type=run_identity,
+                        help='Resume this attempt only; otherwise identify the currently visible attempt.')
+    parser.add_argument('--print-command', action='store_true',
+                        help='Show the launch command without starting Codex or touching the game.')
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parents[1]
+    scope = (f'Resume only run {args.run_id}. Resolve any identity mismatch before input. '
+             if args.run_id else
+             'Play the currently visible Slay the Spire attempt; bind its actual identity from fresh evidence. ')
+    prompt = (
+        'Use $orchestrator and $spire. Read skills/orchestrator/SKILL.md and its operating-loop reference '
+        'from this checkout for the current play instructions. ARM ORCHESTRATOR FOR THIS RUN. '
+        + scope +
+        'Keep Luna High for gameplay. Check exclusive controller ownership, live game video, the ledger, '
+        'pending actions and bridge readiness before arming the reviewed adapter. '
+        'Use the reviewed adapter for every input, retain before/after evidence and record SQLite outcomes. '
+        'Under uncertain game state, inspect relevant facts and choose a supported move with the lowest '
+        'defensible damage risk, considering lethal, block, potions and setup. '
+        'For menus without a visible hint, use the applicable reviewed default-PS5 control profile in '
+        'docs/veda-menu-controls.md; a missing hint alone is not a blocker. Open upgrade choices, inspect '
+        'the actual cards, choose strategically, and verify the upgrade before recording it. '
+        'Never invent observations, replay unresolved input or bypass an adapter check. '
+        'Use command-scoped automatic approval review for necessary process, network and socket checks; '
+        'do not interpret a sandbox rejection as a broken bridge. Report any unresolved technical gap '
+        'with the exact failed check and alternatives attempted. Do not edit product code. '
+        'Stop at victory, defeat, user stop, or loss of verified control/game identity/video.'
+    )
+    command = ['codex', '-C', str(root), '-m', 'gpt-5.6-luna',
+               '-c', 'model_reasoning_effort="high"', '--approve-for-me', '--no-alt-screen', prompt]
+    if args.print_command:
+        print(shlex.join(command))
+        return 0
+    executable = shutil.which('codex')
+    if executable is None:
+        parser.exit(2, 'Codex CLI was not found on PATH.\n')
+    print('Starting Luna High with automatic approval review. Game input begins only after live preflight.',
+          flush=True)
+    os.execv(executable, command)
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

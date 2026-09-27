@@ -39,15 +39,22 @@ Every binding's `evidence` names a reviewer, its current `layout_id`, and exact 
 
 These references must be inspected and retained by the reviewed adapter. Merely constructing this JSON is not evidence that the mapping works. The module reads no referenced files. A historical screenshot alone cannot prove an unseen input or authorize a current mapping.
 
-The single additional binding is `documented_control_profile` for the exact
+The additional binding kind is `documented_control_profile`. It includes the exact
 Neow opening Talk rule: explicitly selected `ps5-default-cross-confirm-v1`,
 rule `neow-opening-talk-confirm-v1`, current reviewed source, one free focused
 Talk at Neow's act 1/floor 0 introduction. It uses the named default Cross
 mapping and makes no visible-hint or hardware-transition claim. Generic events,
-reward selection, paid options and custom/unknown mappings cannot use it. The
+reward selection, paid options and custom/unknown mappings cannot use that Talk rule. The
 same run/floor/resources/inventory must survive, and verification must show
 actual dialogue/options advancement. `veda.neow_start` builds these ordinary
 choice contracts from compact reviews; the adapter retains all normal gates.
+
+Separate rules cover reviewed default-layout event options and card-upgrade
+grids; see [menu controls](veda-menu-controls.md). Their explicit menu-family
+and geometric checks supply bounded mappings without requiring an on-screen
+glyph for every direction. Upgrade confirmation uses the actual newly visible
+hint. Profile rules cannot impersonate historical transitions or invent costs,
+cards or outcomes. All ordinary action and mutation checks remain in force.
 
 ## Planned choice and outcome
 

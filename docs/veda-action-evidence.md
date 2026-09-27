@@ -153,7 +153,7 @@ for tests. Do not change the active checkout or installed play instructions
 under a running operator. Read-only inspection of retained play artifacts is
 permitted; do not edit its session state or resolve its actions from Builder.
 
-The reviewed skill source is tracked in `.veda/skills/orchestrator/`. After the
+The reviewed skill source is tracked in `skills/orchestrator/`. After the
 play session reaches a safe stop and its adapter/bridge are closed, merge the
 approved documentation/skill-source change and install its `SKILL.md` and
 `references/operating-loop.md` into the matching existing personal skill. Compare

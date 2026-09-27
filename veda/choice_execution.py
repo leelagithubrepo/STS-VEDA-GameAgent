@@ -120,8 +120,8 @@ def _proof(binding, observation, meaning, *, navigation=False):
                  and _SHA.fullmatch(str(proof.get("after_sha256", "")))
                  and proof["before_sha256"] != proof["after_sha256"], "reviewed transition needs distinct source identities")
     elif proof.get("kind") == "documented_control_profile":
-        from .neow_start import validate_neow_control_binding
-        validate_neow_control_binding(binding, observation, meaning, navigation=navigation)
+        from .menu_controls import validate_menu_control_binding
+        validate_menu_control_binding(binding, observation, meaning, navigation=navigation)
     else:
         raise ChoiceError("button binding needs a visible hint, reviewed transition or scoped control-profile rule")
     return button
@@ -247,6 +247,8 @@ def _choice(value, obs):
         _require(len(wanted) == 1 and options[wanted[0]]["label"] == "Continue"
                  and options[wanted[0]].get("role") == "continue_run", "only the visible current-run Continue is supported")
     branches = _outcome_branches(choice, obs)
+    from .menu_controls import validate_menu_choice
+    validate_menu_choice(choice, obs)
     from .neow_start import uses_neow_control_rule, validate_neow_choice
     if uses_neow_control_rule(obs):
         validate_neow_choice(choice, obs)
@@ -411,7 +413,11 @@ def verify_choice_step(proposal, before, after, *, now=None):
             if isinstance(value, list):
                 return [semantics(v) for v in value]
             return value
-        _require(semantics(after["ui"]) == semantics(ui), "choice focus/selection/UI transition differs")
+        if kind == "select" and before["ui"].get("menu_family") == "card_upgrade":
+            from .menu_controls import verify_upgrade_selection
+            verify_upgrade_selection(proposal, before, after)
+        else:
+            _require(semantics(after["ui"]) == semantics(ui), "choice focus/selection/UI transition differs")
     else:
         matched_outcome_id = _match_outcome(proposal["choice"], before, after)
         outcome = after["review"].get("outcome")
