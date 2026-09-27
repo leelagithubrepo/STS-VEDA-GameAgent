@@ -56,7 +56,8 @@ def _bridge_readiness_problem(response, request_id):
     if response.get("request_id") != request_id:
         return "status_request_mismatch"
     if response.get("ok") is not True or response.get("status") != "ok":
-        known = {"connect_failed", "command_timeout", "session_stopped", "controller_transport_failed",
+        known = {"connect_failed", "connect_permission_denied", "connect_socket_missing",
+                 "connect_refused", "connect_timed_out", "command_timeout", "session_stopped", "controller_transport_failed",
                  "response_unconfirmed", "client_closed", "reconciliation_required", "transport_unavailable"}
         error = response.get("error")
         return error if isinstance(error, str) and error in known else "status_not_confirmed"
@@ -249,6 +250,43 @@ class ReviewedPlaySession(CombatInputAdapter):
                 "cleanup": deepcopy(self.cleanup),
                 "last_bridge_preflight": deepcopy(self.state.get("last_bridge_preflight"))}
 
+    def _check_bridge_status(self, *, retain_connection):
+        """Probe from this process before spending the screenshot review window."""
+        _require(self.factory is not None, "existing warm bridge adapter required")
+        request_id = str(uuid4())
+        exception_code = "bridge_client_initialization_failed"
+        client = None
+        try:
+            client = self.factory()
+            if retain_connection:
+                self.controller = client
+            exception_code = "bridge_status_exception"
+            response = client.call({"action": "status", "request_id": request_id})
+            problem = _bridge_readiness_problem(response, request_id)
+        except Exception:
+            problem = exception_code
+        finally:
+            if client is not None and not retain_connection:
+                # Close only this probe's socket, never the running warm bridge.
+                try:
+                    client.close()
+                except Exception:
+                    problem = "bridge_probe_cleanup_failed"
+        self.state["last_bridge_preflight"] = {"checked_at": self.clock().isoformat(),
+            "request_id": request_id, "ready": problem is None, "reason": problem,
+            "controller_input_sent": False}
+        self._save()
+        return problem
+
+    def bridge_preflight(self):
+        _require(not self.closed and not self.poisoned and self.mode == "codex",
+                 "shadow/closed/failed sessions cannot probe the bridge")
+        _require(not self.armed and not self.state["pending"], "bridge preflight requires an idle unarmed adapter")
+        problem = self._check_bridge_status(retain_connection=False)
+        return {"status": "bridge_access_ready" if problem is None else "bridge_access_blocked",
+                "ready": problem is None, "reason": problem, "armed": False,
+                "controller_input_sent": False, "requires_fresh_arm_review": True}
+
     def arm(self, request):
         _require(not self.closed and not self.poisoned and self.mode == "codex", "shadow/closed/failed sessions cannot arm")
         _require(not self.armed and not self.state["pending"], "pending input or already armed")
@@ -262,20 +300,7 @@ class ReviewedPlaySession(CombatInputAdapter):
                  "review the game identity/screen and exclusive controller client")
         recovery = self.telemetry.recover(run_id=self.state["run_id"])
         _require(not recovery.get("pending"), "unresolved database decision requires reconciliation")
-        _require(self.factory is not None, "existing warm bridge adapter required")
-        request_id = str(uuid4())
-        exception_code = "bridge_client_initialization_failed"
-        try:
-            self.controller = self.factory()
-            exception_code = "bridge_status_exception"
-            response = self.controller.call({"action": "status", "request_id": request_id})
-            problem = _bridge_readiness_problem(response, request_id)
-        except Exception:
-            problem = exception_code
-        self.state["last_bridge_preflight"] = {"checked_at": self.clock().isoformat(),
-            "request_id": request_id, "ready": problem is None, "reason": problem,
-            "controller_input_sent": False}
-        self._save()
+        problem = self._check_bridge_status(retain_connection=True)
         if problem is not None:
             self.disarm()
             raise RuntimeStop(f"warm bridge is not ready ({problem}); no gameplay input sent") from None
@@ -630,6 +655,8 @@ class ReviewedPlaySession(CombatInputAdapter):
             _require(not self.poisoned or op in {"stop", "summary"}, "session storage failed; reopen and reconcile")
             if op == "summary":
                 return self.summary()
+            if op == "bridge_preflight":
+                return self.bridge_preflight()
             if op == "arm":
                 return self.arm(request)
             if op == "prepare":

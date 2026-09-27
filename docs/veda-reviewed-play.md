@@ -40,6 +40,79 @@ It inspects and reconciles that result before another input. It does not repeat
 a button because a reply or animation was slow. Reopening a session leaves it
 disarmed. A bridge acknowledgement means delivery only, not that a card played.
 
+## Bounded startup for the operator
+
+Finish setup before taking the frame used to arm. Keep the player's chosen
+model; startup diagnostics and request packaging are local operations.
+
+1. Run `python3 scripts/veda_play_context.py` once, adding `--run-id EXISTING_RUN_ID`
+   when the current task already identifies the run. It reads the current run,
+   context IDs, counted inventory and both possible session directories without
+   dumping historical inventory events or guessing SQL columns. Its facts are
+   **historical expectations**, not a fresh screen reading. Resolve reported
+   ambiguity or pending input; never create a new session directory to hide it.
+2. Load these instructions and prepare command arguments. Confirm current-run
+   arming, the intended game feed and the exclusive controller client. Start
+   one warm bridge and wait for `ready`. Start one reviewed adapter using the
+   chosen session directory and the existing run ID below.
+3. The adapter itself needs permission to connect to the local socket. Approval
+   for `warm_bridge` or `bridge_command.py` does not grant the adapter that
+   permission. In Codex's shell tool, launch the adapter through the command
+   approval flow with `sandbox_permissions: "require_escalated"` when local
+   socket access is restricted. Use a command-scoped approval for
+   `python3 scripts/veda_reviewed_play.py`; do not assume a successful separate
+   status probe proves this process can connect. This follows the official
+   [Codex sandbox and command-approval boundary](https://learn.chatgpt.com/docs/sandboxing).
+4. Before capturing the arm frame, send the adapter
+   `{"operation":"bridge_preflight"}` **followed by a newline**. Require
+   `bridge_access_ready`. This probes from that same process and closes only
+   its temporary client socket. It neither arms nor closes the warm bridge.
+   `ready_unarmed` at process startup only means the adapter is running.
+5. Capture and inspect a new game-window image. Then use the helper below to
+   package the inspected image's original metadata, and immediately submit its
+   short `request_file` response followed by a newline. Do not type a large
+   review object into the terminal or repeat schema searches at this point.
+6. Require `armed_codex_reviewed`, then use the normal one-action checks. If an
+   image expires, finish the remaining setup before capturing again. Do not
+   loop through old arm files, replace their timestamps, or mark an unseen
+   replacement capture as reviewed. The **30-second limit is unchanged** for
+   arming, preparing, sending and reviewing outcomes.
+
+After actually inspecting `CAPTURE.png`, use the real run ID and a new output
+path in an existing directory:
+
+```sh
+python3 scripts/veda_play_request.py arm \
+  --run-id EXISTING_RUN_ID --capture /absolute/path/to/CAPTURE.png \
+  --screen combat --reviewer 'Codex Orchestrator' \
+  --evidence-note 'Inspected this exact image: game, current screen and visible state.' \
+  --phrase 'ARM ORCHESTRATOR FOR THIS RUN' \
+  --reviewed --exclusive-client-confirmed \
+  --output /absolute/path/to/new-arm-request.json
+```
+
+The helper records the operator's explicit review; it does not inspect pixels,
+confirm exclusivity, grant user authorization, capture a frame or send anything.
+It checks the capture receipt, source bytes and filename, and uses
+`capture_requested_at` rather than completion time or the current time.
+Its output is the short pointer accepted by the persistent adapter. An arming
+review confirms game identity and screen; each card still needs its complete
+fresh combat review. Every JSONL request needs a final newline. The adapter
+also removes its own PTY's short line limit and echo while running and restores
+the terminal on normal exit or interrupt; file pointers remain preferred.
+
+| Probe reason | Meaning and next step |
+| --- | --- |
+| `connect_permission_denied` | This process was denied local socket access before sending a command. Relaunch the adapter through command approval, then probe again. |
+| `connect_socket_missing` | The specified socket does not exist. Check the owned warm session and exact socket path before capturing another frame. |
+| `connect_refused` | Nothing accepted the connection at that socket. Inspect the owned bridge's exit/cleanup and readiness. |
+| `connect_timed_out` | The local connection timed out before a command was sent. Inspect the owned bridge and its socket. |
+| `connect_failed` | Another local connection error occurred before sending. Preserve the stop evidence for investigation. |
+
+These local errors are not responses from the PS5. If delivery of an actual
+gameplay command is uncertain, preserve its pending action and reconcile the
+observed result; a successful later status probe never authorizes replay.
+
 ## Operator interface
 
 The following interface is for the Codex operator, not an unattended launcher.

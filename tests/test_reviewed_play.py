@@ -253,6 +253,49 @@ class ReviewedPlayTests(unittest.TestCase):
         self.assertEqual([], self.controller.inputs)
         self.assertFalse(result["runtime_authorized"])
 
+    def test_bridge_preflight_probes_same_process_without_arming_or_closing_warm_bridge(self):
+        self.create()
+        response = self.session.handle({'operation': 'bridge_preflight'})
+        self.assertEqual(response['status'], 'bridge_access_ready')
+        self.assertFalse(response['armed'])
+        self.assertFalse(self.session.armed)
+        self.assertIsNone(self.session.controller)
+        self.assertTrue(self.controller.closed, 'only the temporary client socket is closed')
+        self.assertEqual([c['action'] for c in self.controller.calls], ['status'])
+        self.assertEqual(self.decisions(), [])
+        self.assertEqual(self.session.summary()['last_bridge_preflight']['ready'], True)
+        self.arm()
+        self.assertEqual([c['action'] for c in self.controller.calls], ['status', 'status'])
+        self.assertEqual(self.factories, 2, 'arm independently verifies current transport status')
+
+    def test_bridge_preflight_failure_records_sanitized_permission_reason_without_input(self):
+        def denied(command):
+            return {'ok': False, 'status': 'not_sent', 'error': 'connect_permission_denied',
+                    'request_id': command['request_id'], 'private': 'DO_NOT_PRINT'}
+        self.controller.call = denied
+        self.create()
+        response = self.session.handle({'operation': 'bridge_preflight'})
+        self.assertEqual(response['status'], 'bridge_access_blocked')
+        self.assertEqual(response['reason'], 'connect_permission_denied')
+        self.assertFalse(self.session.armed)
+        self.assertNotIn('DO_NOT_PRINT', self.session.path.read_text())
+        self.assertFalse(self.session.state['last_bridge_preflight']['controller_input_sent'])
+
+    def test_shadow_preflight_never_constructs_controller(self):
+        self.create('shadow')
+        with self.assertRaisesRegex(RuntimeStop, 'cannot probe'):
+            self.session.handle({'operation': 'bridge_preflight'})
+        self.assertEqual(self.factories, 0)
+
+    def test_ready_bridge_preflight_does_not_extend_arm_evidence_deadline(self):
+        self.create()
+        self.session.handle({'operation': 'bridge_preflight'})
+        self.now += timedelta(seconds=31)
+        with self.assertRaisesRegex(RuntimeStop, 'stale'):
+            self.arm()
+        self.assertEqual(self.factories, 1)
+        self.assertEqual(self.controller.inputs, [])
+
     def test_unready_bridge_or_bad_arming_has_no_input(self):
         self.controller.ready = False
         self.create()

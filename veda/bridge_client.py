@@ -7,12 +7,26 @@ transport response is not evidence that a game action resolved on screen.
 from __future__ import annotations
 
 import json
+import errno
 import math
 import socket
 import threading
 import time
 from typing import Any
 from uuid import UUID, uuid4
+
+
+def _connect_error(error: OSError) -> str:
+    """Fixed local diagnostics, without paths, account data or OS error text."""
+    if error.errno in (errno.EACCES, errno.EPERM):
+        return 'connect_permission_denied'
+    if error.errno == errno.ENOENT:
+        return 'connect_socket_missing'
+    if error.errno == errno.ECONNREFUSED:
+        return 'connect_refused'
+    if isinstance(error, TimeoutError) or error.errno == errno.ETIMEDOUT:
+        return 'connect_timed_out'
+    return 'connect_failed'
 
 
 class BridgeClient:
@@ -97,13 +111,15 @@ class BridgeClient:
             if self._uncertain:
                 return self._failure(request_id, "not_sent", "reconciliation_required")
             if self._socket is None:
-                candidate = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                candidate = None
                 try:
+                    candidate = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                     candidate.settimeout(self.connect_timeout)
                     candidate.connect(self.socket_path)
-                except OSError:
-                    candidate.close()
-                    return self._failure(request_id, "not_sent", "connect_failed")
+                except OSError as error:
+                    if candidate is not None:
+                        candidate.close()
+                    return self._failure(request_id, "not_sent", _connect_error(error))
                 self._socket = candidate
             current = self._socket
             if self._closed:

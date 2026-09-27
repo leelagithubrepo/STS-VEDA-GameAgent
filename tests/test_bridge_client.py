@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 from pathlib import Path
 import socket
@@ -270,6 +271,30 @@ class ClientLocalValidationTests(unittest.TestCase):
             connection.sendall.assert_not_called()
             connection.close.assert_called_once()
             self.assertNotIn("DO_NOT_PRINT", json.dumps(response))
+            self.assertEqual('connect_timed_out', response['error'])
+
+    def test_connection_errors_distinguish_permissions_missing_refusal_without_sending(self):
+        for number, code in ((errno.EPERM, 'connect_permission_denied'),
+                             (errno.EACCES, 'connect_permission_denied'),
+                             (errno.ENOENT, 'connect_socket_missing'),
+                             (errno.ECONNREFUSED, 'connect_refused'),
+                             (errno.ETIMEDOUT, 'connect_timed_out'),
+                             (errno.EIO, 'connect_failed')):
+            with self.subTest(number=number), patch('veda.bridge_client.socket.socket') as factory:
+                factory.return_value.connect.side_effect = OSError(number, 'PRIVATE_PATH_OR_ACCOUNT')
+                response = BridgeClient('unused.sock').call({'action': 'status'})
+                self.assertEqual(response['error'], code)
+                self.assertEqual(response['status'], 'not_sent')
+                factory.return_value.sendall.assert_not_called()
+                factory.return_value.close.assert_called_once()
+                self.assertNotIn('PRIVATE_', json.dumps(response))
+
+    def test_socket_creation_permission_error_is_also_classified_without_retry(self):
+        with patch('veda.bridge_client.socket.socket', side_effect=PermissionError(errno.EPERM, 'PRIVATE')) as factory:
+            result = BridgeClient('unused.sock').call({'action': 'status'})
+            self.assertEqual(result['error'], 'connect_permission_denied')
+            self.assertEqual(result['status'], 'not_sent')
+            factory.assert_called_once()
 
     def test_possible_partial_write_is_unknown_and_never_replayed(self):
         with patch("veda.bridge_client.socket.socket") as factory:

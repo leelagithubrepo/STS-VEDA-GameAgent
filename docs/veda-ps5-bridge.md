@@ -33,6 +33,13 @@ For the active Codex Orchestrator, use the
 checks one reviewed move, records the pending decision before input, and binds
 the observed result to SQLite. Keep one adapter and one warm bridge alive;
 do not reconstruct the full history or restart the bridge for each card.
+Follow its [bounded startup sequence](veda-reviewed-play.md#bounded-startup-for-the-operator):
+read compact context with `scripts/veda_play_context.py`, launch the adapter
+with approved local socket access, and require its own `bridge_preflight`
+success before capturing the arm frame. Separate bridge command approval does
+not authorize the adapter process. Package an inspected capture with
+`scripts/veda_play_request.py arm` and send the returned file pointer plus a
+newline. Do setup work before fresh capture so evidence does not expire.
 Capture the actual feed with `scripts/capture_observation.py --game-window`,
 then inspect it. The window may be covered by Codex without changing the
 captured source. This reviewed path is separate from the standalone runtime's

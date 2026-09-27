@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Run the persistent Codex-reviewed input adapter; startup sends no input."""
 import argparse
+from contextlib import contextmanager
+from copy import deepcopy
 import json
 from pathlib import Path
 import sys
+import termios
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from veda.bridge_client import BridgeClient
@@ -12,8 +15,34 @@ from veda.reviewed_play import MAX_BYTES, ReviewedPlaySession
 from veda.telemetry_database import TelemetryDatabase
 
 
+@contextmanager
+def jsonl_terminal(stream):
+    """Remove the PTY's short canonical-line limit, restoring it on every exit.
+
+    JSONL still requires a newline; this does not accept partial JSON or infer
+    a request boundary from a timeout. Signals remain enabled for Ctrl-C.
+    """
+    if not stream.isatty():
+        yield
+        return
+    descriptor = stream.fileno()
+    original = termios.tcgetattr(descriptor)
+    configured = deepcopy(original)
+    configured[3] &= ~(termios.ICANON | termios.ECHO)
+    configured[6][termios.VMIN] = 1
+    configured[6][termios.VTIME] = 0
+    termios.tcsetattr(descriptor, termios.TCSANOW, configured)
+    try:
+        yield
+    finally:
+        termios.tcsetattr(descriptor, termios.TCSANOW, original)
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, epilog=
+        'Requests are newline-terminated JSONL; prefer a short request_file pointer. '
+        'In codex mode, check operation bridge_preflight before capturing arm evidence. '
+        'Startup and preflight grant no controller authority.')
     parser.add_argument("directory", type=Path)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--database", type=Path, default=Path("artifacts/veda-memory.sqlite3"))
@@ -24,9 +53,11 @@ def main(argv=None):
         parser.error("an existing run database is required")
     try:
         telemetry = PlayTelemetry(TelemetryDatabase(args.database.resolve()))
-        with ReviewedPlaySession(args.directory, run_id=args.run_id, telemetry=telemetry,
+        with jsonl_terminal(sys.stdin), ReviewedPlaySession(args.directory, run_id=args.run_id, telemetry=telemetry,
                 mode=args.mode, controller_factory=lambda: BridgeClient(args.socket)) as session:
-            print(json.dumps({"status": "ready_unarmed", "summary": session.summary()}), flush=True)
+            print(json.dumps({"status": "ready_unarmed", "summary": session.summary(),
+                "next_operation": "bridge_preflight" if args.mode == "codex" else "summary",
+                "request_format": "newline-terminated JSONL; request_file preferred"}), flush=True)
             while not session.closed:
                 line = sys.stdin.buffer.readline(MAX_BYTES + 1)
                 if not line:
@@ -51,6 +82,10 @@ def main(argv=None):
                 print(json.dumps(result, allow_nan=False), flush=True)
     except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
         parser.error(str(error))
+    except KeyboardInterrupt:
+        print(json.dumps({"status": "interrupted", "armed": False,
+                          "required": "Inspect pending state and owned bridge cleanup before resuming."}), flush=True)
+        return 130
     return 0
 
 
