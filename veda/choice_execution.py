@@ -113,8 +113,11 @@ def _proof(binding, observation, meaning, *, navigation=False):
         _require(_text(proof.get("reference_id")) and _SHA.fullmatch(str(proof.get("before_sha256", "")))
                  and _SHA.fullmatch(str(proof.get("after_sha256", "")))
                  and proof["before_sha256"] != proof["after_sha256"], "reviewed transition needs distinct source identities")
+    elif proof.get("kind") == "documented_control_profile":
+        from .neow_start import validate_neow_control_binding
+        validate_neow_control_binding(binding, observation, meaning, navigation=navigation)
     else:
-        raise ChoiceError("button binding needs a visible hint or reviewed transition")
+        raise ChoiceError("button binding needs a visible hint, reviewed transition or scoped control-profile rule")
     return button
 
 
@@ -214,6 +217,9 @@ def _choice(value, obs):
         _require(len(wanted) == 1 and options[wanted[0]]["label"] == "Continue"
                  and options[wanted[0]].get("role") == "continue_run", "only the visible current-run Continue is supported")
     post = _postconditions(choice, obs)
+    from .neow_start import uses_neow_control_rule, validate_neow_choice
+    if uses_neow_control_rule(obs):
+        validate_neow_choice(choice, obs)
     for key, available in obs["resources"].items():
         cost = sum(options[k]["costs"].get(key, 0) for k in wanted)
         _require(cost <= available, "choice exceeds observed " + key)
@@ -368,6 +374,9 @@ def verify_choice_step(proposal, before, after, *, now=None):
                  any(after["ui"][k] != before["ui"][k] for k in ("screen", "phase")) or
                  option_facts(after["ui"]) != option_facts(before["ui"]),
                  "no observed semantic choice result")
+        from .neow_start import uses_neow_control_rule, verify_neow_result
+        if uses_neow_control_rule(before):
+            verify_neow_result(before, after)
     return {"schema": "veda.choice-verification.v1", "action_id": proposal["action_id"],
         "step_verified": True, "choice_complete": kind == "commit", "before_frame": before["frame"],
         "after_frame": after["frame"], "after_digest": _digest(after),

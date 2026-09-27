@@ -298,6 +298,15 @@ class ReviewedPlaySession(CombatInputAdapter):
                  {"title_continue", "combat", "map", "reward", "rest", "event", "shop", "selection"}
                  and request.get("exclusive_client_confirmed") is True,
                  "review the game identity/screen and exclusive controller client")
+        check_binding = getattr(self.telemetry, 'check_run_binding', None)
+        _require(callable(check_binding), 'run binding verification is required before arming')
+        binding = check_binding(run_id=self.state['run_id'])
+        _require(isinstance(binding, dict) and binding.get('allowed') is True
+                 and binding.get('controller_authorized') is False and binding.get('runtime_authorized') is False
+                 and binding == {'schema': 'veda.play-run-binding.v1', 'run_id': self.state['run_id'],
+                 'run_status': 'active', 'ended_at': None, 'lifecycle_status': 'not_established', 'allowed': True,
+                 'controller_authorized': False, 'runtime_authorized': False},
+                 'run binding verification returned an incomplete or unsupported result')
         recovery = self.telemetry.recover(run_id=self.state["run_id"])
         _require(not recovery.get("pending"), "unresolved database decision requires reconciliation")
         problem = self._check_bridge_status(retain_connection=True)

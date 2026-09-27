@@ -221,14 +221,15 @@ class ArmRequestTests(unittest.TestCase):
              patch("subprocess.run", side_effect=AssertionError("subprocess called")):
             self.build()
 
-    def test_result_is_accepted_by_real_adapter_with_fake_telemetry_and_controller(self):
-        class Telemetry:
-            def recover(self, *, run_id):
-                return {"pending": []}
+    def test_result_is_accepted_by_real_adapter_with_temporary_telemetry_and_fake_controller(self):
+        from veda.play_telemetry import PlayTelemetry
+        from veda.telemetry_database import TelemetryDatabase
+        database = TelemetryDatabase(self.root / 'synthetic.sqlite3')
+        self.kwargs['run_id'] = database.start_or_resume_run(ascension=2)
         self.build()
         controller = FakeController()
         with ReviewedPlaySession(self.root / "fake-session", run_id=self.kwargs["run_id"],
-                telemetry=Telemetry(), controller_factory=lambda: controller,
+                telemetry=PlayTelemetry(database), controller_factory=lambda: controller,
                 mode="codex", clock=lambda: self.now) as session:
             result = session.handle(json.loads(self.output.read_bytes()))
             self.assertEqual("armed_codex_reviewed", result["status"])

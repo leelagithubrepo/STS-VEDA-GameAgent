@@ -78,38 +78,18 @@ def _source_identity(path):
         raise PlayRequestError("capture_image_invalid") from None
 
 
-def write_arm_request(*, run_id: str, capture: Path, screen: str, reviewer: str,
-                      evidence_note: str, phrase: str, reviewed: bool,
-                      exclusive_client_confirmed: bool, output: Path,
-                      now: datetime | None = None) -> dict:
-    """Exclusively create one arm JSON file from a fresh, declared review.
-
-    ``reviewed=True`` explicitly declares inspection of this exact image, its
-    Slay the Spire identity, and the supplied screen. It does not declare a
-    complete combat reading. No run lookup, capture or controller call occurs.
-    ``now`` is a test clock; the CLI always uses the current wall clock.
-    """
+def reviewed_capture_source(*, capture, reviewer, evidence_note, reviewed, now=None):
+    """Validate the exact saved capture and record declared inspection, without I/O effects."""
     _require(reviewed is True, "exact_image_review_required")
-    _require(exclusive_client_confirmed is True, "exclusive_client_declaration_required")
-    _require(phrase == ARM_PHRASE, "current_run_arming_phrase_required")
-    _text(run_id, 128, "run_id_invalid")
     _text(reviewer, 128, "reviewer_invalid")
     _text(evidence_note, 4096, "evidence_note_invalid")
-    _require(isinstance(screen, str) and screen in SCREENS, "screen_unknown")
-    for value in (capture, output):
-        _require(isinstance(value, (str, Path)), "path_invalid")
-        _text(str(value), 4096, "path_invalid")
+    _require(isinstance(capture, (str, Path)), "path_invalid")
+    _text(str(capture), 4096, "path_invalid")
     try:
         image_path = Path(capture).expanduser().resolve()
         receipt_path = image_path.with_suffix(".capture.json")
-        declared_output = Path(output).expanduser()
-        # Resolve the directory, not the final entry: exclusive creation must
-        # reject an existing symlink even when its target does not exist.
-        output_path = declared_output.parent.resolve() / declared_output.name
-        resolved_output = output_path.resolve()
     except (OSError, ValueError, RuntimeError):
         raise PlayRequestError("path_invalid") from None
-    _require(resolved_output not in {image_path, receipt_path}, "output_is_capture_source")
     raw = _receipt_bytes(receipt_path)
     try:
         receipt = json.loads(raw, object_pairs_hook=_pairs,
@@ -146,6 +126,47 @@ def write_arm_request(*, run_id: str, capture: Path, screen: str, reviewer: str,
     completed = _time(receipt.get("capture_completed_at"), "capture_completed_at_invalid")
     _require(observed <= completed <= current, "capture_time_order_invalid")
     frame_id = "reviewed-" + hashlib.sha256((requested + "\0" + digest).encode()).hexdigest()
+    _require(_source_identity(image_path) == (digest, dimensions)
+             and _receipt_bytes(receipt_path) == raw, "capture_changed_during_packaging")
+    if now is None:
+        _require(0 <= (datetime.now(timezone.utc) - observed).total_seconds() <= MAX_AGE, "capture_stale")
+    return {"source": {"path": str(image_path), "sha256": digest, "captured_at": requested,
+                       "origin": "reviewer", "evidence_note": evidence_note},
+            "review": {"complete": True, "reviewer": reviewer, "frame_id": frame_id,
+                       "image_sha256": digest}, "frame_id": frame_id}
+
+
+def write_arm_request(*, run_id: str, capture: Path, screen: str, reviewer: str,
+                      evidence_note: str, phrase: str, reviewed: bool,
+                      exclusive_client_confirmed: bool, output: Path,
+                      now: datetime | None = None) -> dict:
+    """Exclusively create one arm JSON file from a fresh, declared review.
+
+    ``reviewed=True`` explicitly declares inspection of this exact image, its
+    Slay the Spire identity, and the supplied screen. It does not declare a
+    complete combat reading. No run lookup, capture or controller call occurs.
+    ``now`` is a test clock; the CLI always uses the current wall clock.
+    """
+    _require(reviewed is True, "exact_image_review_required")
+    _require(exclusive_client_confirmed is True, "exclusive_client_declaration_required")
+    _require(phrase == ARM_PHRASE, "current_run_arming_phrase_required")
+    _text(run_id, 128, "run_id_invalid")
+    _text(reviewer, 128, "reviewer_invalid")
+    _text(evidence_note, 4096, "evidence_note_invalid")
+    _require(isinstance(screen, str) and screen in SCREENS, "screen_unknown")
+    for value in (capture, output):
+        _require(isinstance(value, (str, Path)), "path_invalid")
+        _text(str(value), 4096, "path_invalid")
+    checked = reviewed_capture_source(capture=capture, reviewer=reviewer,
+        evidence_note=evidence_note, reviewed=reviewed, now=now)
+    image_path = Path(checked["source"]["path"])
+    receipt_path = image_path.with_suffix(".capture.json")
+    declared_output = Path(output).expanduser()
+    output_path = declared_output.parent.resolve() / declared_output.name
+    _require(output_path.resolve() not in {image_path, receipt_path}, "output_is_capture_source")
+    digest = checked["source"]["sha256"]
+    requested = checked["source"]["captured_at"]
+    frame_id = checked["frame_id"]
     request = {"operation": "arm", "phrase": phrase, "run_id": run_id,
                "source": {"path": str(image_path), "sha256": digest, "captured_at": requested,
                           "origin": "reviewer", "evidence_note": evidence_note},
@@ -155,10 +176,8 @@ def write_arm_request(*, run_id: str, capture: Path, screen: str, reviewer: str,
                "exclusive_client_confirmed": True}
     data = (json.dumps(request, sort_keys=True, allow_nan=False, indent=2) + "\n").encode()
     _require(len(data) <= MAX_BYTES, "request_too_large")
-    _require(_source_identity(image_path) == (digest, dimensions)
-             and _receipt_bytes(receipt_path) == raw, "capture_changed_during_packaging")
-    if now is None:
-        _require(0 <= (datetime.now(timezone.utc) - observed).total_seconds() <= MAX_AGE, "capture_stale")
+    _require(reviewed_capture_source(capture=capture, reviewer=reviewer,
+        evidence_note=evidence_note, reviewed=reviewed, now=now) == checked, "capture_changed_during_packaging")
     created = False
     try:
         with output_path.open("xb") as stream:

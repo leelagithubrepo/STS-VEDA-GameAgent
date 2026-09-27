@@ -42,6 +42,14 @@ disarmed. A bridge acknowledgement means delivery only, not that a card played.
 
 ## Bounded startup for the operator
 
+First resolve which attempt is visible. For Neow's opening `[Talk]`, follow
+[Neow registration and Talk](veda-neow-start.md): register the authorized
+already-open attempt before arming, preserve the finished attempt's history,
+and use the new IDs. Do not search historical card/rule libraries for the Talk
+label or bind the opening screen to a terminal run. A resume-only instruction
+for a different run still needs its scope resolved; broad current-attempt
+authorization already given by the player should not be requested again.
+
 Finish setup before taking the frame used to arm. Keep the player's chosen
 model; startup diagnostics and request packaging are local operations.
 

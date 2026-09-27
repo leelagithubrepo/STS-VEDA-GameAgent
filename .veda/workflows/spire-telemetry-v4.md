@@ -39,7 +39,12 @@ zone base.
 
 ## Starting a newly observed run
 
-Use `run-new`, never `run`, when the player has truly started a new run. It
+For an authorized already-open Neow attempt, use the
+[reviewed Neow registrar](../../docs/veda-neow-start.md). It binds one reviewed
+attempt atomically, preserves a prior defeat and returns IDs for the operator.
+Do this before arming; a routine Talk action needs no reward prediction.
+
+For other explicit new-run logging, use `run-new`, never `run`, when the player has truly started a new run. It
 archives any matching active ledger run but retains its records. If logging
 begins after the physical run has already started, create the run with metadata
 that says which floor observation began; do not backfill earlier floors.

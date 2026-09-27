@@ -1,0 +1,25 @@
+{
+  "schema": "veda.neow-review.v1",
+  "game": "Slay the Spire",
+  "capture": "REPLACE_WITH_EXACT_INSPECTED_GAME_WINDOW_PNG",
+  "reviewer": "Codex Orchestrator",
+  "review_complete": false,
+  "evidence_note": "REPLACE_WITH_WHAT_WAS_ACTUALLY_INSPECTED",
+  "facts": {
+    "event_id": "neow",
+    "event_phase": "opening_dialogue",
+    "act": 1,
+    "floor": 0,
+    "character": null,
+    "ascension": null,
+    "dialogue_text": null
+  },
+  "resources": {"hp": null, "max_hp": null, "gold": null, "deck_size": null},
+  "inventory": {
+    "items": [],
+    "coverage": {"card": "unknown", "relic": "unknown", "potion": "unknown"}
+  },
+  "visible_options": [],
+  "focused_id": null,
+  "control_profile": null
+}

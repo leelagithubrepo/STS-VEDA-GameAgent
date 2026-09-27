@@ -318,5 +318,17 @@ class ChoiceExecutionTests(unittest.TestCase):
         before.pop('controller_authorized');goal.pop('runtime_authorized')
         self.assertEqual((before,goal),original)
 
+    def test_named_default_profile_is_not_a_general_button_mapping_escape(self):
+        before = observation(screen='event')
+        before['ui']['options'][0]['label'] = '[Talk]'
+        before['ui']['options'][0]['activate']['evidence'] = {
+            'kind': 'documented_control_profile', 'reviewer': 'synthetic',
+            'meaning': 'activate:0', 'layout_id': 'synthetic-layout',
+            'control_profile': 'ps5-default-cross-confirm-v1',
+            'rule_id': 'neow-opening-talk-confirm-v1',
+            'frame_id': before['frame']['frame_id'], 'image_sha256': before['frame']['image_sha256']}
+        with self.assertRaisesRegex(ChoiceError, 'Neow opening'):
+            plan(before, choice(before, kind='event'))
+
 
 if __name__=='__main__':unittest.main()

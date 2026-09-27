@@ -12,9 +12,10 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import sqlite3
 from uuid import UUID
 
-from .telemetry_database import TelemetryDatabase
+from .telemetry_database import SCHEMA_VERSION as TELEMETRY_SCHEMA, TelemetryDatabase
 
 MAX_REQUEST_BYTES = 262144
 MAX_IMAGE_BYTES = 32 * 1024 * 1024
@@ -145,6 +146,49 @@ class PlayTelemetry:
         if not database.path.is_file():
             raise ValueError("play telemetry requires an existing run database")
         self.database = database
+
+    def check_run_binding(self, *, run_id):
+        """Reject ended or conflicting ledger bindings before any bridge access.
+
+        Read lifecycle columns only in a read-only transaction; no inventory
+        replay, initialization, migration, or pixel recognition occurs here.
+        This check is a necessary guard, never permission to send input.
+        """
+        from .play_context import _context, _lifecycle
+        _text(run_id, 'run_id', 128)
+        db = None
+        try:
+            db = sqlite3.connect(self.database.path.resolve().as_uri() + '?mode=ro', uri=True, timeout=2)
+            db.row_factory = sqlite3.Row
+            db.execute('PRAGMA query_only=ON')
+            db.execute('BEGIN')
+            schema = db.execute("SELECT value FROM schema_metadata WHERE key='schema'").fetchone()
+            if schema is None or schema[0] != TELEMETRY_SCHEMA:
+                raise ValueError('run binding schema is unavailable; no migration attempted')
+            row = db.execute('SELECT id,game,status,ended_at FROM runs WHERE id=?', (run_id,)).fetchone()
+            if row is None or row['status'] != 'active':
+                raise ValueError('run binding is missing or no longer active')
+            if row['game'] != 'Slay the Spire':
+                raise ValueError('run binding belongs to a different game')
+            if row['ended_at'] is not None:
+                raise ValueError('run binding has a recorded end timestamp')
+            run = dict(row)
+            context = _context(db, run)
+            lifecycle = _lifecycle(db, run, context)
+            if lifecycle['status'] == 'terminal_recorded':
+                raise ValueError('run binding has a recorded terminal outcome; bind an authorized new attempt')
+            if lifecycle['status'] != 'not_established':
+                raise ValueError('run binding has conflicting lifecycle records; reconcile before arming')
+            if context['reasons'] and context['reasons'] != ['no recorded floor']:
+                raise ValueError('run binding has conflicting current lifecycle IDs; reconcile before arming')
+            return {'schema': 'veda.play-run-binding.v1', 'run_id': run_id, 'run_status': 'active',
+                    'ended_at': None, 'lifecycle_status': 'not_established', 'allowed': True,
+                    'controller_authorized': False, 'runtime_authorized': False}
+        except sqlite3.Error:
+            raise ValueError('run binding read transaction unavailable; no migration attempted') from None
+        finally:
+            if db is not None:
+                db.close()
 
     def _replay(self, db, req, digest):
         row = db.execute("SELECT payload_json FROM evidence_events WHERE "

@@ -46,6 +46,11 @@ captured source. This reviewed path is separate from the standalone runtime's
 automatic-reader calibration requirements. The examples below describe the
 transport; they do not replace per-run arming and reviewed input checks.
 
+Neow's opening conversation is a known start screen. Follow
+[Neow registration and Talk](veda-neow-start.md) to bind an authorized new
+attempt before arming, then advance its single reviewed Talk once. Preserve
+finished attempts instead of repeatedly trying to resume their IDs.
+
 A readable game tooltip such as **Unknown (not attacking)** is deliberate
 game uncertainty, not a bridge fault or unreadable frame. Follow the
 [reviewed intent contract](veda-reviewed-play.md#game-uncertainty-and-unreadable-evidence)

@@ -2,7 +2,7 @@
 
 `veda.choice_execution` plans and verifies one atomic controller tap for a reviewed choice. It does not send input, capture a screen, recognize the UI, open SQLite or grant controller authority. The caller owns per-run arming, source-byte verification, a durable pending-action journal and before/after evidence retention. An uncertain or failed step stays unresolved and must not be replayed automatically.
 
-Supported choice types are card selection, potion slots/menus/targets, map, rewards, rest, event, shop, and the title screen's exact **Continue** option for the same run. New runs, abandon, profiles and arbitrary buttons have no supported path. A supported type does not imply its current screen, controller mapping, strategy or outcome has been validated.
+Supported choice types are card selection, potion slots/menus/targets, map, rewards, rest, event, shop, and the title screen's exact **Continue** option for the same run. Starting a game from a title/character menu, abandon, profile changes and arbitrary buttons have no supported path. Registering an already-open authorized attempt is a separate telemetry operation; see [Neow start and Talk](veda-neow-start.md). A supported type does not imply its current screen, controller mapping, strategy or outcome has been validated.
 
 ## API
 
@@ -38,6 +38,16 @@ Every binding's `evidence` names a reviewer, its current `layout_id`, and exact 
 - `kind: "reviewed_transition"` with a reviewed `reference_id` and distinct `before_sha256`/`after_sha256` source identities.
 
 These references must be inspected and retained by the reviewed adapter. Merely constructing this JSON is not evidence that the mapping works. The module reads no referenced files. A historical screenshot alone cannot prove an unseen input or authorize a current mapping.
+
+The single additional binding is `documented_control_profile` for the exact
+Neow opening Talk rule: explicitly selected `ps5-default-cross-confirm-v1`,
+rule `neow-opening-talk-confirm-v1`, current reviewed source, one free focused
+Talk at Neow's act 1/floor 0 introduction. It uses the named default Cross
+mapping and makes no visible-hint or hardware-transition claim. Generic events,
+reward selection, paid options and custom/unknown mappings cannot use it. The
+same run/floor/resources/inventory must survive, and verification must show
+actual dialogue/options advancement. `veda.neow_start` builds these ordinary
+choice contracts from compact reviews; the adapter retains all normal gates.
 
 ## Planned choice and outcome
 

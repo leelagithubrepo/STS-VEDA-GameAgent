@@ -85,7 +85,7 @@ def _candidates(rows, keys):
 
 def _context(db, run):
     run_id = run['id']; reasons = []
-    floors = [dict(row) for row in db.execute('SELECT id,act,floor,node_type,recorded_at '
+    floors = [dict(row) for row in db.execute('SELECT id,act,floor,node_type,outcome,recorded_at '
         'FROM floors WHERE run_id=?', (run_id,)).fetchmany(MAX_ROWS + 1)]
     if len(floors) > MAX_ROWS:
         raise ValueError('floor records exceed bounded startup context')
@@ -106,7 +106,7 @@ def _context(db, run):
     elif invalid or (len(floors) > 1 and floors[0]['moment'] == floors[1]['moment']):
         reasons.append('latest recorded floor is ambiguous or has an invalid timestamp')
     else:
-        floor = {k: floors[0][k] for k in ('id', 'act', 'floor', 'node_type', 'recorded_at')}
+        floor = {k: floors[0][k] for k in ('id', 'act', 'floor', 'node_type', 'outcome', 'recorded_at')}
     combats = _rows(db, 'SELECT id,floor_id,encounter_name,encounter_type,opened_at FROM combats '
         'WHERE run_id=? AND closed_at IS NULL ORDER BY id', (run_id,))
     current_combats = [c for c in combats if floor is not None and c['floor_id'] == floor['id']]
@@ -142,6 +142,76 @@ def _context(db, run):
             'open_turn_candidates': turns[:MAX_CANDIDATES] if turn is None else [],
             'candidate_lists_truncated': any(len(rows) > MAX_CANDIDATES for rows in (floors if floor is None else [], combats, turns)),
             'basis': 'Recorded lifecycle IDs only; requires a fresh screen before play.', 'live': False}
+
+
+def _lifecycle(db, run, context):
+    """Recognize corroborated defeat; a room victory or HP value is insufficient.
+
+    Floors have no closed_at column: their explicit outcome is the floor-end
+    evidence. Require a matching, closed final combat rather than treating any
+    earlier defeat as the end of a potentially mixed run record.
+    """
+    floor = context['floor']
+    combats = [dict(row) for row in db.execute(
+        'SELECT id,floor_id,outcome,opened_at,closed_at FROM combats WHERE run_id=?',
+        (run['id'],)).fetchmany(MAX_ROWS + 1)]
+    defeats = [dict(row) for row in db.execute(
+        "SELECT id,outcome,recorded_at FROM floors WHERE run_id=? AND lower(trim(outcome))='defeat'",
+        (run['id'],)).fetchmany(MAX_ROWS + 1)]
+    if len(combats) > MAX_ROWS or len(defeats) > MAX_ROWS:
+        raise ValueError('lifecycle records exceed bounded startup context')
+    issues = []; moments = []
+    for combat in combats:
+        try:
+            opened = datetime.fromisoformat(combat['opened_at'])
+            closed = datetime.fromisoformat(combat['closed_at']) if combat['closed_at'] is not None else None
+            if opened.tzinfo is None or closed is not None and (closed.tzinfo is None or closed < opened):
+                raise ValueError('invalid lifecycle chronology')
+            moments.append((opened, combat))
+        except (TypeError, ValueError):
+            issues.append('combat lifecycle timestamps are invalid')
+    moments.sort(key=lambda item: item[0], reverse=True)
+    latest = moments[0][1] if moments else None
+    if len(moments) > 1 and moments[0][0] == moments[1][0]:
+        issues.append('latest combat is ambiguous')
+        latest = None
+    defeated_combats = [c for c in combats if str(c['outcome'] or '').strip().casefold() == 'defeat']
+    evidence = [{'table': 'floors', 'id': f['id'], 'floor_id': f['id'], 'outcome': f['outcome'],
+                 'recorded_at': f['recorded_at']} for f in defeats[:MAX_CANDIDATES]]
+    evidence += [{'table': 'combats', **c} for c in defeated_combats[:MAX_CANDIDATES]]
+    status = 'not_established'; outcome = None
+    if defeats or defeated_combats:
+        if floor is None:
+            issues.append('defeat evidence has no unique latest floor')
+        else:
+            if any(f['id'] != floor['id'] for f in defeats) or any(c['floor_id'] != floor['id'] for c in defeated_combats):
+                issues.append('earlier defeat conflicts with newer floor records')
+            if (str(floor.get('outcome') or '').strip().casefold() != 'defeat' or latest is None
+                    or latest['floor_id'] != floor['id'] or latest['closed_at'] is None
+                    or str(latest['outcome'] or '').strip().casefold() != 'defeat'):
+                issues.append('defeat requires matching latest floor and closed final combat outcomes')
+            if latest is not None and any(c['id'] != latest['id'] for c in defeated_combats):
+                issues.append('an earlier combat defeat conflicts with subsequent combat records')
+        if any(c['closed_at'] is None for c in combats):
+            issues.append('defeat evidence conflicts with an open combat')
+        if not issues:
+            status, outcome = 'terminal_recorded', 'defeat'
+    elif run['status'] in ('completed', 'abandoned'):
+        if any(c['closed_at'] is None for c in combats):
+            issues.append('closed run status conflicts with an open combat')
+        else:
+            status = 'terminal_recorded'  # Closure is recorded; victory/defeat remains unspecified.
+            evidence.append({'table': 'runs', 'id': run['id'], 'status': run['status'], 'ended_at': run.get('ended_at')})
+    elif run.get('ended_at') is not None:
+        issues.append('active run has a recorded end timestamp without corroborated terminal outcome')
+    if issues:
+        status = 'conflicting_records'
+    return {'status': status, 'terminal_outcome': outcome, 'run_status': run['status'],
+            'ended_at': run.get('ended_at'), 'active_flag_conflict': status == 'terminal_recorded' and run['status'] == 'active',
+            'last_combat': latest, 'evidence': evidence,
+            'evidence_truncated': len(defeats) > MAX_CANDIDATES or len(defeated_combats) > MAX_CANDIDATES,
+            'reasons': list(dict.fromkeys(issues)), 'historical_only': True, 'live': False,
+            'basis': 'Explicit lifecycle outcomes only. HP zero and ordinary room victories do not establish a run ending.'}
 
 
 def _inventory(db, path, run_id):
@@ -239,14 +309,23 @@ def _session(path, run_id, now):
     return result
 
 
-def _sessions(root, run_id, pending, now):
+def _sessions(root, run_id, pending, now, db=None):
     paths = (root / 'CURRENT_RUN', root / run_id)
     rows = [_session(path, run_id, now) for path in paths]
     reasons = []
+    # An idle legacy pointer to a closed attempt is historical, never a new run binding.
+    legacy = rows[0]
+    if (db is not None and legacy['status'] == 'recorded' and not legacy['matching_run']
+            and legacy.get('pending') is None):
+        old = db.execute('SELECT status,ended_at FROM runs WHERE id=?', (legacy['run_id'],)).fetchone()
+        unresolved = db.execute("SELECT 1 FROM decisions d JOIN evidence_events e ON e.id=d.event_id "
+            "WHERE e.run_id=? AND d.status='recommended' LIMIT 1", (legacy['run_id'],)).fetchone()
+        if old and old['status'] in ('completed', 'abandoned') and old['ended_at'] and not unresolved:
+            legacy['historical_closed_run'] = True
     matching = {r['directory']: r for r in rows if r['matching_run']}
     if any(r['status'] in ('unreadable_or_invalid', 'missing_state') for r in rows):
         reasons.append('a known session directory has unreadable or missing state; inspect it before choosing')
-    if any(r['status'] == 'recorded' and not r['matching_run'] for r in rows):
+    if any(r['status'] == 'recorded' and not r['matching_run'] and not r.get('historical_closed_run') for r in rows):
         reasons.append('a known session directory belongs to another run; inspect it before choosing')
     both_idle = (len(matching) == 2 and all(r.get('pending') is None and r.get('completed') == 0
                                           and r.get('has_verified_history') is False for r in matching.values()))
@@ -303,7 +382,7 @@ def read_play_context(database=DEFAULT_DATABASE, *, run_id=None, sessions_root=N
         schema = db.execute("SELECT value FROM schema_metadata WHERE key='schema'").fetchone()
         if schema is None or schema[0] != SCHEMA_VERSION:
             raise ValueError('unsupported telemetry schema; startup does not initialize or migrate')
-        runs = _rows(db, 'SELECT id,game,character_name,ascension,started_at,status FROM runs '
+        runs = _rows(db, 'SELECT id,game,character_name,ascension,started_at,ended_at,status FROM runs '
             + ('WHERE id=?' if run_id else "WHERE status='active'") + ' ORDER BY id', (run_id,) if run_id else ())
         result = {'schema': 'veda.play-context.v1', 'database': str(path), 'generated_at': now.isoformat(),
             'historical_only': True, 'live': False, 'runtime_authorized': False, 'controller_authorized': False,
@@ -312,6 +391,14 @@ def read_play_context(database=DEFAULT_DATABASE, *, run_id=None, sessions_root=N
             result.update(selection_status='needs_review', reasons=[
                 'multiple active runs; supply --run-id' if len(runs) > 1 else 'no matching active run'])
             result['run_candidates_truncated'] = len(runs) > MAX_CANDIDATES
+            if len(runs) == 1:
+                context = _context(db, runs[0])
+                result['context'] = context
+                result['lifecycle'] = _lifecycle(db, runs[0], context)
+                pending = _pending(db, runs[0]['id'])
+                result['unresolved_decisions'] = pending
+                result['sessions'] = _sessions(root, runs[0]['id'], pending, now, db)
+                result['reasons'] += context['reasons'] + result['sessions']['reasons']
             return _bounded(result)
         run = runs[0]
         _text(run['id'], 128)
@@ -319,14 +406,19 @@ def read_play_context(database=DEFAULT_DATABASE, *, run_id=None, sessions_root=N
             raise ValueError('recorded run ID is not safe as a session directory name')
         result.update(run=run, run_candidates=[])
         context = _context(db, run)
-        result.update(context=context, inventory=_inventory(db, path, run['id']),
+        lifecycle = _lifecycle(db, run, context)
+        result.update(context=context, lifecycle=lifecycle, inventory=_inventory(db, path, run['id']),
                       latest_advisory=_latest(db, 'evidence_events', run['id'], now, advisory=True),
                       latest_evidence=_latest(db, 'evidence_events', run['id'], now),
                       latest_checkpoint=_latest(db, 'session_checkpoints', run['id'], now))
         pending = _pending(db, run['id'])
         result['unresolved_decisions'] = pending
-        result['sessions'] = _sessions(root, run['id'], pending, now)
+        result['sessions'] = _sessions(root, run['id'], pending, now, db)
         result['reasons'] = context['reasons'] + result['sessions']['reasons']
+        if lifecycle['status'] == 'terminal_recorded':
+            result['reasons'].append('terminal run outcome is recorded despite active status; bind an authorized new attempt before play')
+        elif lifecycle['status'] == 'conflicting_records':
+            result['reasons'].append('lifecycle records conflict; reconcile the run binding before play')
         if result['reasons']:
             result['selection_status'] = 'needs_review'
         return _bounded(result)

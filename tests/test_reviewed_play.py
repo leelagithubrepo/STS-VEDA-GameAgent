@@ -253,6 +253,93 @@ class ReviewedPlayTests(unittest.TestCase):
         self.assertEqual([], self.controller.inputs)
         self.assertFalse(result["runtime_authorized"])
 
+    def close_fixture_combat(self, outcome='defeat'):
+        self.db.complete_combat_turn(turn_id=self.context_ids['turn_id'], closing_state={})
+        self.db.complete_combat(combat_id=self.context_ids['combat_id'], outcome=outcome, closing_state={})
+        self.db.complete_floor(floor_id=self.context_ids['floor_id'], outcome=outcome, ending_state={})
+
+    def test_arm_rejects_recorded_defeat_before_bridge_factory_despite_active_flag(self):
+        self.close_fixture_combat()
+        self.create()
+        with self.assertRaisesRegex(ValueError, 'recorded terminal outcome'):
+            self.arm()
+        self.assertEqual(self.factories, 0)
+        self.assertEqual(self.controller.calls, [])
+        self.assertFalse(self.session.armed)
+
+    def test_arm_rejects_nonactive_or_ended_run_before_bridge_factory(self):
+        self.create()
+        for status, ended in (('completed', None), ('abandoned', None), ('active', self.now.isoformat())):
+            with self.subTest(status=status, ended=ended):
+                with self.db._connection() as connection:
+                    connection.execute('UPDATE runs SET status=?,ended_at=? WHERE id=?',
+                                       (status, ended, self.context_ids['run_id']))
+                with self.assertRaises(ValueError):
+                    self.arm()
+                self.assertFalse(self.session.armed)
+                self.assertEqual(self.factories, 0)
+                self.assertEqual(self.controller.calls, [])
+
+    def test_arm_rejects_different_recorded_game_before_bridge_factory(self):
+        with self.db._connection() as connection:
+            connection.execute('UPDATE runs SET game=? WHERE id=?', ('Another Game', self.context_ids['run_id']))
+        self.create()
+        with self.assertRaisesRegex(ValueError, 'different game'):
+            self.arm()
+        self.assertFalse(self.session.armed)
+        self.assertEqual(self.factories, 0)
+        self.assertEqual(self.controller.calls, [])
+
+    def test_arm_rejects_conflicting_defeat_and_later_floor_before_bridge_factory(self):
+        self.close_fixture_combat()
+        self.db.record_floor(run_id=self.context_ids['run_id'], act=1, floor=2, node_type='event', outcome=None)
+        self.create()
+        with self.assertRaisesRegex(ValueError, 'conflicting lifecycle records'):
+            self.arm()
+        self.assertEqual(self.factories, 0)
+        self.assertEqual(self.controller.calls, [])
+
+    def test_arm_requires_binding_validator_not_legacy_recover_only_protocol(self):
+        class IncompleteTelemetry:
+            def recover(self, *, run_id):
+                return {'pending': []}
+        self.create(); self.session.telemetry = IncompleteTelemetry()
+        with self.assertRaisesRegex(RuntimeStop, 'run binding verification is required'):
+            self.arm()
+        self.assertEqual(self.factories, 0)
+        self.assertEqual(self.controller.calls, [])
+
+    def test_arm_rejects_incomplete_or_false_binding_receipts(self):
+        self.create()
+        valid = self.telemetry.check_run_binding(run_id=self.context_ids['run_id'])
+        for binding in (None, {}, {'allowed': True}, {**valid, 'allowed': 1},
+                        {**valid, 'run_id': 'another-run'}, {**valid, 'lifecycle_status': 'terminal_recorded'}):
+            with self.subTest(binding=binding), patch.object(self.telemetry, 'check_run_binding', return_value=binding):
+                with self.assertRaisesRegex(RuntimeStop, 'incomplete or unsupported result'):
+                    self.arm()
+                self.assertFalse(self.session.armed)
+                self.assertEqual(self.factories, 0)
+
+    def test_binding_guard_reads_no_inventory_or_schema_and_preserves_database_bytes(self):
+        before = self.db.path.read_bytes()
+        with patch.object(TelemetryDatabase, 'initialize', side_effect=AssertionError('initialization forbidden')), \
+             patch.object(TelemetryDatabase, 'inventory_ledger', side_effect=AssertionError('inventory replay forbidden')):
+            receipt = self.telemetry.check_run_binding(run_id=self.context_ids['run_id'])
+        self.assertTrue(receipt['allowed'])
+        self.assertFalse(receipt['controller_authorized'])
+        self.assertEqual(self.db.path.read_bytes(), before)
+
+    def test_hp_zero_alone_and_room_victory_do_not_become_terminal_run_proof(self):
+        self.db.record_event(run_id=self.context_ids['run_id'], floor_id=self.context_ids['floor_id'],
+            combat_id=self.context_ids['combat_id'], turn_id=self.context_ids['turn_id'],
+            kind='advisory_snapshot', phase='combat', state={'hp': 0}, source='synthetic fixture')
+        self.assertTrue(self.telemetry.check_run_binding(run_id=self.context_ids['run_id'])['allowed'])
+        self.close_fixture_combat('victory')
+        self.create()
+        self.assertEqual(self.arm()['status'], 'armed_codex_reviewed')
+        self.assertEqual([c['action'] for c in self.controller.calls], ['status'])
+        self.assertEqual(self.controller.inputs, [])
+
     def test_bridge_preflight_probes_same_process_without_arming_or_closing_warm_bridge(self):
         self.create()
         response = self.session.handle({'operation': 'bridge_preflight'})

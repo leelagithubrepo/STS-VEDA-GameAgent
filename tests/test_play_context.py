@@ -63,6 +63,102 @@ class PlayContextTests(unittest.TestCase):
             self.assertFalse(result[key])
         self.assertFalse(self.sessions.exists(), 'inspection must not create session directories')
 
+    def finish(self, *, combat_outcome='defeat', floor_outcome='defeat'):
+        self.db.complete_combat_turn(turn_id=self.turn, closing_state={'hp': 0})
+        self.db.complete_combat(combat_id=self.combat, outcome=combat_outcome, closing_state={'hp': 0})
+        self.db.complete_floor(floor_id=self.floor, outcome=floor_outcome, ending_state={'hp': 0})
+
+    def test_matching_terminal_defeat_requires_review_despite_active_run_flag(self):
+        self.finish()
+        before = self.path.read_bytes()
+        result = self.read()
+        self.assertEqual(result['run']['status'], 'active')
+        self.assertEqual(result['selection_status'], 'needs_review')
+        lifecycle = result['lifecycle']
+        self.assertEqual((lifecycle['status'], lifecycle['terminal_outcome']), ('terminal_recorded', 'defeat'))
+        self.assertTrue(lifecycle['active_flag_conflict'])
+        self.assertEqual({e['table'] for e in lifecycle['evidence']}, {'floors', 'combats'})
+        self.assertEqual(lifecycle['last_combat']['id'], self.combat)
+        self.assertTrue(lifecycle['historical_only'])
+        self.assertFalse(lifecycle['live'])
+        self.assertIn('bind an authorized new attempt', ' '.join(result['reasons']))
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_nonboss_defeat_is_terminal_without_reading_hp(self):
+        self.finish()
+        with self.db._connection() as conn:
+            conn.execute("UPDATE combats SET encounter_type='normal',encounter_name='Cultist',closing_state_json='{}' WHERE id=?", (self.combat,))
+            conn.execute("UPDATE floors SET node_type='combat',ending_state_json='{}' WHERE id=?", (self.floor,))
+        self.assertEqual(self.read()['lifecycle']['terminal_outcome'], 'defeat')
+
+    def test_hp_zero_in_open_context_or_last_evidence_is_not_terminal(self):
+        self.db.record_event(run_id=self.run, floor_id=self.floor, combat_id=self.combat, turn_id=self.turn,
+            kind='advisory_snapshot', phase='combat', state={'hp': 0}, payload={}, source='synthetic')
+        with self.db._connection() as conn:
+            conn.execute('UPDATE floors SET ending_state_json=? WHERE id=?', (json.dumps({'hp': 0}), self.floor))
+        result = self.read()
+        self.assertEqual(result['lifecycle']['status'], 'not_established')
+        self.assertIsNone(result['lifecycle']['terminal_outcome'])
+
+    def test_ordinary_boss_victory_is_not_run_victory_even_on_high_floor(self):
+        self.finish(combat_outcome='victory', floor_outcome='victory')
+        with self.db._connection() as conn:
+            conn.execute('UPDATE floors SET act=3,floor=50 WHERE id=?', (self.floor,))
+        result = self.read()
+        self.assertEqual(result['lifecycle']['status'], 'not_established')
+        self.assertIsNone(result['lifecycle']['terminal_outcome'])
+
+    def test_unmatched_or_contradictory_closed_outcomes_require_reconciliation(self):
+        self.finish(combat_outcome='victory')
+        result = self.read()
+        self.assertEqual(result['lifecycle']['status'], 'conflicting_records')
+        self.assertIsNone(result['lifecycle']['terminal_outcome'])
+        self.assertEqual(result['selection_status'], 'needs_review')
+        with self.db._connection() as conn:
+            conn.execute("UPDATE combats SET outcome='defeat' WHERE id=?", (self.combat,))
+            conn.execute("UPDATE floors SET outcome='victory' WHERE id=?", (self.floor,))
+        self.assertEqual(self.read()['lifecycle']['status'], 'conflicting_records')
+
+    def test_earlier_defeat_followed_by_newer_floor_is_conflict_not_terminal(self):
+        self.finish()
+        new_floor = self.db.record_floor(run_id=self.run, act=2, floor=34, node_type='event', outcome=None)
+        result = self.read()
+        self.assertEqual(result['context']['binding']['floor_id'], new_floor)
+        self.assertEqual(result['lifecycle']['status'], 'conflicting_records')
+        self.assertIsNone(result['lifecycle']['terminal_outcome'])
+        self.assertIn('earlier defeat', ' '.join(result['lifecycle']['reasons']))
+
+    def test_subsequent_same_floor_combat_and_open_defeat_cannot_certify_terminal(self):
+        self.finish()
+        self.db.start_combat(run_id=self.run, floor_id=self.floor, opening_state={},
+                             encounter_name='Other', encounter_type='normal')
+        self.assertEqual(self.read()['lifecycle']['status'], 'conflicting_records')
+        with self.db._connection() as conn:
+            conn.execute('DELETE FROM combats WHERE id<>?', (self.combat,))
+            conn.execute('UPDATE combats SET closed_at=NULL WHERE id=?', (self.combat,))
+        self.assertEqual(self.read()['lifecycle']['status'], 'conflicting_records')
+
+    def test_explicit_closed_run_retains_terminal_and_pending_evidence_without_selection(self):
+        self.finish()
+        self.add_pending_decision()
+        with self.db._connection() as conn:
+            conn.execute("UPDATE runs SET status='completed',ended_at=? WHERE id=?", (self.now.isoformat(), self.run))
+        result = self.read(run_id=self.run)
+        self.assertIsNone(result['run'])
+        self.assertEqual(result['run_candidates'][0]['ended_at'], self.now.isoformat())
+        self.assertEqual(result['lifecycle']['terminal_outcome'], 'defeat')
+        self.assertEqual(result['unresolved_decisions']['count'], 1)
+        self.assertTrue(result['sessions']['must_not_repeat'])
+
+    def test_persisted_completed_status_does_not_invent_victory(self):
+        self.finish(combat_outcome='victory', floor_outcome='victory')
+        with self.db._connection() as conn:
+            conn.execute("UPDATE runs SET status='completed',ended_at=? WHERE id=?", (self.now.isoformat(), self.run))
+        result = self.read(run_id=self.run)
+        self.assertEqual(result['lifecycle']['status'], 'terminal_recorded')
+        self.assertIsNone(result['lifecycle']['terminal_outcome'])
+        self.assertFalse(result['lifecycle']['active_flag_conflict'])
+
     def test_missing_database_does_not_create_database_or_parent(self):
         path = self.root / 'missing' / 'memory.sqlite3'
         with self.assertRaisesRegex(ValueError, 'existing database'):
