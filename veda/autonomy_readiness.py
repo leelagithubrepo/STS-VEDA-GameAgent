@@ -73,7 +73,9 @@ def _card_support(name, count):
         followups.append("observe the draw, then select a hand card to return")
     conditions = ["Fresh complete hand, actual cost, statuses, inventory, target and UI evidence are still required."]
     if name == "Headbutt":
-        conditions.append("The routine candidate supports only a confirmed empty discard; a return choice is not planned.")
+        conditions.append("The routine candidate supports only a confirmed empty discard; a nonempty return choice needs a separate reviewed selection.")
+    if followups:
+        conditions.append("The reviewed choice planner can navigate and verify a supplied complete selection contract; it does not choose the card, recognize the grid or add missing card mechanics.")
     if not (direct or special):
         conditions.append("The routine planner does not generate this card as a supported candidate.")
     if special or guarded:
@@ -84,8 +86,9 @@ def _card_support(name, count):
             "exact_effect_registered": direct or special,
             "routine_candidate_registered": direct or special,
             "selection_followups": followups,
-            "selection_execution_implemented": False if followups else None,
-            "controller_scope": "generic initial card navigation only; no complete execution claim",
+            "selection_execution_implemented": True if followups else None,
+            "selection_execution_scope": "reviewed choice contract only" if followups else None,
+            "controller_scope": "Codex-reviewed single-input navigation/verification; no current or hardware-validated execution claim",
             "executable_from_checkpoint": False, "conditions": conditions}
 
 
@@ -99,6 +102,24 @@ def _relic_support(name, count):
                              "routine_allowlist_only" if supported else "unsupported_interaction",
             "limitation": special.get(name, "Allowlisting is not a complete relic-effect or interaction simulation."),
             "currently_verified": False}
+
+
+def _implementation_inventory():
+    """Describe bundled code paths, not a reader or hardware validation result."""
+    return [
+        {"id": "reviewed_choices", "status": "implemented", "modules": ["veda.choice_execution"],
+         "scope": "Source-bound single-tap planning and semantic verification for supplied card-selection, potion, map, reward, rest, event, shop and same-run Continue contracts.",
+         "limits": "The reviewer supplies strategy, complete options, current costs, button proofs and outcome conditions; this module sends no input."},
+        {"id": "play_telemetry", "status": "implemented", "modules": ["veda.play_telemetry"],
+         "scope": "Pending decision before input, atomic observed inventory/zone/lifecycle outcomes, idempotent recovery and explicit resume in existing SQLite tables.",
+         "limits": "Caller facts are declarations; source checks do not recognize pixels or prove input delivery. Unknown outcomes remain pending."},
+        {"id": "codex_reviewed_session", "status": "implemented", "modules": ["veda.reviewed_play", "veda.combat_input"],
+         "scope": "A distinct Codex-reviewed session connects one reviewed input at a time to the bridge and telemetry, retaining before/after sources and unresolved attempts.",
+         "limits": "Not a standalone recognizer or calibration bypass. Current review, per-run arming, bridge preflight and end-to-end validation remain separate gates."},
+        {"id": "collector_a2_bound", "status": "implemented", "modules": ["veda.advisory", "veda.routine_combat"],
+         "scope": "Conservative one-enemy-turn survival bound for source-verified A2 Fireball, Buff, Mega Debuff, Spawn/Revive and Torch Head Tackle.",
+         "limits": "Requires complete observed roster, displayed hits, modifiers, typed current move and reviewed relic/effect coverage. No exact future roster/status, console action order or next rolled move is established."},
+    ]
 
 
 def assess_automation_readiness(checkpoint, *, now=None):
@@ -156,13 +177,18 @@ def assess_automation_readiness(checkpoint, *, now=None):
             "checked_scope": "immediate damage only; requires complete target/modifier/reaction evidence" if name == "Explosive Potion"
                 else "automatic trigger only; not manually usable or included in survival forecasts" if name == "Fairy in a Bottle"
                 else "presence/observation boundary only; no numeric effect forecast",
-            "controller_execution_implemented": False, "currently_verified": False})
+            "controller_execution_implemented": name != "Fairy in a Bottle",
+            "controller_scope": "not manually usable" if name == "Fairy in a Bottle" else
+                "generic Codex-reviewed potion choice path; requires observed slot/menu/target and outcome contract",
+            "currently_verified": False, "hardware_execution_validated": False})
     boss_name, ascension = state.get("next_boss"), state.get("ascension")
     manifest = boss_manifest(boss_name, ascension)
     blockers = [
         {"id": "complete_runtime_reader", "kind": "implementation", "status": "missing",
+         "applies_to": ["standalone_automatic"],
          "reason": "No bundled validated worker produces complete hand/order, enemy roster/statuses, inventories, piles and UI/focus Reading evidence."},
         {"id": "independent_runtime_validation", "kind": "validation", "status": "not_established",
+         "applies_to": ["standalone_automatic"],
          "reason": "This checkpoint is not a calibration report. Every runtime field needs >=12 distinct fully labeled images, >=95% accuracy and zero unflagged critical errors, bound to the exact reader and source."},
         {"id": "fresh_game_evidence", "kind": "live_evidence", "status": "required",
          "reason": "Inspect the current game and reconcile run, inventory, hand, statuses, piles, full intents and UI before proposing an input; checkpoint timestamps cannot do this."},
@@ -170,22 +196,20 @@ def assess_automation_readiness(checkpoint, *, now=None):
          "reason": "Ready bridge, exclusive client, game identity and verified controller transitions were not inspected by this report."},
         {"id": "per_run_arming", "kind": "authorization", "status": "not_established",
          "reason": "No current-run arming is established here; permission flags in a checkpoint cannot authorize input."},
-        {"id": "potion_execution", "kind": "implementation", "status": "missing",
-         "reason": "Runtime input dispatch does not implement potion-slot selection, use and outcome verification."},
-        {"id": "selection_execution", "kind": "implementation", "status": "missing",
-         "reason": "Draw/return, exhaust/copy and upgrade selection screens have no complete executor; generic card navigation does not resolve them."},
-        {"id": "noncombat_execution", "kind": "implementation", "status": "missing",
-         "reason": "Map, reward, shop, rest and event actions lack a complete runtime decision/verification flow."},
-        {"id": "runtime_ledger_lifecycle", "kind": "integration", "status": "partial",
-         "reason": "Checked sessions/checkpoints and runtime action journals exist, but the execution loop does not drive all SQLite action, inventory, zone, turn and floor receipts."},
+        {"id": "reviewed_execution_validation", "kind": "validation", "status": "not_established",
+         "applies_to": ["codex_reviewed"],
+         "reason": "Reviewed choice, combat and ledger code exists; this report establishes no current controller mappings or end-to-end hardware evidence for selection, potion, noncombat, transitions or recovery."},
+        {"id": "reviewed_contracts", "kind": "live_evidence", "status": "required",
+         "applies_to": ["codex_reviewed"],
+         "reason": "Each step still needs a named source-bound review, complete relevant facts, a legal/safe decision and an explicit verified outcome; a historical inventory cannot supply these."},
     ]
     unsupported = [r["name"] for r in card_rows if not r["routine_candidate_registered"]]
     if unsupported:
         blockers.append({"id": "recorded_card_planner_gaps", "kind": "implementation", "status": "partial",
                          "cards": unsupported, "reason": "These exact recorded variants lack routine-planner candidates, even where type or choice guards exist."})
     if boss_name == "The Collector":
-        blockers.append({"id": "collector_enemy_action_order", "kind": "mechanics", "status": "partial",
-            "reason": "Only the reviewed A2 complete attack-only Fireball/Tackle roster can use unchanged displayed hits. Spawn, Revive, Buff and Mega Debuff ordering remains unsupported; the next rolled move is unknown."})
+        blockers.append({"id": "collector_current_move_evidence", "kind": "mechanics_evidence", "status": "required",
+            "reason": "A2 has a conservative current-turn survival bound, including Buff, Mega Debuff and Spawn/Revive effects on Torch Heads. It requires complete observed roster/modifiers and source-bound current moves; exact next state, action order and future rolled moves are not simulated. Other Ascensions remain unsupported by this bound."})
     if manifest is None:
         blockers.append({"id": "recorded_boss_manifest", "kind": "mechanics", "status": "missing",
                          "reason": "No exact reviewed boss/Ascension manifest matches this historical checkpoint."})
@@ -195,6 +219,15 @@ def assess_automation_readiness(checkpoint, *, now=None):
     return {"schema": SCHEMA, "assessed_at": clock.isoformat(), "assessment_kind": "historical_implementation_coverage",
         "runtime_authorized": False, "controller_authorized": False, "autonomy_ready": False,
         "automatic_recognition_complete": False, "ignored_authority_declarations": ignored,
+        "implementation_inventory": _implementation_inventory(),
+        "execution_paths": {
+            "standalone_automatic": {"implementation_status": "incomplete", "automatic_recognition_complete": False,
+                "calibration_established": False, "runtime_authorized": False,
+                "reason": "The independent reader-bound runtime gates remain unmet by a checkpoint."},
+            "codex_reviewed": {"implementation_status": "implemented_requires_current_review_and_validation",
+                "automatic_recognition_complete": False, "hardware_execution_validated": False,
+                "runtime_authorized": False, "controller_authorized": False,
+                "reason": "An active Codex reviewer supplies current source-bound interpretation and decisions; this report neither arms nor validates that session."}},
         "checkpoint": {"run_id": checkpoint.get("run_id"), "screen": state.get("screen"),
             "floor": state.get("floor"), "act": state.get("act"), "ascension": ascension,
             "recorded_hp": state.get("hp"), "recorded_max_hp": state.get("max_hp"),
@@ -215,6 +248,9 @@ def assess_automation_readiness(checkpoint, *, now=None):
             "selection_followup_copies": None if cards is None else sum(r["copies"] for r in card_rows if r["selection_followups"]),
             "executable_cards_established": 0},
         "boss_reference": {"name": boss_name, "ascension": ascension, "manifest_available": manifest is not None,
+            "forecast_kind": manifest.get("forecast_kind") if manifest else None,
+            "conservative_bound_registered": bool(manifest and manifest.get("forecast_kind") == "conservative_survival_bound"),
+            "current_turn_bound_established": False,
             "identity_currently_verified": False, "full_encounter_simulator": False},
         "runtime_validation_fields": sorted(RUNTIME_FIELDS), "rule_version": rule_pack()["version"],
         "blockers": blockers,

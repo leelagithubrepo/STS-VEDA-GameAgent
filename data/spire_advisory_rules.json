@@ -1,5 +1,5 @@
 {
-  "version": "spire-rules-2026-09-27.1",
+  "version": "spire-rules-2026-09-27.2",
   "reviewed_at": "2026-09-27",
   "game": "Slay the Spire 1",
   "provenance": "Community references and game-extracted database; console build not independently verified. Live evidence overrides predictions.",
@@ -242,7 +242,7 @@
       "tags": [
         "metallicize"
       ],
-      "statement": "Base Metallicize adds 3 Metallicize. A confirmed active intensity grants that much Block at end of turn, unaffected by Frail, Dexterity or Panic Button’s card-only No Block. Playing the Power is an observation boundary.",
+      "statement": "Base Metallicize adds 3 Metallicize. A confirmed active intensity grants that much Block at end of turn, unaffected by Frail, Dexterity or Panic Button\u2019s card-only No Block. Playing the Power is an observation boundary.",
       "kind": "game_fact",
       "conditions": "Exact reviewed current-run variant only; fresh state and observed costs still required.",
       "sources": [
@@ -343,12 +343,16 @@
         "the collector",
         "torch head"
       ],
-      "statement": "Use the reviewed A2 reference only after current boss and minion identities, full roster, moves and displayed hits are observed. Only an attack-only Fireball/Tackle turn has an unchanged displayed hit sum. Spawn, Revive, Buff and Mega Debuff need an enemy-action-order model; do not infer survival from the pre-action hit sum.",
+      "statement": "For a complete source-bound A2 Collector/Torch Head roster, typed Fireball/Tackle, Buff, Mega Debuff and Spawn/Revive can support a conservative one-turn damage upper bound. Preserve displayed hits separately; account for team Strength, Vulnerable and possible immediate summons before accepting End Turn. Unknown modifiers still stop. Do not assert exact order, future statuses or the next rolled move.",
       "kind": "advisory_policy",
       "conditions": "A2 only. Community references; console behavior and disputed raw attack scaling are not independently verified.",
       "sources": [
         "https://slaythespire-archive.fandom.com/wiki/The_Collector",
-        "https://slayspiredb.com/sts1/monsters/thecollector"
+        "https://slayspiredb.com/sts1/monsters/thecollector",
+        "https://slay-the-spire.fandom.com/wiki/The_Collector",
+        "https://github.com/gamerpuppy/sts_lightspeed/blob/master/src/combat/MonsterSpecific.cpp",
+        "https://github.com/gamerpuppy/sts_lightspeed/blob/master/src/combat/Actions.cpp",
+        "https://github.com/gamerpuppy/sts_lightspeed/blob/master/src/combat/Monster.cpp"
       ]
     }
   ],
@@ -567,9 +571,13 @@
     "The Collector": {
       "sources": [
         "https://slaythespire-archive.fandom.com/wiki/The_Collector",
-        "https://slayspiredb.com/sts1/monsters/thecollector"
+        "https://slayspiredb.com/sts1/monsters/thecollector",
+        "https://slay-the-spire.fandom.com/wiki/The_Collector",
+        "https://github.com/gamerpuppy/sts_lightspeed/blob/master/src/combat/MonsterSpecific.cpp",
+        "https://github.com/gamerpuppy/sts_lightspeed/blob/master/src/combat/Actions.cpp",
+        "https://github.com/gamerpuppy/sts_lightspeed/blob/master/src/combat/Monster.cpp"
       ],
-      "provenance": "Community reference and fan game-extracted database; not official. Current console boss has not yet been entered.",
+      "provenance": "Attributed community reference plus open-source community simulator, not official or console-verified game code. Current console turn must be observed; enemy ordering is conservatively bounded.",
       "variants": [
         {
           "min_ascension": 2,
@@ -581,7 +589,7 @@
             "Reference enemy action 4: Mega Debuff",
             "Other actions are conditional; never infer the next rolled move."
           ],
-          "next_high_threat": "Use observed complete Collector/Torch Head attack intents. Buff, Mega Debuff and summons invalidate unchanged-hit survival reasoning.",
+          "next_high_threat": "For the currently observed move only, compute a conservative upper bound including possible boss effects before Torch Head attacks. Never infer a rolled move or exact resulting roster/status.",
           "raw_attack_damage": null,
           "source_conflicts": [
             "The fan database calls Fireball A2+ 21 but its own scaling text assigns Rake 21 at A4+. Do not use either label to overwrite observed damage."
@@ -590,7 +598,64 @@
             "The Collector": "Fireball",
             "Torch Head": "Tackle"
           },
-          "unsupported_forecast_moves": [
+          "unsupported_forecast_moves": [],
+          "turn_effects": {
+            "Fireball": [],
+            "Buff": [
+              {
+                "kind": "gain_strength",
+                "target": "all_enemies",
+                "amount": 3
+              },
+              {
+                "kind": "gain_block",
+                "target": "self",
+                "amount": 15
+              }
+            ],
+            "Mega Debuff": [
+              {
+                "kind": "apply_debuff",
+                "debuff": "weak",
+                "amount": 3
+              },
+              {
+                "kind": "apply_debuff",
+                "debuff": "vulnerable",
+                "amount": 3
+              },
+              {
+                "kind": "apply_debuff",
+                "debuff": "frail",
+                "amount": 3
+              }
+            ],
+            "Spawn": [
+              {
+                "kind": "summon_to_limit",
+                "enemy": "Torch Head",
+                "amount": 2
+              }
+            ],
+            "Revive": [
+              {
+                "kind": "summon_to_limit",
+                "enemy": "Torch Head",
+                "amount": 2
+              }
+            ]
+          },
+          "forecast_kind": "conservative_survival_bound",
+          "torch_head_base_damage_reference": 7,
+          "bound_assumptions": [
+            "A2 only; complete living roster with distinct IDs and source-bound exact typed effects.",
+            "Buff may add 3 Strength before every existing Torch Head attack; Mega Debuff may apply Vulnerable before every attack.",
+            "Invert final-floor displayed Weak/Vulnerable arithmetic over all compatible integer raw values; never divide a rounded hit as though exact.",
+            "Spawn/Revive may add one immediate base-7 attack per vacant Torch Head slot, using max(0, all observed enemy Strength) and current player Vulnerable.",
+            "Artifact protection and player Vulnerable expiry are not credited; possible Bronze Scales deaths before Spawn retain old hits and add replacement-slot bounds.",
+            "Unknown modifiers, statuses, unmodeled effects and relics outside the reviewed current inventory prevent the bound."
+          ],
+          "unsupported_exact_forecast_moves": [
             "Spawn",
             "Revive",
             "Buff",
@@ -599,9 +664,9 @@
         }
       ],
       "behavior": [
-        "Community reference describes opening Spawn, a turn-four Mega Debuff, possible replacement summons, team Strength and boss Block. This is preparation information, not observed current turn state.",
-        "Retain distinct target IDs for both Torch Heads; after any death or summon re-observe the complete roster. Never infer a single enemy from a cropped view.",
-        "Mega Debuff can alter player Weak/Frail/Vulnerable and Buff changes team Strength. Those turns remain outside the unchanged displayed-intent forecast; no probabilities or unobserved move are substituted."
+        "Community reference: opening Spawn, fourth-action Mega Debuff, maximum two Torch Heads; these facts never substitute for the observed current move.",
+        "The simulator resets a newly spawned Torch Head and applies external Strength only for Philosopher's Stone. That unsupported relic is rejected; the bound additionally allows inherited maximum observed Strength and immediate attacks rather than certifying console summon timing.",
+        "Each decision ends at a fresh observation boundary; no exact future status, roster, enemy order or next random move is asserted. Revive is accepted as an observed resummon label for the same reviewed Spawn effect."
       ]
     }
   }

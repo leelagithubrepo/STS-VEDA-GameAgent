@@ -28,6 +28,17 @@ Remote Play client simultaneously.
 The wrapper binds its API locally and uses the VEDA-specific configuration
 directory, preventing accidental reuse of another project's session state.
 
+For the active Codex Orchestrator, use the
+[reviewed play adapter](veda-reviewed-play.md) as the gameplay dispatcher. It
+checks one reviewed move, records the pending decision before input, and binds
+the observed result to SQLite. Keep one adapter and one warm bridge alive;
+do not reconstruct the full history or restart the bridge for each card.
+Capture the actual feed with `scripts/capture_observation.py --game-window`,
+then inspect it. The window may be covered by Codex without changing the
+captured source. This reviewed path is separate from the standalone runtime's
+automatic-reader calibration requirements. The examples below describe the
+transport; they do not replace per-run arming and reviewed input checks.
+
 ## Warm controller session
 
 For autonomous play, do not invoke `scripts/bridge tap` once per input. Each
@@ -50,9 +61,10 @@ is a `ready` event; all later responses include `latency_ms`.
 ```
 
 The process retains the encrypted session only while it is running, serializes
-all input, and releases every button/stick when it exits. VEDA should capture
-the screen once after a completed decision—not after every focus movement—unless
-the UI is ambiguous or the predicted transition fails to appear.
+all input, and attempts to release every button/stick when it exits; check its
+cleanup result. VEDA captures and verifies the screen after every atomic input,
+including focus movement, before sending another. Persistent connections and
+compact state reduce overhead without removing that verification boundary.
 
 The tracked `scripts/bridge_health.py` adapter retires the dependency's controller
 thread and sends feedback on one event loop. While the armed session is open, it

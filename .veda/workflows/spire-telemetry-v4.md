@@ -3,6 +3,16 @@
 This is a private, advisory-only logging workflow. It never sends game input,
 starts an LLM review, or invents an unseen game state.
 
+During Codex-operated Orchestrator play, use the integrated
+[reviewed play adapter](../../docs/veda-reviewed-play.md) and
+[PlayTelemetry connector](../../docs/veda-play-telemetry.md) for each pending
+input and observed outcome. Do not duplicate those writes with manual per-card
+commands below. For a game-window capture, first use
+`scripts/capture_observation.py --game-window`, inspect that saved image, and
+pass its exact path/hash/capture time. Whole-display `--capture` can show Codex
+instead of a covered QuickTime feed. Written fallback is valid for historical
+logging only; it cannot authorize a controller move.
+
 ## Evidence is mandatory for future decisions
 
 Spire—not the player—must create the private evidence record at each safe

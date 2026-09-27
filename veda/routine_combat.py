@@ -11,7 +11,7 @@ from typing import Any
 
 from .advisory import (DIRECT, REVIEWED_SPECIAL_CARDS, SPIKE_SLIMES,
                        _reviewed_spike_intent, _verified_costless_status,
-                       current_run_relic_reasons, metallicize_block, reviewed_collector_attack_roster,
+                       current_run_relic_reasons, metallicize_block, collector_turn_bound,
                        check_plan, current_cost, reviewed_card_type, validate_snapshot)
 from .calibration import COMBAT_CRITICAL_FIELDS, CalibrationReport
 from .combat import CardEffect, CombatEnemy, SequenceCheck, _scaled
@@ -112,7 +112,9 @@ def _context_reasons(observation: StructuredGameState, context: dict, *,
                 reasons.append('enemy Vulnerable or Artifact is unread')
     if state.get('powers_complete') is not True or not isinstance(state.get('powers'), dict):
         reasons.append('active powers are unconfirmed')
-    elif require_supported_effects and any(v for k, v in state['powers'].items() if k != 'Metallicize'):
+    elif require_supported_effects and any(v for k, v in state['powers'].items()
+            if k != 'Metallicize' and not (k in ('Artifact', 'Thorns')
+                and any(e.get('name') == 'The Collector' for e in enemies))):
         reasons.append('active power interactions require a separately supported planner')
     if require_supported_effects and state.get('unmodeled_effects') != []:
         reasons.append('unmodeled combat effects require escalation')
@@ -158,7 +160,7 @@ def _encounter_reasons(state: StructuredGameState, context: dict, name: str | No
     # list. A caller's claim that an arbitrary encounter is reviewed is not enough.
     if enemies and all(e['name'] in SPIKE_SLIMES and _reviewed_spike_intent(context['state'], e) for e in enemies):
         return []
-    if name == 'The Collector' and reviewed_collector_attack_roster(context['state']):
+    if name == 'The Collector' and collector_turn_bound(context['state'], context['inventory']['current']['relic']) is not None:
         return []
     profile = check_encounter(name, act=state.act)
     if not profile.known:
@@ -196,10 +198,11 @@ def _prediction(checked: dict, state: dict) -> SequenceCheck | None:
     return SequenceCheck(checked['allowed'], tuple(checked['reasons']), state['energy'] - energy,
         energy, forecast['block'], tuple(CombatEnemy(e.get('id', e['name']), e['hp'], e['block'],
         e.get('artifact', 0), e['vulnerable']) for e in forecast['enemies']),
-        forecast['player_hp'], forecast['incoming_displayed'], 0, forecast['player_hp'] <= 0)
+        forecast['player_hp'], forecast.get('incoming_upper_bound', forecast['incoming_displayed']),
+        0, forecast['player_hp'] <= 0)
 
 
-def _boundary_rank(state: dict, card: dict, action: dict) -> tuple | None:
+def _boundary_rank(state: dict, card: dict, action: dict, relics: list[str] | None = None) -> tuple | None:
     """Conservative ranking only, not a post-effect or enemy-turn prediction.
 
     Draws, generated/exhausted cards and debuffs cannot extend this action. Their
@@ -217,13 +220,28 @@ def _boundary_rank(state: dict, card: dict, action: dict) -> tuple | None:
     gained = gained * 3 // 4 if state['frail'] else gained
     block = state['block'] + gained + (metallicize_block(state) or 0)
     remaining = 0
+    killed_torches = []
     for enemy in state['enemies']:
         damage = 0
         if enemy.get('id', enemy['name']) == action.get('target') and 'base_damage' in spec:
             damage = _scaled(spec['base_damage'] + state['strength'],
                              weak=bool(state['weak']), vulnerable=bool(enemy['vulnerable']))
-        remaining += max(0, enemy['hp'] - max(0, damage - enemy['block']))
+        hp_after = max(0, enemy['hp'] - max(0, damage - enemy['block']))
+        remaining += hp_after
+        if enemy['name'] == 'Torch Head' and hp_after == 0:
+            killed_torches.append(enemy)
     incoming = sum(sum(e['intent_hits']) for e in state['enemies']) if remaining else 0
+    if any(e['name'] in ('The Collector', 'Torch Head') for e in state['enemies']):
+        bound = collector_turn_bound(state, relics)
+        if bound is None:
+            return None
+        # Do not credit unobserved enemy death/Thorns or a changed summon slot.
+        incoming = bound['incoming_upper_bound']
+        if bound['summon_damage_upper_bound_per_slot'] is not None:
+            # A kill before Spawn can replace a weak/low-damage torch with a
+            # fresh one. Never rank that attack using the smaller old intent.
+            incoming += sum(max(0, bound['summon_damage_upper_bound_per_slot']
+                                - e['intent_hits'][0]) for e in killed_torches)
     hp -= max(0, incoming - block)
     if hp <= 0:
         return None
@@ -306,7 +324,8 @@ def plan_routine_combat(state: StructuredGameState, calibration: CalibrationRepo
         forecast = checked.get('forecast')
         rank = ((sum(e['hp'] for e in forecast['enemies']), -forecast['player_hp'],
                  current['energy'] - checked['steps'][-1]['energy_after'], len(line)) if forecast else
-                _boundary_rank(current, hand[line[0]['card_id']], line[0]) if len(line) == 1 else None)
+                _boundary_rank(current, hand[line[0]['card_id']], line[0],
+                               context['inventory']['current']['relic']) if len(line) == 1 else None)
         if rank is not None and (best is None or rank < best[0]):
             best = rank, line[0], first_checks[key]
         if (forecast and not forecast['lethal_to_enemies'] and len(line) < max_depth

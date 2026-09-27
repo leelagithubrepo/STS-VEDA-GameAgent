@@ -72,13 +72,14 @@ class ReadinessTests(unittest.TestCase):
         self.assertTrue(any('random' in c for c in base['conditions']))
         self.assertEqual(upgraded['checked_support'], 'type_and_boundary_guard_only')
         self.assertFalse(upgraded['routine_candidate_registered'])
-        self.assertFalse(upgraded['selection_execution_implemented'])
+        self.assertTrue(upgraded['selection_execution_implemented'])
+        self.assertEqual(upgraded['selection_execution_scope'], 'reviewed choice contract only')
         self.assertFalse(base['executable_from_checkpoint'])
 
     def test_selection_and_passive_relic_scope_do_not_claim_full_effects(self):
         report = assess({'cards': ['Headbutt', 'Warcry', 'Dual Wield', 'Armaments'],
                          'relics': ['Shuriken', 'Red Mask', 'Potion Belt', 'Anchor', 'Unknown Relic']})
-        self.assertTrue(all(r['selection_execution_implemented'] is False for r in report['cards']))
+        self.assertTrue(all(r['selection_execution_implemented'] is True for r in report['cards']))
         self.assertIn('confirmed empty discard', ' '.join(report['cards'][0]['conditions']))
         self.assertEqual([r['routine_scope'] for r in report['relics']],
                          ['conditional_observed_state'] * 3 + ['routine_allowlist_only', 'unsupported_interaction'])
@@ -100,8 +101,10 @@ class ReadinessTests(unittest.TestCase):
         self.assertIs(report['checkpoint']['historical_only'], True)
         gates = {b['id'] for b in report['blockers']}
         self.assertTrue({'complete_runtime_reader', 'independent_runtime_validation', 'per_run_arming',
-                         'bridge_preflight', 'fresh_game_evidence', 'potion_execution', 'selection_execution',
-                         'noncombat_execution', 'runtime_ledger_lifecycle'} <= gates)
+                         'bridge_preflight', 'fresh_game_evidence', 'reviewed_execution_validation',
+                         'reviewed_contracts'} <= gates)
+        self.assertTrue({'potion_execution', 'selection_execution', 'noncombat_execution',
+                         'runtime_ledger_lifecycle'}.isdisjoint(gates))
 
     def test_historical_missing_and_future_times_never_become_current(self):
         checkpoint = historical_checkpoint()
@@ -128,8 +131,10 @@ class ReadinessTests(unittest.TestCase):
         for ascension in (None, 1, 2):
             report = assess({'current_state': {'next_boss': 'The Collector', 'ascension': ascension}})
             gates = {b['id'] for b in report['blockers']}
-            self.assertIn('collector_enemy_action_order', gates)
+            self.assertIn('collector_current_move_evidence', gates)
             self.assertEqual(report['boss_reference']['manifest_available'], ascension == 2)
+            self.assertEqual(report['boss_reference']['conservative_bound_registered'], ascension == 2)
+            self.assertFalse(report['boss_reference']['current_turn_bound_established'])
             self.assertEqual('recorded_boss_manifest' in gates, ascension != 2)
         report = assess({'current_state': {'floor': 32, 'ascension': 2}})
         self.assertIsNone(report['boss_reference']['name'])
@@ -139,7 +144,54 @@ class ReadinessTests(unittest.TestCase):
             'Explosive Potion', 'Fairy in a Bottle', 'Energy Potion']}})
         self.assertEqual([p['copies_in_record'] for p in report['potions']], [2, 1, 1])
         self.assertIn('not manually usable', report['potions'][1]['checked_scope'])
-        self.assertTrue(all(p['controller_execution_implemented'] is False for p in report['potions']))
+        self.assertEqual([p['controller_execution_implemented'] for p in report['potions']], [True, False, True])
+        self.assertTrue(all(p['hardware_execution_validated'] is False for p in report['potions']))
+
+    def test_implemented_reviewed_paths_do_not_satisfy_automatic_reader_or_live_gates(self):
+        checkpoint = historical_checkpoint()
+        checkpoint['implementation_inventory'] = [{'id': 'complete_runtime_reader', 'status': 'implemented'}]
+        checkpoint['execution_paths'] = {'codex_reviewed': {'controller_authorized': True}}
+        report = assess(checkpoint)
+        implementations = {r['id']: r for r in report['implementation_inventory']}
+        self.assertEqual(set(implementations), {'reviewed_choices', 'play_telemetry',
+                                             'codex_reviewed_session', 'collector_a2_bound'})
+        self.assertTrue(all(r['status'] == 'implemented' for r in implementations.values()))
+        paths = report['execution_paths']
+        self.assertEqual(paths['standalone_automatic']['implementation_status'], 'incomplete')
+        self.assertFalse(paths['standalone_automatic']['calibration_established'])
+        for path in paths.values():
+            self.assertFalse(path['runtime_authorized'])
+            self.assertFalse(path['automatic_recognition_complete'])
+        self.assertFalse(paths['codex_reviewed']['controller_authorized'])
+        self.assertFalse(paths['codex_reviewed']['hardware_execution_validated'])
+        gates = {r['id']: r for r in report['blockers']}
+        self.assertEqual(gates['complete_runtime_reader']['applies_to'], ['standalone_automatic'])
+        self.assertEqual(gates['reviewed_execution_validation']['applies_to'], ['codex_reviewed'])
+
+    def test_reviewed_selection_availability_does_not_add_unregistered_mechanics(self):
+        report = assess({'cards': ['Headbutt', 'Warcry+', 'True Grit+', 'Armaments']})
+        rows = {row['name']: row for row in report['cards']}
+        self.assertTrue(all(row['selection_execution_implemented'] for row in rows.values()))
+        self.assertTrue(rows['Headbutt']['routine_candidate_registered'])
+        self.assertIn('confirmed empty discard', ' '.join(rows['Headbutt']['conditions']))
+        for name in ('Warcry+', 'True Grit+', 'Armaments'):
+            self.assertFalse(rows[name]['routine_candidate_registered'])
+            self.assertFalse(rows[name]['exact_effect_registered'])
+        self.assertEqual(report['coverage_counts']['executable_cards_established'], 0)
+        self.assertEqual(set(next(row for row in report['blockers']
+                                  if row['id'] == 'recorded_card_planner_gaps')['cards']),
+                         {'Warcry+', 'True Grit+', 'Armaments'})
+
+    def test_collector_bound_scope_retains_nonexact_and_ascension_limits(self):
+        report = assess(historical_checkpoint())
+        boss = report['boss_reference']
+        self.assertEqual(boss['forecast_kind'], 'conservative_survival_bound')
+        self.assertFalse(boss['full_encounter_simulator'])
+        self.assertFalse(boss['identity_currently_verified'])
+        reason = next(row['reason'] for row in report['blockers']
+                      if row['id'] == 'collector_current_move_evidence')
+        for scope in ('Buff', 'Mega Debuff', 'Spawn/Revive', 'Other Ascensions', 'future rolled moves'):
+            self.assertIn(scope, reason)
 
     def test_malformed_or_unbounded_checkpoint_is_rejected(self):
         for doc in ([], {'current_state': []}, {'cards': 'Strike'}, {'cards': ['']},

@@ -14,6 +14,11 @@ The new worker transport is an integration point for such a reader, not a claim
 that recognition is solved. Current-deck effects, active powers, unfamiliar
 encounters and card-choice screens still have explicit support gaps.
 
+For the active Codex operator's reviewed play path, see
+[Play with Codex Orchestrator](veda-reviewed-play.md). That adapter uses explicit
+screen reviews and shares the pure combat input checks; it does not authorize
+this standalone reader-driven runtime or replace its calibration requirements.
+
 ## Offline use
 
 ```sh
