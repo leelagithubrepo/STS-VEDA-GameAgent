@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from .advisory import (DIRECT, REVIEWED_SPECIAL_CARDS, SPIKE_SLIMES,
-                       _reviewed_spike_intent, _verified_costless_dazed,
+                       _reviewed_spike_intent, _verified_costless_status,
+                       current_run_relic_reasons, metallicize_block, reviewed_collector_attack_roster,
                        check_plan, current_cost, reviewed_card_type, validate_snapshot)
 from .calibration import COMBAT_CRITICAL_FIELDS, CalibrationReport
 from .combat import CardEffect, CombatEnemy, SequenceCheck, _scaled
@@ -92,7 +93,7 @@ def _context_reasons(observation: StructuredGameState, context: dict, *,
                     or (card['title_color'] != 'white') != card['upgraded']):
                 reasons.append(f"{card['name']}: verify title color and upgrade state")
             cost = observed.get('current_cost')
-            if (cost is None and not _verified_costless_dazed(card)) or cost != card.get('cost'):
+            if (cost is None and not _verified_costless_status(card)) or cost != card.get('cost'):
                 reasons.append(f"{card['name']}: current cost is unread or inconsistent")
             if type(card.get('playable')) is not bool or card.get('type') is None:
                 reasons.append(f"{card['name']}: playability or card type is unread")
@@ -111,7 +112,7 @@ def _context_reasons(observation: StructuredGameState, context: dict, *,
                 reasons.append('enemy Vulnerable or Artifact is unread')
     if state.get('powers_complete') is not True or not isinstance(state.get('powers'), dict):
         reasons.append('active powers are unconfirmed')
-    elif require_supported_effects and any(state['powers'].values()):
+    elif require_supported_effects and any(v for k, v in state['powers'].items() if k != 'Metallicize'):
         reasons.append('active power interactions require a separately supported planner')
     if require_supported_effects and state.get('unmodeled_effects') != []:
         reasons.append('unmodeled combat effects require escalation')
@@ -125,7 +126,10 @@ def _context_reasons(observation: StructuredGameState, context: dict, *,
         if inventory.get('coverage', {}).get(kind) != 'complete':
             reasons.append(f'confirmed {kind} inventory is incomplete')
     relics = inventory.get('current', {}).get('relic', [])
-    unsupported = sorted(set(relics) - _PASSIVE_RELICS)
+    reasons.extend(current_run_relic_reasons(state, relics, inventory.get('current', {}).get('potion', [])))
+    if metallicize_block(state) is None:
+        reasons.append('Metallicize intensity is unknown or invalid')
+    unsupported = sorted(set(relics) - _PASSIVE_RELICS - {'Shuriken', 'Red Mask', 'Potion Belt'})
     if require_supported_effects and unsupported:
         reasons.append('unsupported relic interactions: ' + ', '.join(unsupported))
     return reasons
@@ -153,6 +157,8 @@ def _encounter_reasons(state: StructuredGameState, context: dict, name: str | No
     # Only a matching reviewed typed manifest can bypass the small old profile
     # list. A caller's claim that an arbitrary encounter is reviewed is not enough.
     if enemies and all(e['name'] in SPIKE_SLIMES and _reviewed_spike_intent(context['state'], e) for e in enemies):
+        return []
+    if name == 'The Collector' and reviewed_collector_attack_roster(context['state']):
         return []
     profile = check_encounter(name, act=state.act)
     if not profile.known:
@@ -209,7 +215,7 @@ def _boundary_rank(state: dict, card: dict, action: dict) -> tuple | None:
     gained = spec.get('base_block', 0)
     gained = max(0, gained + state['dexterity']) if gained and not state['no_block'] else 0
     gained = gained * 3 // 4 if state['frail'] else gained
-    block = state['block'] + gained
+    block = state['block'] + gained + (metallicize_block(state) or 0)
     remaining = 0
     for enemy in state['enemies']:
         damage = 0
@@ -251,7 +257,7 @@ def plan_routine_combat(state: StructuredGameState, calibration: CalibrationRepo
     for card in current['hand']:
         name = card['name']
         if card.get('playable') is not True:
-            if not _verified_costless_dazed(card):
+            if not _verified_costless_status(card):
                 deferred[f'{name}: not confirmed playable'] += 1
             continue
         if reviewed_card_type(name) != card['type'] or (name not in DIRECT and name not in REVIEWED_SPECIAL_CARDS):
@@ -261,7 +267,7 @@ def plan_routine_combat(state: StructuredGameState, calibration: CalibrationRepo
             deferred['Headbutt: confirmed discard-return choice is required'] += 1
             continue
         supported += 1
-        targets = [e.get('id', e['name']) for e in current['enemies'] if e['hp'] > 0] if card['type'] == 'Attack' else [None]
+        targets = [e.get('id', e['name']) for e in current['enemies'] if e['hp'] > 0] if card['type'] == 'Attack' or name == 'Spot Weakness' else [None]
         for target in targets:
             action = {'kind': 'card', 'card_id': card['id']}
             if target is not None:

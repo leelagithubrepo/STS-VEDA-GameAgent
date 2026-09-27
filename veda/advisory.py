@@ -18,6 +18,8 @@ DATA = Path(__file__).resolve().parents[1] / 'data'
 SCHEMA = 'spire.advisory.v1'
 SPIKE_SLIME_SOURCE = 'https://slay-the-spire.fandom.com/wiki/Spike_Slime'
 SPIKE_SLIMES = ('Spike Slime (L)', 'Spike Slime (M)')
+COLLECTOR_SOURCE = 'https://slaythespire-archive.fandom.com/wiki/The_Collector'
+COLLECTOR_ENEMIES = ('The Collector', 'Torch Head')
 
 
 @lru_cache(maxsize=8)
@@ -147,13 +149,15 @@ def _verified_costless_dazed(card: dict) -> bool:
 
 
 def boss_manifest(name: str | None, ascension: int | None) -> dict | None:
-    if ascension is None or not 0 <= ascension <= 20:
+    if type(ascension) is not int or not 0 <= ascension <= 20:
         return None
     pack = rule_pack()
     boss = pack.get('bosses', {}).get(name)
     if boss is None:
         return None
-    variant = next(v for v in boss['variants'] if v['min_ascension'] <= ascension <= v['max_ascension'])
+    variant = next((v for v in boss['variants'] if v['min_ascension'] <= ascension <= v['max_ascension']), None)
+    if variant is None:
+        return None
     return {'name': name, 'ascension': ascension, 'version': pack['version'],
             'reviewed_at': pack['reviewed_at'], 'sources': boss['sources'], **variant, 'behavior': boss['behavior']}
 
@@ -189,6 +193,17 @@ REVIEWED_SPECIAL_CARDS = {
     'Shrug It Off': {'type': 'Skill', 'base_block': 8, 'draw': 1},
     'Shrug It Off+': {'type': 'Skill', 'base_block': 11, 'draw': 1},
     'Slimed': {'type': 'Status', 'exhaust': True},
+    # Exact September 27 inventory variants. Draws, choices, powers, generated
+    # statuses and changed enemy debuffs always stop the proposed line.
+    'Power Through+': {'type': 'Skill', 'base_block': 20,
+                       'generate': {'card': 'Wound', 'count': 2, 'zone': 'hand'}},
+    'Metallicize': {'type': 'Power', 'end_turn_block': 3},
+    'Uppercut': {'type': 'Attack', 'base_damage': 13, 'weak': 1, 'vulnerable': 1},
+    'Warcry': {'type': 'Skill', 'draw': 1, 'hand_to_draw': 1, 'exhaust': True},
+    'Spot Weakness': {'type': 'Skill', 'strength_if_target_attacks': 3},
+    # Archived current-deck text: Block first, then random other-card exhaust.
+    # The identity/zone change is deliberately unknown until a fresh reading.
+    'True Grit': {'type': 'Skill', 'base_block': 7, 'random_exhaust': 1},
 }
 
 
@@ -237,6 +252,91 @@ def _reviewed_spike_intent(state: dict, enemy: dict) -> bool:
     return False
 
 
+def _verified_costless_status(card: dict) -> bool:
+    return _verified_costless_dazed(card) or (
+        card.get('name') == 'Wound' and card.get('type') == 'Status'
+        and 'cost' in card and card['cost'] is None
+        and card.get('upgraded') is False and card.get('title_color') == 'white'
+        and card.get('playable') is False and card.get('unplayable') is True)
+
+
+def current_run_relic_reasons(state: dict, relics: list[str], potions: list[str]) -> list[str]:
+    """Observed state, never relic ownership alone, establishes settled effects."""
+    reasons = []
+    if 'Shuriken' in relics:
+        counters = state.get('counters')
+        count = counters.get('shuriken') if isinstance(counters, dict) else None
+        if type(count) is not int or not 0 <= count <= 2:
+            reasons.append('Shuriken current-turn attack counter is unknown or outside 0–2')
+    if 'Red Mask' in relics and any(
+            type(e.get('weak')) is not int or type(e.get('artifact')) is not int
+            for e in state.get('enemies', [])):
+        reasons.append('observe every enemy Weak/Artifact after Red Mask; never apply its opening effect from ownership alone')
+    # Potion Belt has no combat-resolution trigger. Complete potion inventory
+    # is checked by the caller; this function never invents slot contents.
+    return reasons
+
+
+def metallicize_block(state: dict) -> int | None:
+    """A known intensity grants end-turn Block, independently of card modifiers."""
+    powers = state.get('powers')
+    if not isinstance(powers, dict):
+        return None
+    value = powers.get('Metallicize', 0)
+    if type(value) is not int or value < 0:
+        return None
+    # Panic Button's No Block, like Frail/Dexterity, changes card Block only.
+    return value
+
+
+def reviewed_collector_attack_roster(state: dict) -> bool:
+    """Only current, complete A2 attack-only rosters have an unchanged hit sum.
+
+    Spawn/Revive and Buff/Mega Debuff need a separate enemy-action-order model:
+    today's displayed ally attack may change during the same enemy turn.
+    """
+    enemies = state.get('enemies', [])
+    if (state.get('ascension') != 2 or state.get('enemies_complete') is not True
+            or not 1 <= len(enemies) <= 3
+            or sum(e.get('name') == 'The Collector' for e in enemies) != 1):
+        return False
+    for e in enemies:
+        evidence = e.get('evidence') or {}
+        if (e.get('name') not in COLLECTOR_ENEMIES
+                or evidence.get('source') != COLLECTOR_SOURCE
+                or evidence.get('kind') != 'reviewed_reference'
+                or evidence.get('observed_intent') is not True
+                or e.get('move') != ('Fireball' if e['name'] == 'The Collector' else 'Tackle')
+                or not isinstance(e.get('intent_hits'), list) or len(e['intent_hits']) != 1
+                or e.get('intent_effects') != []):
+            return False
+    return True
+
+
+def _explosive_effect(state: dict, relics: list[str], step: dict) -> tuple[dict | None, list[str]]:
+    enemies = state['enemies']
+    ids = [e.get('id', e['name']) for e in enemies if e.get('hp', 0)]
+    targets = step.get('targets')
+    if (state.get('enemies_complete') is not True or not isinstance(targets, list)
+            or any(not isinstance(t, str) for t in targets) or len(set(targets)) != len(targets)
+            or set(targets) != set(ids)):
+        return None, ['Explosive Potion requires the complete current living target roster']
+    if 'Sacred Bark' in relics:
+        return None, ['Explosive Potion modifier Sacred Bark is outside this reviewed variant']
+    if (state.get('unmodeled_effects') != [] or any(
+            type(e.get('hp')) is not int or type(e.get('block')) is not int
+            or e.get('potion_damage_modifiers') != [] or e.get('damage_reactions') != []
+            for e in enemies)):
+        return None, ['Explosive Potion needs known HP/Block and explicitly reviewed damage modifiers/reactions for every enemy']
+    outcomes = []
+    for e in enemies:
+        absorbed = min(e['block'], 10) if e['hp'] else 0
+        outcomes.append({'id': e.get('id', e['name']), 'hp': max(0, e['hp'] - 10 + absorbed),
+                         'block': e['block'] - absorbed})
+    return {'base_damage': 10, 'targeting': 'all_living_enemies', 'enemies': outcomes,
+            'scope': 'immediate_damage_only', 'observe_after': True}, []
+
+
 def check_plan(context: dict, plan: dict) -> dict:
     """Check legality and dependencies; approval never means automatic input."""
     if not isinstance(plan, dict):
@@ -267,10 +367,17 @@ def check_plan(context: dict, plan: dict) -> dict:
             reasons.append(f'confirmed {category} inventory is incomplete')
     relics = inventory.get('current', {}).get('relic', [])
     potions = inventory.get('current', {}).get('potion', [])
+    reasons.extend(current_run_relic_reasons(state, relics, potions))
+    if metallicize_block(state) is None:
+        reasons.append('Metallicize intensity is unknown or invalid')
     counters = state.get('counters', {})
     boss = context.get('boss_manifest')
     if context.get('encounter_type') == 'boss' and boss is None:
         reasons.append('load a reviewed manifest for this boss and Ascension')
+    if any(e.get('name') in COLLECTOR_ENEMIES for e in enemies):
+        expected = boss_manifest('The Collector', state.get('ascension'))
+        if expected is None or boss != expected or context.get('encounter_type') != 'boss':
+            reasons.append('Collector requires its matching reviewed Ascension manifest and boss context')
     time_eater = any(e.get('name') == 'Time Eater' for e in enemies)
     time_count = counters.get('time_warp') if time_eater else 0
     choker = counters.get('velvet_choker') if 'Velvet Choker' in relics else 0
@@ -288,12 +395,18 @@ def check_plan(context: dict, plan: dict) -> dict:
     powers = state.get('powers', {})
     energy, block = state['energy'], state['block']
     forecast_enemies = [dict(e) for e in enemies]
+    shuriken_count = counters.get('shuriken') if 'Shuriken' in relics else None
     numeric = state.get('unmodeled_effects') == [] and len(enemies) == 1
     numeric = numeric and not powers.get('Corruption') and not powers.get('Feel No Pain') and not any(
-        r in relics for r in ('Kunai', 'Shuriken', 'Pen Nib', 'Necronomicon', 'Nunchaku', 'Abacus', 'Ink Bottle'))
+        r in relics for r in ('Kunai', 'Pen Nib', 'Necronomicon', 'Nunchaku', 'Abacus', 'Ink Bottle'))
     if len(steps) == 1 and steps[0].get('kind') == 'end_turn' and state.get('unmodeled_effects') == []:
         numeric = True  # No card triggers: use existing Block as a conservative survival bound.
     numeric = numeric and all(e.get('hp') is not None and e.get('block') is not None and e.get('vulnerable') is not None for e in enemies)
+    collector_present = any(e.get('name') in COLLECTOR_ENEMIES for e in enemies)
+    collector_attacks = reviewed_collector_attack_roster(state) if collector_present else False
+    if collector_present and not collector_attacks:
+        numeric = False
+        notes.append('Collector roster/move is not a reviewed unchanged attack-only turn; summon, buff and debuff ordering must be observed, not inferred')
     if any(not _reviewed_spike_intent(state, e) for e in enemies):
         numeric = False
         notes.append('Enemy intent effects lack a matching reviewed move, Ascension and evidence; no survival forecast is available')
@@ -312,6 +425,11 @@ def check_plan(context: dict, plan: dict) -> dict:
             if name not in potions or name == 'Fairy in a Bottle':
                 reasons.append('potion is absent or cannot be drunk manually')
             checked.append({'kind': kind, 'name': name, 'energy_after': None, 'observe_after': True})
+            if name == 'Explosive Potion':
+                effect, gaps = _explosive_effect(state, relics, step)
+                reasons.extend(gaps)
+                if effect is not None:
+                    checked[-1]['reviewed_effect'] = effect
             boundary = True
             numeric = False
             continue
@@ -326,7 +444,7 @@ def check_plan(context: dict, plan: dict) -> dict:
                 if card['name'].rstrip('+') == 'Body Slam':
                     notes.append(f"Body Slam base damage now is {block}; include Strength, Weak, enemy Vulnerable and turn limits")
             if any(c.get('playable') is None or (
-                    current_cost(c, powers) is None and not _verified_costless_dazed(c))
+                    current_cost(c, powers) is None and not _verified_costless_status(c))
                     for c in hand.values()):
                 reasons.append('unread hand card prevents the zero-cost review')
             checked.append({'kind': kind, 'energy_after': energy, 'observe_after': True})
@@ -357,6 +475,14 @@ def check_plan(context: dict, plan: dict) -> dict:
             reasons.append('Velvet Choker prevents another card')
         if card.get('type') == 'Attack' and step.get('target') not in [e.get('id', e['name']) for e in forecast_enemies if e.get('hp') is not None and e['hp'] > 0]:
             reasons.append(f'{name} needs a confirmed living target')
+        if name == 'Spot Weakness':
+            target = next((e for e in enemies if e.get('id', e['name']) == step.get('target') and type(e.get('hp')) is int and e['hp'] > 0), None)
+            if target is None or not target.get('intent_hits'):
+                reasons.append('Spot Weakness needs a confirmed living target with a current attack intent')
+        if name == 'Power Through+' and len(hand) + 2 > 10:
+            reasons.append('Power Through+ status overflow requires a separately reviewed hand-limit outcome')
+        if name == 'Warcry' and step.get('return_card_id') is not None:
+            reasons.append('Warcry draws before selection; observe the drawn hand before choosing its return card')
         if base == 'Headbutt':
             discard = state.get('piles', {}).get('discard')
             if discard is None or (discard and step.get('return_card') not in discard):
@@ -410,13 +536,23 @@ def check_plan(context: dict, plan: dict) -> dict:
                         notes.append('The attack reaches the observed Split threshold; inspect the new intent before continuing or forecasting the enemy turn')
         else:
             numeric = False
-        boundary = split_boundary or not numeric or name not in DIRECT or base in BOUNDARIES or (time_eater and time_count == 12)
+        shuriken_trigger = False
+        if shuriken_count is not None and card['type'] == 'Attack':
+            shuriken_count = (shuriken_count + 1) % 3
+            shuriken_trigger = shuriken_count == 0
+            if shuriken_trigger:
+                numeric = False
+                notes.append('Third attack triggers Shuriken; observe Strength and the reset attack counter before another play')
+        boundary = split_boundary or shuriken_trigger or not numeric or name not in DIRECT or base in BOUNDARIES or (time_eater and time_count == 12)
         if time_eater and time_count == 12:
             forced_end = True
             notes.append('The twelfth card ends the turn and adds 2 enemy Strength; recheck the resulting attack')
         checked.append({'kind': kind, 'card_id': card['id'], 'name': name, 'target': step.get('target'),
                         'energy_after': energy, 'time_warp_after': time_count if time_eater else None,
                         'choker_after': choker if 'Velvet Choker' in relics else None, 'observe_after': boundary})
+        if shuriken_count is not None:
+            checked[-1]['shuriken_after'] = shuriken_count
+            checked[-1]['shuriken_strength_gain'] = 1 if shuriken_trigger else 0
         if immediate_effect:
             checked[-1]['reviewed_effect'] = json.loads(json.dumps(immediate_effect))
         if split_boundary:
@@ -438,7 +574,11 @@ def check_plan(context: dict, plan: dict) -> dict:
         # End-of-turn statuses and relic timing are outside this direct model.
         end_damage = state.get('end_turn_damage')
         if end_damage == 0 and numeric:
-            forecast = {'block': block, 'incoming_displayed': incoming, 'player_hp': state['hp'] - max(0, incoming - block),
+            end_block = metallicize_block(state)
+            survival_block = block + (end_block if not kill else 0)
+            forecast = {'block': block, 'end_turn_block': end_block if not kill else 0,
+                        'survival_block': survival_block, 'incoming_displayed': incoming,
+                        'player_hp': state['hp'] - max(0, incoming - survival_block),
                         'enemies': forecast_enemies, 'lethal_to_enemies': kill}
             if any(e.get('intent_effects') or e.get('move') == 'Split' for e in enemies):
                 notes.append('The survival bound covers this displayed enemy turn only; observe status/debuff changes and any Split children before further advice')

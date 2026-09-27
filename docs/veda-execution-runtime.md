@@ -43,16 +43,32 @@ inventory and modeled effects. It emits only the first checked action. Draw,
 exhaust, generated-card and HP-loss effects require a new observation and plan.
 Unsupported affordable cards prevent a fallback End Turn.
 
-Every input has a unique request ID and an attempted journal record flushed to
+Live construction requires a persistent action journal. Its first append syncs
+the file and newly created directory entries before any input; a sync failure
+stops the loop. Every input has a unique request ID and an attempted journal record flushed to
 disk before transmission. Focus movement, selection, targeting, card resolution
 and End Turn each require a fresh frame. Every settled reading is checked for
 visual/context agreement. A changed snapshot timestamp alone is not a game
 transition. Confirmed journal records include the observed state and frame hash.
 
+Before a potentially consequential card or End Turn input, the runtime saves
+the before-image in the configured evidence directory. It saves the verified
+after-image before marking that input verified. Files are addressed by their
+content hash, written without overwriting existing evidence, and survive
+working-cache eviction and shutdown. Failed or uncertain navigation also retains
+the available before/after images. Successful focus-only moves keep their
+temporary frame identities without archiving every intermediate image. A
+bounded pending-image snapshot protects the before-image while animations are
+checked. Retention failure before a consequential input prevents sending;
+failure after sending leaves the action unresolved. These receipts preserve
+evidence, not recognition accuracy or permission to act.
+
 An uncertain send is never replayed automatically. The runtime attempts one
 fresh reconciliation observation, stops and leaves the action unresolved.
 Restart observes before stopping on unresolved actions; an operator must reconcile
 them using evidence. A transport acknowledgement alone never verifies gameplay.
+Ordinary capture-provider failures produce a structured stop report after the
+existing bounded capture retry and adapter cleanup; they never repeat an input.
 Stop requests, stale frames and the wall-clock budget are checked again after
 planning/journaling, immediately before sending.
 
@@ -105,7 +121,9 @@ Monotonic traces correlate run, floor, turn, decision, action, frame and request
 IDs. Spans cover acquisition, image preparation, state extraction, parsing,
 consistency/rules, planning, controller round trip, animation/verification,
 telemetry and recovery. `input_verification` measures the complete input and
-verification path including durable logging. The local vision provider separately
+verification path including durable logging and action-evidence retention.
+`action_evidence` reports retention work separately. `evidence_errors` identifies
+failed diagnostic retention; it does not resolve an uncertain action. The local vision provider separately
 measures its actual `model_request_round_trip`; this is not internal thinking time.
 
 Reports include total wall time, active time, explicit pause/maintenance intervals,
@@ -121,8 +139,11 @@ and observation cadence remain historical record intervals, not active-play time
 
 Live frame storage uses one temporary directory and a small bounded ring. Every
 frame, including an ephemeral one, has a UUID and content hash. A boundary frame
-can be retained before cleanup. The default capture still uses the existing
-screenshot subprocess; persistent in-memory OS capture is not implemented.
+can be retained before cleanup. Live-frame age starts at the capture request,
+so capture, encoding and hashing cannot restart the freshness clock. This is a
+conservative bound, not proof of exact rendering time or correct viewport. The
+default still uses the existing screenshot subprocess; persistent in-memory
+OS capture is not implemented.
 Expensive public reports, exports and website updates are outside the action loop.
 
 ## Evidence from this implementation

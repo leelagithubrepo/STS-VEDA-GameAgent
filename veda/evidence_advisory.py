@@ -169,7 +169,8 @@ def advisory_context(snapshot, *, mode="review", as_of=None, max_age_seconds=180
     state = {**player, **{key: deepcopy(statuses["player"][key]) for key in status_fields}, "schema": "spire.advisory.v1",
              "observed_at": frame["observed_at"], "hand_complete": True, "powers_complete": True,
              "hand": [deepcopy(cards[ident]) for ident in hand_data["order"]],
-             "enemies": ordered_enemies, "piles": piles}
+             "enemies": ordered_enemies, "enemies_complete": sections["enemies"]["complete"] is True,
+             "piles": piles}
     validate_snapshot(state)
     result["state"] = state
     result["rules"] = relevant_rules(state, inventory)
@@ -186,17 +187,11 @@ def advisory_context(snapshot, *, mode="review", as_of=None, max_age_seconds=180
     return result
 
 
-def check_evidence(journal, *, source_files, plan=None, mode="review", as_of=None):
-    """Replay the ledger, verify image identities, then invoke shared tactics."""
+def _evaluate_snapshot(snapshot, *, plan=None, mode="review", as_of=None):
+    """Shared tactics for an already validated ledger; no source authorization."""
     from .inspection_plan import plan_inspections
 
-    started = time.monotonic()
-    sources = verify_sources(journal, source_files)
-    verified_at = time.monotonic()
-    ledger = EvidenceLedger.from_dict(journal)
-    snapshot = ledger.snapshot()
     context = advisory_context(snapshot, mode=mode, as_of=as_of)
-    assembled_at = time.monotonic()
     checked = check_plan(context, plan) if plan is not None else None
     action_names = []
     if context.get("state") and isinstance(plan, dict):
@@ -224,9 +219,6 @@ def check_evidence(journal, *, source_files, plan=None, mode="review", as_of=Non
     inspections = plan_inspections(snapshot, decision=decision)
     inspections["advisory_blockers"] = list(context["unknowns"])
     inspections["decision_blocked"] = inspections["decision_blocked"] or bool(context["unknowns"])
-    # Catch source mutation during replay/checking instead of publishing mixed evidence.
-    if verify_sources(journal, source_files) != sources:
-        raise ValueError("source changed during advisory assembly")
     kinds = sorted({item["origin"]["kind"] for section in snapshot["sections"].values()
                     for item in section["evidence"] if "origin" in item})
     return {"schema": "veda.evidence-advisory.v1", "mode": mode,
@@ -234,11 +226,27 @@ def check_evidence(journal, *, source_files, plan=None, mode="review", as_of=Non
                               and (checked is None or checked["allowed"]),
             "runtime_authorized": False, "controller_authorized": False,
             "automatic_recognition_complete": False,
-            "provenance_kinds": kinds, "sources": sources, "snapshot": snapshot,
+            "provenance_kinds": kinds, "snapshot": snapshot,
             "context": context, "checked_plan": checked, "inspections": inspections,
-            "timing_ms": {"source_verification": (verified_at-started)*1000,
-                          "ledger_and_context": (assembled_at-verified_at)*1000,
-                          "plan_and_final_source_verification": (time.monotonic()-assembled_at)*1000},
             "limitations": ["Source hashes verify file identity, not the truth of a reviewer's labels.",
                             "Unlogged physical input must be reported to invalidate current evidence.",
                             "A checked plan is advisory only; execution still requires separate live calibration and run arming."]}
+
+
+def check_evidence(journal, *, source_files, plan=None, mode="review", as_of=None):
+    """Replay the ledger, verify image identities, then invoke shared tactics."""
+    started = time.monotonic()
+    sources = verify_sources(journal, source_files)
+    verified_at = time.monotonic()
+    ledger = EvidenceLedger.from_dict(journal)
+    snapshot = ledger.snapshot()
+    assembled_at = time.monotonic()
+    result = _evaluate_snapshot(snapshot, plan=plan, mode=mode, as_of=as_of)
+    # Catch source mutation during replay/checking instead of publishing mixed evidence.
+    if verify_sources(journal, source_files) != sources:
+        raise ValueError("source changed during advisory assembly")
+    result.update(sources=sources, timing_ms={
+        "source_verification": (verified_at-started)*1000,
+        "ledger_and_context": (assembled_at-verified_at)*1000,
+        "plan_and_final_source_verification": (time.monotonic()-assembled_at)*1000})
+    return result

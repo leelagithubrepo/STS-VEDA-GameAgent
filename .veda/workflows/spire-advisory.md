@@ -3,10 +3,17 @@
 This workflow remains watch-only. The player operates the game. It does not
 start a controller session or an automatic LLM service.
 
-For multiple inspections, use the source-bound evidence ledger and
-`scripts/check_combat_evidence.py` described in `docs/veda-combat-evidence.md`.
-This shares the tactical checker below, preserves reader/reviewer provenance,
-and requests missing views. It does not promote partial OCR to a complete hand.
+For live advisory combat use the persistent session in
+`docs/veda-advisory-session.md` (`scripts/veda_advisory_session.py`). Open it once
+per play block, request its compact summary after compaction, and resolve one
+observed action before recommending another. Save a pause with
+`scripts/veda_checkpoint.py` from `docs/veda-checkpoint.md`. Do not rebuild the
+historical ledger during combat. Reader/reviewer provenance stays explicit;
+partial OCR never becomes a complete hand.
+
+For offline review use `scripts/check_combat_evidence.py` from
+`docs/veda-combat-evidence.md`. The SQLite workflow below remains available for
+explicit durable decisions; do not duplicate both full workflows per card.
 Before committing HP or Time Eater's twelfth card, checked plans must include a
 `potion_review` reason for every available manual potion. Fairy is automatic.
 
@@ -53,10 +60,10 @@ still mandatory after the player changes anything.
 Live play uses a two-tier loop. Every meaningful decision, draw, enemy turn,
 potion, status change, generated card, lethal calculation, and end-turn choice
 still requires a fresh frame and verification. Routine low-risk card movements
-are kept in the in-memory combat ledger and are summarized at the next
-meaningful boundary; they do not create a SQLite decision, screenshot archive,
-inbox check, or retrospective while combat is active. The bridge remains one
-persistent warm session.
+are kept in the source-bound session and summarized at the next boundary;
+they do not create a SQLite decision, inbox check or retrospective during combat.
+The session retains the images that support advice. Advisory mode never starts
+a bridge.
 
 Use `python3 scripts/capture_observation.py --ephemeral` for a routine frame
 that is needed only to verify the next action. Keep the default archived
@@ -94,7 +101,9 @@ overhead and should be addressed there rather than by reducing safety checks.
   survival forecast; an unavailable forecast is not approval.
 - **Bosses:** confirm inventory with `boss-preflight`. Current boss/Ascension
   must have a reviewed local manifest and visible intent. The initial pack
-  covers Bronze Automaton and Time Eater at A0–20. Other bosses require research
+  covers Bronze Automaton and Time Eater at A0–20, plus a bounded A2 Collector
+  manifest. Collector summon/buff/debuff ordering remains unsupported; only
+  complete observed attack-only rosters support its turn forecast. Other bosses require research
   and an updated pack before checked advice. Community sources are attributed;
   they are not labeled official. The visible screen outranks an expected move.
 - **Rest sites:** use `campfire-advice`. Compare Rest and Smith using current

@@ -1,11 +1,15 @@
 import copy
+import os
+import stat
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from test_execution import contract_manifest, reading
 from veda.calibration import CalibrationReport
-from veda.execution import ActionJournal, ExecutionLoop, RUNTIME_FIELDS, RuntimeStop
+from veda.execution import ActionJournal, ARM_PHRASE, ExecutionLoop, RUNTIME_FIELDS, RuntimeStop
 from veda.execution_adapters import RecordedInterpreter, ReplayController, ReplaySource
 
 
@@ -84,6 +88,59 @@ class RuntimeGuardTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 ExecutionLoop(None, None, None, run_id='x',
                     calibration=CalibrationReport({}, 0), max_seconds=value)
+
+    def test_live_constructor_requires_persistent_journal_before_adapter_use(self):
+        from test_runtime_authorization import authorize, identity, synthetic_report
+        with TemporaryDirectory() as directory:
+            reader = identity(directory)
+            authorization = authorize(synthetic_report(reader), reader)
+            options = dict(mode='live', arm=ARM_PHRASE, run_id='synthetic-only',
+                calibration=authorization.calibration, authorization=authorization,
+                evidence_directory=Path(directory) / 'evidence')
+            source = SimpleNamespace(provenance='live_capture')
+            interpreter = SimpleNamespace(command=reader['command'], recognizer_identity=reader)
+            for journal in (None, ActionJournal()):
+                with self.subTest(journal=journal), self.assertRaisesRegex(RuntimeStop, 'persistent action journal'):
+                    ExecutionLoop(source, interpreter, object(), journal=journal, **options)
+            journal = ActionJournal(Path(directory) / 'journal.jsonl')
+            loop = ExecutionLoop(source, interpreter, object(), journal=journal, **options)
+            self.assertIs(loop.journal, journal)
+            self.assertFalse(journal.path.exists())
+
+    def test_journal_directory_sync_failure_stops_before_input(self):
+        real_fsync = os.fsync
+        def fail_directory(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError('synthetic journal directory sync failure')
+            return real_fsync(fd)
+        with TemporaryDirectory() as directory:
+            journal = ActionJournal(Path(directory) / 'new' / 'nested' / 'actions.jsonl')
+            manifest = contract_manifest(directory)
+            with patch('veda.execution.os.fsync', side_effect=fail_directory):
+                result, controller = self.run_fixture(directory, manifest, journal=journal)
+            self.assertEqual(controller.commands, [])
+            self.assertIn('journal directory sync failure', result['reason'])
+            self.assertFalse(journal._directory_synced)
+            # The possibly persisted attempted row is conservative on restart.
+            self.assertEqual(len(ActionJournal(journal.path).unresolved()), 1)
+
+    def test_first_journal_append_syncs_new_directory_entries_once(self):
+        real_fsync = os.fsync
+        synced = []
+        def record_sync(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                synced.append(os.fstat(fd).st_ino)
+            return real_fsync(fd)
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'new' / 'nested' / 'actions.jsonl'
+            journal = ActionJournal(path)
+            with patch('veda.execution.os.fsync', side_effect=record_sync):
+                journal.append(status='attempted', action_id='synthetic')
+                first = list(synced)
+                journal.append(status='not_sent', action_id='synthetic')
+            self.assertEqual(set(first), {p.stat().st_ino for p in (path.parent, path.parent.parent, Path(directory))})
+            self.assertEqual(synced, first)
+            self.assertEqual(ActionJournal(path).unresolved(), [])
 
 
 if __name__ == '__main__':

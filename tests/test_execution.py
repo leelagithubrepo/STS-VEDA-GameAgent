@@ -11,6 +11,7 @@ from unittest.mock import patch
 from veda.calibration import CalibrationReport
 from veda.execution import ActionJournal, ExecutionLoop, RUNTIME_FIELDS, RuntimeStop
 from veda.execution_adapters import RecordedInterpreter, ReplayController, ReplaySource
+from veda.runtime_frames import BoundedCaptureSource, retain_snapshot
 from veda.vision import StructuredGameState, VisibleEnemy
 
 
@@ -72,6 +73,29 @@ def contract_manifest(directory):
     return dict(run_id='fixture-run', evidence_kind='synthetic_contract_not_vision_validation',
                 frames=frames, expected_commands=[['left'], ['cross'], ['cross']],
                 calibration={'field_accuracy': {k: 1.0 for k in RUNTIME_FIELDS}, 'total_frames': 12})
+
+
+class EphemeralFixtureSource(BoundedCaptureSource):
+    """Fake capture only: copies synthetic bytes into a two-frame working cache."""
+    def __init__(self, manifest, directory, *, fail_after=None):
+        self.rows = iter(manifest['frames'])
+        self.base, self.current = Path(directory), None
+        self.capture_calls, self.closed = 0, False
+        self.fail_after = fail_after
+        super().__init__(capture=self._capture_fixture, max_frames=2)
+
+    def _capture_fixture(self, directory):
+        self.capture_calls += 1
+        if self.fail_after is not None and self.capture_calls > self.fail_after:
+            raise RuntimeError('synthetic capture unavailable')
+        self.current = next(self.rows)
+        path = directory / f'frame-{self.capture_calls}.dat'
+        path.write_bytes((self.base / self.current['image']).read_bytes())
+        return path
+
+    def close(self):
+        self.closed = True
+        super().close()
 
 
 class ExecutionTests(unittest.TestCase):
@@ -177,6 +201,7 @@ class ExecutionTests(unittest.TestCase):
                 self.assertIn('inconsistent', result['reason'])
                 self.assertEqual(len(result['unresolved_actions']), 1)
 
+
     def test_selection_frame_is_checked_before_target_confirmation(self):
         with TemporaryDirectory() as d:
             manifest = contract_manifest(d)
@@ -216,6 +241,165 @@ class ExecutionTests(unittest.TestCase):
                 result, controller = self.execute(d, manifest)
                 self.assertEqual(len(controller.commands), 1, result)
                 self.assertEqual(len(result['unresolved_actions']), 1)
+
+class ActionEvidenceTests(unittest.TestCase):
+    def execute(self, directory, manifest, *, source=None, controller=None,
+                journal=None, **options):
+        source = source or EphemeralFixtureSource(manifest, directory)
+        controller = controller or ReplayController(manifest['expected_commands'])
+        journal = journal or ActionJournal(Path(directory) / 'actions.jsonl')
+        loop = ExecutionLoop(source, RecordedInterpreter(source), controller,
+            calibration=CalibrationReport({key: 1.0 for key in RUNTIME_FIELDS}, 12),
+            run_id=manifest['run_id'], max_inputs=options.pop('max_inputs', 3),
+            evidence_directory=Path(directory) / 'evidence', journal=journal, **options)
+        return loop.run(), source, controller, journal
+
+    def assert_durable(self, identity):
+        self.assertTrue(identity['durable'])
+        path = Path(identity['image_path'])
+        self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), identity['sha256'])
+        self.assertFalse(Path(identity['original_image_path']).exists())
+
+    def test_consequential_pairs_survive_cache_eviction_and_close(self):
+        with TemporaryDirectory() as directory:
+            manifest = contract_manifest(directory)
+            result, source, controller, journal = self.execute(directory, manifest)
+            self.assertEqual(result['unresolved_actions'], [])
+            self.assertTrue(source.closed)
+            self.assertEqual(len(controller.commands), 3)
+            attempted = [row for row in journal.rows if row['status'] == 'attempted']
+            verified = [row for row in journal.rows if row['status'] == 'verified']
+            self.assertFalse(attempted[0]['frame']['durable'], 'successful focus is not archived')
+            for before, after in zip(attempted[1:], verified[1:]):
+                self.assert_durable(before['frame'])
+                self.assert_durable(after['frame'])
+                self.assertEqual(before['action_id'], after['action_id'])
+            self.assertEqual(len(list((Path(directory) / 'evidence').iterdir())), 3,
+                             'shared action boundaries and final retention are deduplicated')
+
+    def test_failed_navigation_retains_both_sides_without_replaying_input(self):
+        with TemporaryDirectory() as directory:
+            manifest = contract_manifest(directory)
+            manifest['frames'][1]['reading']['ui']['focused_card_id'] = 'd'
+            result, source, controller, journal = self.execute(directory, manifest)
+            self.assertEqual(len(controller.commands), 1)
+            self.assertEqual(len(result['unresolved_actions']), 1)
+            evidence = next(row for row in journal.rows if row['status'] == 'action_evidence')
+            self.assertIsNone(evidence['action_id'], 'evidence cannot resolve/reopen an action')
+            self.assert_durable(evidence['frames']['before'])
+            self.assert_durable(evidence['frames']['after'])
+
+    def test_unknown_input_retains_pair_and_is_never_replayed(self):
+        class Uncertain(ReplayController):
+            def call(self, command):
+                self.commands.append(command)
+                return {'status': 'unknown_outcome', 'request_id': command['request_id']}
+        with TemporaryDirectory() as directory:
+            result, source, controller, journal = self.execute(directory, contract_manifest(directory),
+                controller=Uncertain())
+            self.assertEqual(len(controller.commands), 1)
+            self.assertEqual(len(result['unresolved_actions']), 1)
+            evidence = next(row for row in journal.rows if row['status'] == 'action_evidence')
+            for identity in evidence['frames'].values():
+                self.assert_durable(identity)
+
+    def test_pending_before_survives_animation_eviction_on_failed_navigation(self):
+        with TemporaryDirectory() as directory:
+            manifest = contract_manifest(directory)
+            for row in manifest['frames'][1:3]:
+                row['reading']['ui']['phase'] = 'animating'
+            manifest['frames'][3]['reading'] = copy.deepcopy(manifest['frames'][0]['reading'])
+            result, source, controller, journal = self.execute(directory, manifest)
+            self.assertEqual(source.capture_calls, 4)
+            self.assertEqual(len(controller.commands), 1)
+            self.assertIn('mismatch', result['reason'])
+            evidence = next(row for row in journal.rows if row['status'] == 'action_evidence')
+            self.assert_durable(evidence['frames']['before'])
+            self.assertEqual(evidence['frames']['before']['sha256'], manifest['frames'][0]['sha256'])
+            self.assert_durable(evidence['frames']['after'])
+
+    def test_evidence_does_not_reopen_a_not_sent_action(self):
+        with TemporaryDirectory() as directory:
+            manifest = contract_manifest(directory)
+            result, source, controller, journal = self.execute(directory, manifest,
+                controller=ReplayController([['right']]))
+            self.assertEqual(len(controller.commands), 1)
+            self.assertEqual(result['unresolved_actions'], [])
+            evidence = next(row for row in journal.rows if row['status'] == 'action_evidence')
+            self.assertEqual(set(evidence['frames']), {'before'})
+            self.assert_durable(evidence['frames']['before'])
+
+    def test_archive_failure_before_consequential_input_prevents_send(self):
+        with TemporaryDirectory() as directory:
+            manifest = contract_manifest(directory)
+            manifest['frames'] = manifest['frames'][1:]
+            with patch('veda.execution.retain_snapshot', side_effect=OSError('synthetic disk failure')):
+                result, source, controller, journal = self.execute(directory, manifest)
+            self.assertEqual(controller.commands, [])
+            self.assertEqual(result['unresolved_actions'], [])
+            self.assertIn('disk failure', result['reason'])
+            self.assertFalse(any(row['status'] == 'attempted' for row in journal.rows))
+
+    def test_archive_failure_after_sent_input_stays_unresolved(self):
+        calls = 0
+        def fail_after_before(snapshot, directory):
+            nonlocal calls
+            calls += 1
+            if calls > 1:
+                raise OSError('synthetic after-evidence failure')
+            return retain_snapshot(snapshot, directory)
+        with TemporaryDirectory() as directory:
+            manifest = contract_manifest(directory)
+            manifest['frames'] = manifest['frames'][1:]
+            manifest['expected_commands'] = [['cross']]
+            with patch('veda.execution.retain_snapshot', side_effect=fail_after_before):
+                result, source, controller, journal = self.execute(directory, manifest)
+            self.assertEqual(len(controller.commands), 1)
+            self.assertEqual(len(result['unresolved_actions']), 1)
+            self.assertFalse(any(row['status'] == 'verified' for row in journal.rows))
+            self.assertTrue(result['evidence_errors'])
+
+    def test_capture_failures_return_report_and_release_source(self):
+        for successful_captures, expected_inputs in ((0, 0), (1, 1)):
+            with self.subTest(after=successful_captures), TemporaryDirectory() as directory:
+                manifest = contract_manifest(directory)
+                source = EphemeralFixtureSource(manifest, directory, fail_after=successful_captures)
+                result, source, controller, journal = self.execute(directory, manifest, source=source)
+                self.assertEqual(len(controller.commands), expected_inputs)
+                self.assertEqual(source.capture_calls, successful_captures + 2)
+                self.assertTrue(source.closed)
+                self.assertIn('capture failed after one retry', result['reason'])
+                self.assertEqual(len(result['unresolved_actions']), expected_inputs)
+                self.assertIn('metrics', result)
+
+    def test_disk_failure_after_send_and_diagnostic_journal_failure_return_report(self):
+        class FailingJournal(ActionJournal):
+            def append(self, **row):
+                if row['status'] != 'attempted':
+                    raise OSError('synthetic journal disk full')
+                return super().append(**row)
+        calls = 0
+        def fail_after_before(snapshot, directory):
+            nonlocal calls
+            calls += 1
+            if calls > 1:
+                raise OSError('synthetic evidence disk full')
+            return retain_snapshot(snapshot, directory)
+        with TemporaryDirectory() as directory:
+            manifest = contract_manifest(directory)
+            manifest['frames'] = manifest['frames'][1:]
+            manifest['expected_commands'] = [['cross']]
+            journal = FailingJournal(Path(directory) / 'actions.jsonl')
+            with patch('veda.execution.retain_snapshot', side_effect=fail_after_before):
+                result, source, controller, journal = self.execute(directory, manifest, journal=journal)
+            self.assertEqual(len(controller.commands), 1)
+            self.assertEqual(len(result['unresolved_actions']), 1)
+            self.assertEqual(ActionJournal(journal.path).unresolved(), result['unresolved_actions'])
+            self.assertTrue(source.closed)
+            self.assertIn('evidence disk full', result['reason'])
+            self.assertTrue(any(error['side'] == 'journal' for error in result['evidence_errors']))
+            self.assertIn('metrics', result)
+
 
 
 if __name__ == '__main__':

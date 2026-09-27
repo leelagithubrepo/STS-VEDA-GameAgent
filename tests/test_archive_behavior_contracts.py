@@ -20,8 +20,8 @@ from tests.test_routine_current_deck import context as routine_context, plan as 
 
 class ArchiveBehaviorContracts(unittest.TestCase):
     def test_recognized_title_does_not_grant_reviewed_effect_or_lethal_claim(self):
-        for name in ("Uppercut", "Metallicize", "Cleave", "Fiend Fire", "Fiend Fire+",
-                     "Combust", "Combust+", "Perfected Strike", "Warcry", "Wound"):
+        for name in ("Cleave", "Fiend Fire", "Fiend Fire+",
+                     "Combust", "Combust+", "Perfected Strike", "Wound"):
             with self.subTest(name=name):
                 self.assertEqual(name, canonical_title(name))
                 c = context([card(name)])
