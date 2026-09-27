@@ -65,6 +65,15 @@ they do not create a SQLite decision, inbox check or retrospective during combat
 The session retains the images that support advice. Advisory mode never starts
 a bridge.
 
+Use the local reference library described in `docs/veda-a20-reference-library.md`
+for unfamiliar cards, relics, potions, enemies and cumulative Ascension rules.
+Open the built cache once per play block and retrieve only observed/relevant
+names; preserve exact upgrades, duplicate-character ambiguity, conflicts and
+unknowns. `scripts/veda_reference.py context` batches related references. Keep
+them in the session and refresh when a new entity or catalog revision appears.
+Catalog imports and broad online research belong outside live combat. Reference
+coverage never promotes a mechanic to the checked runtime or proves ownership.
+
 Use `python3 scripts/capture_observation.py --ephemeral` for a routine frame
 that is needed only to verify the next action. Keep the default archived
 capture for meaningful decisions, floor boundaries, elites, bosses, potions,

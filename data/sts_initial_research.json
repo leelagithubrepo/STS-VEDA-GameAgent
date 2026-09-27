@@ -17,11 +17,11 @@
       "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Mechanics", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}]
     },
     {
-      "statement": "Block absorbs damage before HP loss and normally disappears at the end of the turn, unless modified by an effect such as Barricade or Blur.",
+      "statement": "Block absorbs ordinary incoming damage before HP loss. Player Block normally remains through the enemy turn and is cleared at the start of the player's next turn, unless retention effects such as Barricade or Blur change that timing.",
       "kind": "game_fact",
       "tags": ["combat", "block", "hp"],
       "confidence": 0.9,
-      "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Block", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.8}, {"url": "https://slaythespire.wiki.gg/wiki/Keywords", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.75}]
+      "sources": [{"url": "https://slay-the-spire.fandom.com/wiki/Keywords", "publisher": "Slay the Spire Wiki community", "source_type": "community wiki (indexed excerpt)", "captured_at": "2026-09-27", "reliability": 0.8}, {"url": "https://slay-the-spire.fandom.com/wiki/Combat_Mechanics", "publisher": "Slay the Spire Wiki community", "source_type": "community wiki (indexed excerpt)", "captured_at": "2026-09-27", "reliability": 0.8}]
     },
     {
       "statement": "At Ascension 0, Ironclad begins with 80 maximum HP, Burning Blood, five Strikes, four Defends, and Bash. Burning Blood heals 6 HP after combat.",

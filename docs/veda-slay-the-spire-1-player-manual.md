@@ -11,6 +11,11 @@ This knowledge applies to **Slay the Spire 1**, initially:
 
 Do not use Slay the Spire 2 mechanics unless explicitly researching STS2 in a separate knowledge domain.
 
+The initial learning scope above is historical. The
+[current reference library](veda-a20-reference-library.md) now covers all four
+original characters and cumulative Ascension rules through A20. Its broader
+research coverage does not imply equivalent automatic-play support.
+
 ---
 
 # 1. What the Game Is

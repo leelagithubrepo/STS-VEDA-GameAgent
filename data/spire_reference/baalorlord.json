@@ -1,0 +1,1072 @@
+{
+  "schema": "spire.reference-catalog.v1",
+  "game": "slay_the_spire_1",
+  "id": "baalorlord-original-game-study",
+  "scope": "Original-game creator guide index and six paraphrased principles from inspected written guides. Video metadata is not video-content analysis.",
+  "sources": [
+    {
+      "id": "baalorlord-b01",
+      "url": "https://www.youtube.com/watch?v=pzFZmpik5xI",
+      "title": "How to Kill the Heart as Ironclad (Slay the Spire Guide)",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2022-11-27",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Not established as an A20 instructional run from metadata",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b02",
+      "url": "https://www.youtube.com/watch?v=96rudPEDr_s",
+      "title": "Ranking EVERY Ironclad Card in Slay the Spire! (Tier List)",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2021-11-23",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Not established as an A20 instructional run from metadata",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b03",
+      "url": "https://www.youtube.com/watch?v=juPCALg6iQE",
+      "title": "Ironclad Rare Cards: Which are Worth Your Time? (Slay the Spire Guide)",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2021-08-31",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Not established as an A20 instructional run from metadata",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b04",
+      "url": "https://www.youtube.com/watch?v=k90bXlkk4_g",
+      "title": "You Can't Die with This Black Blood Build | Ascension 20 Ironclad Run | Slay the Spire",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2021-04-20",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Title explicitly names Ascension 20",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b05",
+      "url": "https://www.youtube.com/watch?v=qlHnnxe8v7E",
+      "title": "Ascension 20 Ironclad - Come on and Slam - Slay the Spire",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2019-05-20",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Title explicitly names Ascension 20",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b06",
+      "url": "https://www.youtube.com/watch?v=qziyMiO6Rew",
+      "title": "How to Kill the Heart as Silent (Slay the Spire Guide)",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2022-12-04",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Not established as an A20 instructional run from metadata",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b07",
+      "url": "https://www.youtube.com/watch?v=FEKZOIXv5Rg",
+      "title": "Ranking EVERY Silent Card in Slay the Spire! (Tier List)",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2021-11-06",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Not established as an A20 instructional run from metadata",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b08",
+      "url": "https://www.youtube.com/watch?v=ZoMQCDlbFCg",
+      "title": "How to Kill the Heart as Defect (Slay the Spire Guide)",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2022-12-10",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Not established as an A20 instructional run from metadata",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b09",
+      "url": "https://www.youtube.com/watch?v=oW9rJLouZNw",
+      "title": "Ranking EVERY Defect Card in Slay the Spire! (Tier List)",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2021-12-18",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Not established as an A20 instructional run from metadata",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b10",
+      "url": "https://www.youtube.com/watch?v=9czLA-7ELdM",
+      "title": "How to Play the Watcher and Actually Win (Slay the Spire Guide)",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2022-03-05",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Primary description explicitly names Ascension 20",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b11",
+      "url": "https://www.youtube.com/watch?v=qEjvZwOq51E",
+      "title": "Ranking EVERY Watcher Card in Slay the Spire! (Tier List)",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2021-12-24",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Not established as an A20 instructional run from metadata",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b12",
+      "url": "https://www.youtube.com/watch?v=6SfizMYFpyA",
+      "title": "Ranking EVERY Relic in Slay the Spire! (Tier List)",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2021-10-23",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Not established as an A20 instructional run from metadata",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b13",
+      "url": "https://www.youtube.com/watch?v=hXixjGCVcVg",
+      "title": "Ranking EVERY Potion in Slay the Spire! (Tier List)",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2022-02-05",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Not established as an A20 instructional run from metadata",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b14",
+      "url": "https://www.youtube.com/watch?v=5YMBpQUuuW4",
+      "title": "I Mastered Every Card!",
+      "publisher": "Baalorlord",
+      "kind": "video",
+      "publication_date": "2023-12-10",
+      "access": "Primary watch-page metadata and description inspected; no playback or transcript read",
+      "limitations": [
+        "YouTube playerMicroformatRenderer publishDate; matches uploadDate",
+        "Original title/description and pre-sequel 2019–2023 publication metadata",
+        "Not established as an A20 instructional run from metadata",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b15",
+      "url": "https://www.youtube.com/playlist?list=PLP-OrXnAHBqO9aXYXxLG4JmTTaAnT-Jiv",
+      "title": "Ascension 20 Ironclad Run",
+      "publisher": "Baalorlord",
+      "kind": "playlist",
+      "publication_date": null,
+      "access": "Primary playlist title/owner/date labels and first-page entry titles inspected, no videos watched",
+      "limitations": [
+        "Creation/publication date not exposed; last-updated label is not original publication date",
+        "Creator A20 collection, linked separately from explicitly labeled sequel collections; first-page 100 titles had no explicit sequel labels. Full membership was not audited.",
+        "Creator playlist title and displayed original-game A20 entry titles",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b16",
+      "url": "https://www.youtube.com/playlist?list=PLP-OrXnAHBqPouKBCVPn5JuVi5Ad2ucI2",
+      "title": "Ascension 20 Silent Run",
+      "publisher": "Baalorlord",
+      "kind": "playlist",
+      "publication_date": null,
+      "access": "Primary playlist title/owner/date labels and first-page entry titles inspected, no videos watched",
+      "limitations": [
+        "Creation/publication date not exposed; last-updated label is not original publication date",
+        "Creator A20 collection, linked separately from explicitly labeled sequel collections; first-page 100 titles had no explicit sequel labels. Full membership was not audited.",
+        "Creator playlist title and displayed original-game A20 entry titles",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b17",
+      "url": "https://www.youtube.com/playlist?list=PLP-OrXnAHBqNZ1JsWLMj4FVdBQDw224ON",
+      "title": "Ascension 20 Defect Run",
+      "publisher": "Baalorlord",
+      "kind": "playlist",
+      "publication_date": null,
+      "access": "Primary playlist title/owner/date labels and first-page entry titles inspected, no videos watched",
+      "limitations": [
+        "Creation/publication date not exposed; last-updated label is not original publication date",
+        "Creator A20 collection, linked separately from explicitly labeled sequel collections; first-page 100 titles had no explicit sequel labels. Full membership was not audited.",
+        "Creator playlist title and displayed original-game A20 entry titles",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b18",
+      "url": "https://www.youtube.com/playlist?list=PLP-OrXnAHBqOm64NYyIHcq7YX1FKpfwFY",
+      "title": "Ascension 20 Watcher Run",
+      "publisher": "Baalorlord",
+      "kind": "playlist",
+      "publication_date": null,
+      "access": "Primary playlist title/owner/date labels and first-page entry titles inspected, no videos watched",
+      "limitations": [
+        "Creation/publication date not exposed; last-updated label is not original publication date",
+        "Creator A20 collection, linked separately from explicitly labeled sequel collections; first-page 100 titles had no explicit sequel labels. Full membership was not audited.",
+        "Creator playlist title and displayed original-game A20 entry titles",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b19",
+      "url": "https://docs.google.com/document/d/1LzL_gnXrDsK8cFfkGEQmJncnlPVZZsqxoRZShZssicw/edit",
+      "title": "Beginner’s Guide to Slay the Spire",
+      "publisher": "Baalorlord",
+      "kind": "written_guide",
+      "publication_date": null,
+      "access": "Primary Google Docs text export read; only short paraphrases retained",
+      "limitations": [
+        "No reliable creation/revision date exposed by retrieved document; not inferred from search crawl date",
+        "Original-game cards/bosses and historical pre-sequel public references; document itself read",
+        "Ascension discussion present, but this is not a current comprehensive A20 mechanics specification",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    },
+    {
+      "id": "baalorlord-b20",
+      "url": "https://docs.google.com/document/d/1UhhgSknoISDyL5sNuBGqiS-WaFg8-0y5PkKQuRWCD-A/edit",
+      "title": "Slay the Spire Boss Encounter Guide",
+      "publisher": "Baalorlord",
+      "kind": "written_guide",
+      "publication_date": null,
+      "access": "Primary Google Docs text export read; only short paraphrases retained",
+      "limitations": [
+        "No reliable creation/revision date exposed by retrieved document; not inferred from search crawl date",
+        "Original-game cards/bosses and historical pre-sequel public references; document itself read",
+        "Ascension discussion present, but this is not a current comprehensive A20 mechanics specification",
+        "Video and playlist contents have not been watched or transcribed. Written-guide claims below are from inspected text."
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "id": "guide:baalorlord-b01",
+      "name": "How to Kill the Heart as Ironclad (Slay the Spire Guide)",
+      "kind": "guide",
+      "character": "ironclad",
+      "aliases": [
+        "Baalorlord B01"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Heart tutorial"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=pzFZmpik5xI",
+        "topic": "Heart tutorial",
+        "recommended_use": "Start here for an explained full run; metadata does not establish its played Ascension.",
+        "publication_date": "2022-11-27",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b01"
+      ],
+      "unknowns": [
+        "Not established as an A20 instructional run from metadata",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b02",
+      "name": "Ranking EVERY Ironclad Card in Slay the Spire! (Tier List)",
+      "kind": "guide",
+      "character": "ironclad",
+      "aliases": [
+        "Baalorlord B02"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Card evaluation"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=96rudPEDr_s",
+        "topic": "Card evaluation",
+        "recommended_use": "Original card ranking; the description frames rankings by selection frequency, not a complete tactical policy.",
+        "publication_date": "2021-11-23",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b02"
+      ],
+      "unknowns": [
+        "Not established as an A20 instructional run from metadata",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b03",
+      "name": "Ironclad Rare Cards: Which are Worth Your Time? (Slay the Spire Guide)",
+      "kind": "guide",
+      "character": "ironclad",
+      "aliases": [
+        "Baalorlord B03"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Rare-card choices and upgrades"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=juPCALg6iQE",
+        "topic": "Rare-card choices and upgrades",
+        "recommended_use": "Targeted reference for rare rewards and upgrades; detailed recommendations were not transcribed.",
+        "publication_date": "2021-08-31",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b03"
+      ],
+      "unknowns": [
+        "Not established as an A20 instructional run from metadata",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b04",
+      "name": "You Can't Die with This Black Blood Build | Ascension 20 Ironclad Run | Slay the Spire",
+      "kind": "guide",
+      "character": "ironclad",
+      "aliases": [
+        "Baalorlord B04"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "A20 run example"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=k90bXlkk4_g",
+        "topic": "A20 run example",
+        "recommended_use": "Explicit A20 run. Treat the dramatic title as a title, not a survival guarantee.",
+        "publication_date": "2021-04-20",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b04"
+      ],
+      "unknowns": [
+        "Title explicitly names Ascension 20",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b05",
+      "name": "Ascension 20 Ironclad - Come on and Slam - Slay the Spire",
+      "kind": "guide",
+      "character": "ironclad",
+      "aliases": [
+        "Baalorlord B05"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Legacy A20 run example"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=qlHnnxe8v7E",
+        "topic": "Legacy A20 run example",
+        "recommended_use": "Older unedited A20 example; 2019 card/balance details need current-version checking.",
+        "publication_date": "2019-05-20",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b05"
+      ],
+      "unknowns": [
+        "Title explicitly names Ascension 20",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b06",
+      "name": "How to Kill the Heart as Silent (Slay the Spire Guide)",
+      "kind": "guide",
+      "character": "silent",
+      "aliases": [
+        "Baalorlord B06"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Heart tutorial"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=qziyMiO6Rew",
+        "topic": "Heart tutorial",
+        "recommended_use": "Explained-run learning source; its played Ascension is not established by metadata.",
+        "publication_date": "2022-12-04",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b06"
+      ],
+      "unknowns": [
+        "Not established as an A20 instructional run from metadata",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b07",
+      "name": "Ranking EVERY Silent Card in Slay the Spire! (Tier List)",
+      "kind": "guide",
+      "character": "silent",
+      "aliases": [
+        "Baalorlord B07"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Card evaluation"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=FEKZOIXv5Rg",
+        "topic": "Card evaluation",
+        "recommended_use": "Original card ranking; current !silent shortcut now points to the sequel instead.",
+        "publication_date": "2021-11-06",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b07"
+      ],
+      "unknowns": [
+        "Not established as an A20 instructional run from metadata",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b08",
+      "name": "How to Kill the Heart as Defect (Slay the Spire Guide)",
+      "kind": "guide",
+      "character": "defect",
+      "aliases": [
+        "Baalorlord B08"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Heart tutorial"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=ZoMQCDlbFCg",
+        "topic": "Heart tutorial",
+        "recommended_use": "Explained-run learning source; its played Ascension is not established by metadata.",
+        "publication_date": "2022-12-10",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b08"
+      ],
+      "unknowns": [
+        "Not established as an A20 instructional run from metadata",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b09",
+      "name": "Ranking EVERY Defect Card in Slay the Spire! (Tier List)",
+      "kind": "guide",
+      "character": "defect",
+      "aliases": [
+        "Baalorlord B09"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Card evaluation"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=oW9rJLouZNw",
+        "topic": "Card evaluation",
+        "recommended_use": "Original card ranking; current !defect shortcut now points to the sequel instead.",
+        "publication_date": "2021-12-18",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b09"
+      ],
+      "unknowns": [
+        "Not established as an A20 instructional run from metadata",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b10",
+      "name": "How to Play the Watcher and Actually Win (Slay the Spire Guide)",
+      "kind": "guide",
+      "character": "watcher",
+      "aliases": [
+        "Baalorlord B10"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "A20 explained guide"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=9czLA-7ELdM",
+        "topic": "A20 explained guide",
+        "recommended_use": "Its primary description explicitly identifies an Ascension 20 run explaining picks and plays.",
+        "publication_date": "2022-03-05",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b10"
+      ],
+      "unknowns": [
+        "Primary description explicitly names Ascension 20",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b11",
+      "name": "Ranking EVERY Watcher Card in Slay the Spire! (Tier List)",
+      "kind": "guide",
+      "character": "watcher",
+      "aliases": [
+        "Baalorlord B11"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Card evaluation"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=qEjvZwOq51E",
+        "topic": "Card evaluation",
+        "recommended_use": "Original card ranking; strategy details remain a viewing task.",
+        "publication_date": "2021-12-24",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b11"
+      ],
+      "unknowns": [
+        "Not established as an A20 instructional run from metadata",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b12",
+      "name": "Ranking EVERY Relic in Slay the Spire! (Tier List)",
+      "kind": "guide",
+      "character": null,
+      "aliases": [
+        "Baalorlord B12"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Relic evaluation"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=6SfizMYFpyA",
+        "topic": "Relic evaluation",
+        "recommended_use": "Original relic ranking; source for contextual discussion, not an unconditional purchase order.",
+        "publication_date": "2021-10-23",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b12"
+      ],
+      "unknowns": [
+        "Not established as an A20 instructional run from metadata",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b13",
+      "name": "Ranking EVERY Potion in Slay the Spire! (Tier List)",
+      "kind": "guide",
+      "character": null,
+      "aliases": [
+        "Baalorlord B13"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Potion evaluation"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=hXixjGCVcVg",
+        "topic": "Potion evaluation",
+        "recommended_use": "Original potion ranking; individual potion priorities were not extracted or asserted.",
+        "publication_date": "2022-02-05",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b13"
+      ],
+      "unknowns": [
+        "Not established as an A20 instructional run from metadata",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b14",
+      "name": "I Mastered Every Card!",
+      "kind": "guide",
+      "character": null,
+      "aliases": [
+        "Baalorlord B14"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Mastery retrospective"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/watch?v=5YMBpQUuuW4",
+        "topic": "Mastery retrospective",
+        "recommended_use": "Original-game retrospective; descriptive selection-biased material, not a measured universal win policy.",
+        "publication_date": "2023-12-10",
+        "access": "Primary watch-page metadata and description inspected; no playback or transcript read"
+      },
+      "source_ids": [
+        "baalorlord-b14"
+      ],
+      "unknowns": [
+        "Not established as an A20 instructional run from metadata",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b15",
+      "name": "Ascension 20 Ironclad Run",
+      "kind": "guide",
+      "character": "ironclad",
+      "aliases": [
+        "Baalorlord B15"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "A20 run collection"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/playlist?list=PLP-OrXnAHBqO9aXYXxLG4JmTTaAnT-Jiv",
+        "topic": "A20 run collection",
+        "recommended_use": "Choose original-game entries for decision-by-decision study; recheck individual entry metadata before promotion to a rules source.",
+        "publication_date": null,
+        "access": "Primary playlist title/owner/date labels and first-page entry titles inspected, no videos watched"
+      },
+      "source_ids": [
+        "baalorlord-b15"
+      ],
+      "unknowns": [
+        "Creator playlist title and displayed original-game A20 entry titles",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b16",
+      "name": "Ascension 20 Silent Run",
+      "kind": "guide",
+      "character": "silent",
+      "aliases": [
+        "Baalorlord B16"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "A20 run collection"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/playlist?list=PLP-OrXnAHBqPouKBCVPn5JuVi5Ad2ucI2",
+        "topic": "A20 run collection",
+        "recommended_use": "Choose original-game entries for decision-by-decision study; recheck individual entry metadata before promotion to a rules source.",
+        "publication_date": null,
+        "access": "Primary playlist title/owner/date labels and first-page entry titles inspected, no videos watched"
+      },
+      "source_ids": [
+        "baalorlord-b16"
+      ],
+      "unknowns": [
+        "Creator playlist title and displayed original-game A20 entry titles",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b17",
+      "name": "Ascension 20 Defect Run",
+      "kind": "guide",
+      "character": "defect",
+      "aliases": [
+        "Baalorlord B17"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "A20 run collection"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/playlist?list=PLP-OrXnAHBqNZ1JsWLMj4FVdBQDw224ON",
+        "topic": "A20 run collection",
+        "recommended_use": "Choose original-game entries for decision-by-decision study; recheck individual entry metadata before promotion to a rules source.",
+        "publication_date": null,
+        "access": "Primary playlist title/owner/date labels and first-page entry titles inspected, no videos watched"
+      },
+      "source_ids": [
+        "baalorlord-b17"
+      ],
+      "unknowns": [
+        "Creator playlist title and displayed original-game A20 entry titles",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b18",
+      "name": "Ascension 20 Watcher Run",
+      "kind": "guide",
+      "character": "watcher",
+      "aliases": [
+        "Baalorlord B18"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "A20 run collection"
+      ],
+      "facts": {
+        "url": "https://www.youtube.com/playlist?list=PLP-OrXnAHBqOm64NYyIHcq7YX1FKpfwFY",
+        "topic": "A20 run collection",
+        "recommended_use": "Choose original-game entries for decision-by-decision study; recheck individual entry metadata before promotion to a rules source.",
+        "publication_date": null,
+        "access": "Primary playlist title/owner/date labels and first-page entry titles inspected, no videos watched"
+      },
+      "source_ids": [
+        "baalorlord-b18"
+      ],
+      "unknowns": [
+        "Creator playlist title and displayed original-game A20 entry titles",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b19",
+      "name": "Beginner’s Guide to Slay the Spire",
+      "kind": "guide",
+      "character": null,
+      "aliases": [
+        "Baalorlord B19"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Deck evaluation, pathing, turn planning and potions"
+      ],
+      "facts": {
+        "url": "https://docs.google.com/document/d/1LzL_gnXrDsK8cFfkGEQmJncnlPVZZsqxoRZShZssicw/edit",
+        "topic": "Deck evaluation, pathing, turn planning and potions",
+        "recommended_use": "Use the inspected sections as attributed strategic background; independently verify exact modern Ascension values and interactions.",
+        "publication_date": null,
+        "access": "Primary Google Docs text export read; only short paraphrases retained"
+      },
+      "source_ids": [
+        "baalorlord-b19"
+      ],
+      "unknowns": [
+        "Ascension discussion present, but this is not a current comprehensive A20 mechanics specification",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "guide:baalorlord-b20",
+      "name": "Slay the Spire Boss Encounter Guide",
+      "kind": "guide",
+      "character": null,
+      "aliases": [
+        "Baalorlord B20"
+      ],
+      "tags": [
+        "baalorlord",
+        "sts1",
+        "Boss preparation and encounter-specific card value"
+      ],
+      "facts": {
+        "url": "https://docs.google.com/document/d/1UhhgSknoISDyL5sNuBGqiS-WaFg8-0y5PkKQuRWCD-A/edit",
+        "topic": "Boss preparation and encounter-specific card value",
+        "recommended_use": "Use the inspected sections as attributed strategic background; independently verify exact modern Ascension values and interactions.",
+        "publication_date": null,
+        "access": "Primary Google Docs text export read; only short paraphrases retained"
+      },
+      "source_ids": [
+        "baalorlord-b20"
+      ],
+      "unknowns": [
+        "Ascension discussion present, but this is not a current comprehensive A20 mechanics specification",
+        "A link in this index does not establish full content review."
+      ],
+      "evidence_status": "metadata_only"
+    },
+    {
+      "id": "strategy:baalorlord-c1",
+      "name": "Choose cards for upcoming problems",
+      "kind": "strategy",
+      "character": null,
+      "aliases": [],
+      "tags": [
+        "baalorlord",
+        "turn planning",
+        "conditional strategy"
+      ],
+      "facts": {
+        "summary": "Evaluate additions by the damage, defense and scaling problems ahead instead of forcing a preset archetype. Consider both energy and draw constraints.",
+        "inspected_section": "Resources; How to think about your deck; Archetypes",
+        "conditions": "Apply to the observed deck, hand, piles, HP, relics, potions, Ascension and matchup; this is not a fixed action order."
+      },
+      "source_ids": [
+        "baalorlord-b19"
+      ],
+      "unknowns": [
+        "Guide revision date unknown; exact current mechanics require separate references."
+      ],
+      "evidence_status": "community_reference"
+    },
+    {
+      "id": "strategy:baalorlord-c2",
+      "name": "Review the full turn before playing",
+      "kind": "strategy",
+      "character": null,
+      "aliases": [],
+      "tags": [
+        "baalorlord",
+        "turn planning",
+        "conditional strategy"
+      ],
+      "facts": {
+        "summary": "Before committing a turn, compare lethal now or next turn, inspect the draw pile, and consider block, relic effects and available potions.",
+        "inspected_section": "How to play your cards",
+        "conditions": "Apply to the observed deck, hand, piles, HP, relics, potions, Ascension and matchup; this is not a fixed action order."
+      },
+      "source_ids": [
+        "baalorlord-b19"
+      ],
+      "unknowns": [
+        "Guide revision date unknown; exact current mechanics require separate references."
+      ],
+      "evidence_status": "community_reference"
+    },
+    {
+      "id": "strategy:baalorlord-c3",
+      "name": "Plan potion use at combat entry",
+      "kind": "strategy",
+      "character": null,
+      "aliases": [],
+      "tags": [
+        "baalorlord",
+        "turn planning",
+        "conditional strategy"
+      ],
+      "facts": {
+        "summary": "Review potion slots at the start of combat. Reserve a potion for a specific upcoming danger when that offers more value than spending it immediately.",
+        "inspected_section": "How to use potions",
+        "conditions": "Apply to the observed deck, hand, piles, HP, relics, potions, Ascension and matchup; this is not a fixed action order."
+      },
+      "source_ids": [
+        "baalorlord-b19"
+      ],
+      "unknowns": [
+        "Guide revision date unknown; exact current mechanics require separate references."
+      ],
+      "evidence_status": "community_reference"
+    },
+    {
+      "id": "strategy:baalorlord-c4",
+      "name": "Prepare for the visible act boss",
+      "kind": "strategy",
+      "character": null,
+      "aliases": [],
+      "tags": [
+        "baalorlord",
+        "turn planning",
+        "conditional strategy"
+      ],
+      "facts": {
+        "summary": "Use the visible act boss to shape card rewards, shopping and route choices before reaching the boss. Card value depends on the matchup.",
+        "inspected_section": "Use that boss preview",
+        "conditions": "Apply to the observed deck, hand, piles, HP, relics, potions, Ascension and matchup; this is not a fixed action order."
+      },
+      "source_ids": [
+        "baalorlord-b20"
+      ],
+      "unknowns": [
+        "Guide revision date unknown; exact current mechanics require separate references."
+      ],
+      "evidence_status": "community_reference"
+    },
+    {
+      "id": "strategy:baalorlord-c5",
+      "name": "Collector minion pressure",
+      "kind": "strategy",
+      "character": null,
+      "aliases": [],
+      "tags": [
+        "baalorlord",
+        "turn planning",
+        "conditional strategy"
+      ],
+      "facts": {
+        "summary": "Against Collector, prepare to reduce minion pressure before the major debuffs and balance minion control with damage to the boss.",
+        "inspected_section": "Collector",
+        "conditions": "Apply to the observed deck, hand, piles, HP, relics, potions, Ascension and matchup; this is not a fixed action order."
+      },
+      "source_ids": [
+        "baalorlord-b20"
+      ],
+      "unknowns": [
+        "Guide revision date unknown; exact current mechanics require separate references."
+      ],
+      "evidence_status": "community_reference"
+    },
+    {
+      "id": "strategy:baalorlord-c6",
+      "name": "Time Eater clock and heal planning",
+      "kind": "strategy",
+      "character": null,
+      "aliases": [],
+      "tags": [
+        "baalorlord",
+        "turn planning",
+        "conditional strategy"
+      ],
+      "facts": {
+        "summary": "Against Time Eater, plan useful card plays around the clock and the next attack; decide whether to finish before the heal or use that interval to set up.",
+        "inspected_section": "Time Eater — Keep an Eye on the Clock; Plan for Phase 2",
+        "conditions": "Apply to the observed deck, hand, piles, HP, relics, potions, Ascension and matchup; this is not a fixed action order."
+      },
+      "source_ids": [
+        "baalorlord-b20"
+      ],
+      "unknowns": [
+        "Guide revision date unknown; exact current mechanics require separate references."
+      ],
+      "evidence_status": "community_reference"
+    }
+  ],
+  "excluded_candidates": [
+    {
+      "url": "https://www.youtube.com/watch?v=POaEE_3GDBQ",
+      "title": "Every Ironclad Card in Slay the Spire 2! (Tier List)",
+      "author": "Baalorlord",
+      "date": "2026-05-26",
+      "reason": "Slay the Spire 2 Ironclad ranking"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=YnQuLWCWJZU",
+      "title": "Every Silent Card in Slay the Spire 2! (Tier List)",
+      "author": "Baalorlord",
+      "date": "2026-04-22",
+      "reason": "Slay the Spire 2 Silent ranking"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=1XYwYRAPPIA",
+      "title": "Every Defect Card in Slay the Spire 2! (Tier List)",
+      "author": "Baalorlord",
+      "date": "2026-04-12",
+      "reason": "Slay the Spire 2 Defect ranking"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=YdHxlG8AKv8",
+      "title": "Slay the Spire | Complete Beginner's Guide and Beyond | Episode 1",
+      "author": "Dr. Incompetent",
+      "date": "2022-08-23",
+      "reason": "Different creator, Dr. Incompetent, not Baalorlord"
+    }
+  ],
+  "limitations": [
+    "No videos watched and no transcripts retrieved/read. Captions were advertised in metadata, but that does not establish their content or quality.",
+    "Web search/open returned incomplete YouTube pages; public watch/playlist HTML and YouTube oEmbed metadata were read with bounded HTTP requests. Public Google Docs text exports supplied the written content.",
+    "Four A20 playlists are mutable pointers, not a claim that every entry has been audited or that the collection provides complete enemy/card coverage.",
+    "Written-guide publication/revision dates are unknown. Do not treat old numeric examples, small-deck heuristics, potion HP thresholds or historical win-rate estimates as modern universal A20 rules.",
+    "Ironclad/Silent/Defect Heart tutorial titles do not establish played Ascension; only the Watcher guide description explicitly establishes A20.",
+    "No current-run strategy, deterministic boss sequence, card ranking table, recognition accuracy or controller authorization is established."
+  ]
+}
