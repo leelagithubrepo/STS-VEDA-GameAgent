@@ -171,12 +171,28 @@ class ActionReadiness:
     reasons: tuple[str, ...] = ()
 
 
+def explicit_nonattack_intent(intent: str | None) -> bool:
+    """Recognize the observed nonattack category, not an exact hidden move.
+
+    A question mark or the title 'Unknown' alone supplies no such proof. These
+    labels require the readable '(not attacking)' tooltip; they do not establish
+    zero total enemy-turn danger from summons, buffs, or other enemies.
+    """
+    if not isinstance(intent, str):
+        return False
+    return ' '.join(intent.casefold().replace('\u2019', "'").split()) in {
+        'unknown (not attacking)', 'unknown_not_attacking',
+        "this enemy's intentions are unknown (not attacking).",
+    }
+
+
 def combat_action_readiness(state: StructuredGameState) -> ActionReadiness:
     """Require the minimum visually verified combat state before VEDA can act.
 
-    This is deliberately stricter than schema validity. Unknown enemy intents
-    make damage planning impossible, so an otherwise valid combat parse remains
-    observation-only until those fields are legible and calibrated.
+    Unreadable intent remains an evidence gap. A readable 'Unknown (not
+    attacking)' tooltip is a known nonattack category with an unknown move.
+    This verifies displayed facts only; checked planning still needs reviewed
+    effects or a conservative bound for every possible outcome it relies on.
     """
     reasons: list[str] = []
     if state.screen_type != "COMBAT":
@@ -200,8 +216,13 @@ def combat_action_readiness(state: StructuredGameState) -> ActionReadiness:
         if enemy.block is None:
             reasons.append("an enemy Block value is missing")
             break
-        if enemy.intent is None or enemy.intent.strip().lower() in {"", "unknown", "unknown intent"}:
+        if enemy.intent is None or enemy.intent.strip().lower() in {"", "unknown", "unknown intent", "?"}:
             reasons.append("an enemy intent is unknown")
+            break
+        if explicit_nonattack_intent(enemy.intent) and (
+                enemy.intent_hits != () or type(enemy.intent_total_damage) is not int
+                or enemy.intent_total_damage != 0):
+            reasons.append("a nonattacking tooltip requires confirmed empty hits and zero displayed attack damage")
             break
         if enemy.intent_total_damage is None or enemy.intent_damage_confidence < 0.9:
             reasons.append("an enemy's total intent damage is unconfirmed")
@@ -300,8 +321,12 @@ For every enemy, report its current Block, the readable intent text, the total d
 will deal this turn, and its individual hit values. For a multi-hit intent such as 4x6, report
 intent_hits [4, 4, 4, 4, 4, 4] and intent_total_damage 24. For a single 16-damage attack, report
 intent_hits [16] and intent_total_damage 16. For a confirmed non-attacking intent, report an empty
-intent_hits array and total 0. Use null and confidence 0 when the total or individual hits cannot be
-read or calculated from visible text. Sum only visible player end-of-turn
+intent_hits array and total 0. If the tooltip explicitly reads 'Unknown (not attacking)', preserve
+that full category as intent (or unknown_not_attacking), with empty hits and total 0 for that
+enemy's displayed attack only. Its exact move is still unknown; do not rename it Spawn or claim
+zero enemy-turn danger. A bare question mark, obscured intent, or intent hidden by Runic Dome is
+not proof of nonattack: use null for unread damage. Use null and confidence 0 when the total or
+individual hits cannot be read or calculated from visible text. Sum only visible player end-of-turn
 damage statuses (for example, three Burns = 6) into end_turn_damage; use 0 only when you can verify
 there is none. On MAP, report each currently reachable node with a stable local node_id, its visible
 kind, and confidence. Report a boss_name only when the name itself is readable; boss art is not proof.

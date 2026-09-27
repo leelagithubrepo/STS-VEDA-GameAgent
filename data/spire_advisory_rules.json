@@ -1,5 +1,5 @@
 {
-  "version": "spire-rules-2026-09-27.2",
+  "version": "spire-rules-2026-09-27.3",
   "reviewed_at": "2026-09-27",
   "game": "Slay the Spire 1",
   "provenance": "Community references and game-extracted database; console build not independently verified. Live evidence overrides predictions.",
@@ -242,7 +242,7 @@
       "tags": [
         "metallicize"
       ],
-      "statement": "Base Metallicize adds 3 Metallicize. A confirmed active intensity grants that much Block at end of turn, unaffected by Frail, Dexterity or Panic Button\u2019s card-only No Block. Playing the Power is an observation boundary.",
+      "statement": "Base Metallicize adds 3 Metallicize. A confirmed active intensity grants that much Block at end of turn, unaffected by Frail, Dexterity or Panic Button’s card-only No Block. Playing the Power is an observation boundary.",
       "kind": "game_fact",
       "conditions": "Exact reviewed current-run variant only; fresh state and observed costs still required.",
       "sources": [
@@ -343,7 +343,7 @@
         "the collector",
         "torch head"
       ],
-      "statement": "For a complete source-bound A2 Collector/Torch Head roster, typed Fireball/Tackle, Buff, Mega Debuff and Spawn/Revive can support a conservative one-turn damage upper bound. Preserve displayed hits separately; account for team Strength, Vulnerable and possible immediate summons before accepting End Turn. Unknown modifiers still stop. Do not assert exact order, future statuses or the next rolled move.",
+      "statement": "For a complete source-bound A2 Collector/Torch Head roster, typed Fireball/Tackle, Buff, Mega Debuff and Spawn/Revive can support a conservative one-turn damage upper bound. Preserve displayed hits separately; account for team Strength, Vulnerable and possible immediate summons before accepting End Turn. Unknown modifiers still stop. Do not assert exact order, future statuses or the next rolled move. A readable Unknown (not attacking) tooltip is an observed category with an unknown exact move. With matching one_of effects for Buff, Mega Debuff, Spawn and Revive, use the maximum bound across all four alternatives, never an inferred exact move or zero total danger. Bare Unknown or ? is insufficient evidence.",
       "kind": "advisory_policy",
       "conditions": "A2 only. Community references; console behavior and disputed raw attack scaling are not independently verified.",
       "sources": [
@@ -461,7 +461,7 @@
         }
       ],
       "behavior": [
-        "After the opening, repeat Flail, Boost, Flail, Boost, Hyper Beam, then Stunned (A0\u201318) or Boost (A19+).",
+        "After the opening, repeat Flail, Boost, Flail, Boost, Hyper Beam, then Stunned (A0–18) or Boost (A19+).",
         "Strength applies to each hit. Orbs attack for base 8, give Automaton 12 Block or use Stasis once to capture an eligible highest-rarity draw card (discard if draw empty); killing an Orb returns its card. Do not predict a specific stolen card.",
         "Source conflict: use A4 Boost Strength upgrade from boss table and extracted statistics, not standalone Strength wiki A9 claim."
       ]
@@ -583,13 +583,13 @@
           "min_ascension": 2,
           "max_ascension": 2,
           "hp": 282,
-          "opening": "Reference: Spawn two Torch Heads; confirm actual current intent and later roster.",
+          "opening": "Reference: Spawn two Torch Heads. The readable Unknown (not attacking) tooltip establishes a category, not an exact move; bound reviewed nonattack alternatives and observe the actual later roster.",
           "timeline": [
             "Reference enemy action 1: Spawn",
             "Reference enemy action 4: Mega Debuff",
             "Other actions are conditional; never infer the next rolled move."
           ],
-          "next_high_threat": "For the currently observed move only, compute a conservative upper bound including possible boss effects before Torch Head attacks. Never infer a rolled move or exact resulting roster/status.",
+          "next_high_threat": "Use the observed move or the complete reviewed nonattack alternative set to compute a conservative one-turn upper bound including possible boss effects before Torch Head attacks. Never infer a rolled move or exact resulting roster/status.",
           "raw_attack_damage": null,
           "source_conflicts": [
             "The fan database calls Fireball A2+ 21 but its own scaling text assigns Rake 21 at A4+. Do not use either label to overwrite observed damage."
@@ -653,14 +653,35 @@
             "Invert final-floor displayed Weak/Vulnerable arithmetic over all compatible integer raw values; never divide a rounded hit as though exact.",
             "Spawn/Revive may add one immediate base-7 attack per vacant Torch Head slot, using max(0, all observed enemy Strength) and current player Vulnerable.",
             "Artifact protection and player Vulnerable expiry are not credited; possible Bronze Scales deaths before Spawn retain old hits and add replacement-slot bounds.",
-            "Unknown modifiers, statuses, unmodeled effects and relics outside the reviewed current inventory prevent the bound."
+            "Unknown modifiers, statuses, unmodeled effects and relics outside the reviewed current inventory prevent the bound.",
+            "The observed Unknown (not attacking) category uses the maximum bound across Buff, Mega Debuff, Spawn and Revive. Preserve the unknown exact move and each alternative bound; re-observe after input."
           ],
           "unsupported_exact_forecast_moves": [
             "Spawn",
             "Revive",
             "Buff",
-            "Mega Debuff"
-          ]
+            "Mega Debuff",
+            "Unknown (not attacking)"
+          ],
+          "reviewed_nonattack_category": {
+            "move": "Unknown (not attacking)",
+            "intent_effects": [
+              {
+                "kind": "one_of",
+                "moves": [
+                  "Buff",
+                  "Mega Debuff",
+                  "Spawn",
+                  "Revive"
+                ]
+              }
+            ],
+            "requires": "Readable nonattacking tooltip, empty displayed hits, complete source-bound A2 roster, known modifiers and supported inventory/effects.",
+            "interpretation": "Conservative alternative set, not exact move identification or a claim all four share an icon. Every alternative must have a supported bound; choose the maximum. Never treat hidden attack damage or Runic Dome as nonattack.",
+            "sources": [
+              "https://github.com/gamerpuppy/sts_lightspeed/blob/7476a81954020087da31d41d16fddf475746ec2d/src/combat/MonsterSpecific.cpp"
+            ]
+          }
         }
       ],
       "behavior": [

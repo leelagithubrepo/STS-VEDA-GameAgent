@@ -192,6 +192,59 @@ class ReviewedPlayTests(unittest.TestCase):
         self.assertEqual([], self.decisions())
         self.assertEqual([], self.controller.calls)
 
+    def collector_nonattack_request(self, intent='Unknown (not attacking)'):
+        from veda.advisory import (
+            COLLECTOR_SOURCE, COLLECTOR_NONATTACK_MOVE,
+            COLLECTOR_NONATTACK_EFFECTS, boss_manifest,
+        )
+        game = context()
+        game.update(encounter_type='boss', boss_manifest=boss_manifest('The Collector', 2))
+        game['state'].update(ascension=2, hp=35, energy=3, block=10,
+                             enemies_complete=True)
+        game['state']['enemies'] = [dict(id='boss', name='The Collector',
+            hp=282, max_hp=282, block=0, weak=1, vulnerable=0, artifact=0,
+            strength=0, intent=intent, intent_hits=[],
+            move=COLLECTOR_NONATTACK_MOVE, intent_effects=deepcopy(COLLECTOR_NONATTACK_EFFECTS),
+            evidence={'source': COLLECTOR_SOURCE, 'kind': 'reviewed_reference',
+                      'observed_intent': True})]
+        request = self.combat_request(0, game=game)
+        request['reading']['state'].update(ascension=2, act=2)
+        request['reading']['encounter_name'] = 'The Collector'
+        request['plan'] = {'steps': [{'kind': 'card', 'card_id': 'd'}]}
+        return request
+
+    def test_shadow_prepares_card_with_observed_nonattack_category(self):
+        self.before = self.collector_nonattack_request()
+        self.create('shadow')
+        result = self.prepare()
+        self.assertEqual(result['status'], 'prepared')
+        self.assertFalse(result['controller_input_sent'])
+        self.assertEqual(self.controller.calls, [])
+        self.assertEqual(self.decisions(), [])
+
+    def test_shadow_rejects_bare_question_mark_despite_claimed_nonattack_effects(self):
+        self.before = self.collector_nonattack_request('?')
+        self.create('shadow')
+        with self.assertRaisesRegex(RuntimeStop, 'intent is unknown'):
+            self.prepare()
+        self.assertEqual(self.controller.calls, [])
+
+    def test_shadow_accepts_verbatim_nonattack_tooltip_with_curly_apostrophe(self):
+        self.before = self.collector_nonattack_request(
+            "This enemy’s intentions are Unknown (not attacking).")
+        self.create('shadow')
+        self.assertEqual(self.prepare()['status'], 'prepared')
+        self.assertEqual(self.controller.calls, [])
+
+    def test_shadow_rejects_incomplete_nonattack_alternatives(self):
+        self.before = self.collector_nonattack_request('unknown_not_attacking')
+        enemy = self.before['reading']['context']['state']['enemies'][0]
+        enemy['intent_effects'][0]['moves'].remove('Spawn')
+        self.create('shadow')
+        with self.assertRaises(RuntimeStop):
+            self.prepare()
+        self.assertEqual(self.controller.calls, [])
+
     def test_current_run_arm_opens_status_only_and_needs_ready_bridge(self):
         self.create()
         result = self.arm()

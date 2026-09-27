@@ -221,6 +221,7 @@ def _boundary_rank(state: dict, card: dict, action: dict, relics: list[str] | No
     block = state['block'] + gained + (metallicize_block(state) or 0)
     remaining = 0
     killed_torches = []
+    new_thorns_vacancies = 0
     for enemy in state['enemies']:
         damage = 0
         if enemy.get('id', enemy['name']) == action.get('target') and 'base_damage' in spec:
@@ -230,6 +231,12 @@ def _boundary_rank(state: dict, card: dict, action: dict, relics: list[str] | No
         remaining += hp_after
         if enemy['name'] == 'Torch Head' and hp_after == 0:
             killed_torches.append(enemy)
+        elif (enemy['name'] == 'Torch Head' and 'Bronze Scales' in (relics or [])
+              and enemy['hp'] > 3 and 0 < hp_after <= 3):
+            # The card can newly put this surviving Torch in range of dying to
+            # Thorns after its hit, opening a later resummon slot. Already-low
+            # HP is covered by collector_turn_bound; outright kills are above.
+            new_thorns_vacancies += 1
     incoming = sum(sum(e['intent_hits']) for e in state['enemies']) if remaining else 0
     if any(e['name'] in ('The Collector', 'Torch Head') for e in state['enemies']):
         bound = collector_turn_bound(state, relics)
@@ -242,6 +249,7 @@ def _boundary_rank(state: dict, card: dict, action: dict, relics: list[str] | No
             # fresh one. Never rank that attack using the smaller old intent.
             incoming += sum(max(0, bound['summon_damage_upper_bound_per_slot']
                                 - e['intent_hits'][0]) for e in killed_torches)
+            incoming += new_thorns_vacancies * bound['summon_damage_upper_bound_per_slot']
     hp -= max(0, incoming - block)
     if hp <= 0:
         return None

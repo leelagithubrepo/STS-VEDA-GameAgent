@@ -7,12 +7,15 @@ lethal or survival. Screen intent damage is already modified damage.
 from __future__ import annotations
 
 from collections import Counter
+from copy import deepcopy
 from datetime import datetime, timezone
 from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
 from typing import Any
+
+from .vision import explicit_nonattack_intent
 
 DATA = Path(__file__).resolve().parents[1] / 'data'
 SCHEMA = 'spire.advisory.v1'
@@ -34,6 +37,11 @@ COLLECTOR_EFFECTS = {
     'Spawn': [{'kind': 'summon_to_limit', 'enemy': 'Torch Head', 'amount': 2}],
     'Revive': [{'kind': 'summon_to_limit', 'enemy': 'Torch Head', 'amount': 2}],
 }
+COLLECTOR_NONATTACK_MOVE = 'Unknown (not attacking)'
+COLLECTOR_NONATTACK_CANDIDATES = ('Buff', 'Mega Debuff', 'Spawn', 'Revive')
+COLLECTOR_NONATTACK_EFFECTS = [
+    {'kind': 'one_of', 'moves': list(COLLECTOR_NONATTACK_CANDIDATES)},
+]
 
 
 @lru_cache(maxsize=8)
@@ -130,6 +138,13 @@ def validate_snapshot(state: dict) -> None:
                 if not isinstance(effect, dict):
                     raise ValueError('each enemy intent effect must be an object')
                 kind = effect.get('kind')
+                if kind == 'one_of':
+                    if (enemy['name'] != 'The Collector'
+                            or enemy.get('move') != COLLECTOR_NONATTACK_MOVE
+                            or not explicit_nonattack_intent(enemy.get('intent'))
+                            or effects != COLLECTOR_NONATTACK_EFFECTS):
+                        raise ValueError('alternative enemy moves require the exact reviewed Collector nonattack category')
+                    continue
                 count = effect.get('count') if kind == 'generate_status' else effect.get('amount')
                 if kind not in ('generate_status', 'apply_debuff', 'gain_strength', 'gain_block', 'summon_to_limit') or type(count) is not int or count <= 0:
                     raise ValueError('enemy intent effect needs a reviewed kind and positive integer amount')
@@ -337,9 +352,17 @@ def reviewed_collector_roster(state: dict) -> bool:
                 or type(e.get('strength')) is not int):
             return False
         move = e.get('move')
+        if (explicit_nonattack_intent(e.get('intent'))
+                and (e['name'] != 'The Collector' or move != COLLECTOR_NONATTACK_MOVE)):
+            return False  # The category alone cannot identify an exact move.
         attack = move == ('Fireball' if e['name'] == 'The Collector' else 'Tackle')
         effects = COLLECTOR_EFFECTS.get(move) if e['name'] == 'The Collector' else []
-        if ((e['name'] == 'The Collector' and move not in COLLECTOR_EFFECTS)
+        uncertain_nonattack = e['name'] == 'The Collector' and move == COLLECTOR_NONATTACK_MOVE
+        if uncertain_nonattack:
+            if not explicit_nonattack_intent(e.get('intent')):
+                return False
+            effects = COLLECTOR_NONATTACK_EFFECTS
+        if ((e['name'] == 'The Collector' and move not in COLLECTOR_EFFECTS and not uncertain_nonattack)
                 or (e['name'] == 'Torch Head' and not attack)
                 or e.get('intent_effects') != effects
                 or not isinstance(e.get('intent_hits'), list)
@@ -386,6 +409,47 @@ def collector_turn_bound(state: dict, relics: list[str] | None) -> dict | None:
     boss = next(e for e in enemies if e['name'] == 'The Collector')
     move = boss['move']
     shown = sum(sum(e['intent_hits']) for e in enemies)
+    if move == COLLECTOR_NONATTACK_MOVE:
+        # The tooltip establishes a category, not which hidden move was rolled.
+        # Reuse each reviewed exact-move bound on private copies and require all
+        # alternatives to remain supported. Never combine their favorable effects.
+        candidates = []
+        for candidate_move in COLLECTOR_NONATTACK_CANDIDATES:
+            candidate_state = deepcopy(state)
+            candidate_boss = next(e for e in candidate_state['enemies'] if e['name'] == 'The Collector')
+            candidate_boss['move'] = candidate_move
+            candidate_boss['intent'] = candidate_move  # A private hypothesis, never an observed move.
+            candidate_boss['intent_effects'] = deepcopy(COLLECTOR_EFFECTS[candidate_move])
+            bound = collector_turn_bound(candidate_state, relics)
+            if bound is None:
+                return None
+            candidates.append({
+                'candidate_move': candidate_move,
+                'incoming_upper_bound': bound['incoming_upper_bound'],
+                'summon_damage_upper_bound_per_slot': bound['summon_damage_upper_bound_per_slot'],
+                'terms': bound['terms'],
+                'assumptions': bound['assumptions'],
+            })
+        summon_bounds = [c['summon_damage_upper_bound_per_slot'] for c in candidates
+                         if c['summon_damage_upper_bound_per_slot'] is not None]
+        return {
+            'kind': 'conservative_survival_bound', 'scope': 'one_enemy_turn_only',
+            'boss_move_observed': None, 'observed_intent': boss['intent'],
+            'observed_intent_category': COLLECTOR_NONATTACK_MOVE,
+            'candidate_moves': list(COLLECTOR_NONATTACK_CANDIDATES),
+            'candidate_bounds': candidates, 'aggregation': 'maximum_of_alternative_moves',
+            'incoming_displayed': shown,
+            'incoming_upper_bound': max(c['incoming_upper_bound'] for c in candidates),
+            'summon_damage_upper_bound_per_slot': max(summon_bounds) if summon_bounds else None,
+            'terms': [{'candidate_move': c['candidate_move'],
+                       'damage_upper_bound': c['incoming_upper_bound']} for c in candidates],
+            'assumptions': [
+                'the observed nonattack category does not identify the exact move',
+                'use the maximum of all four reviewed alternative move bounds, not their sum',
+                'retain the maximum summon per-slot bound when ranking a possible Torch Head kill',
+                *candidates[0]['assumptions'],
+            ],
+        }
     upper, terms = 0, []
     for e in enemies:
         if not e['intent_hits']:
@@ -478,8 +542,16 @@ def check_plan(context: dict, plan: dict) -> dict:
     if state.get('powers_complete') is not True:
         reasons.append('active powers are unconfirmed')
     enemies = state.get('enemies', [])
-    if not enemies or any(e.get('intent_hits') is None or not e.get('intent') for e in enemies):
+    if not enemies or any(e.get('intent_hits') is None or not isinstance(e.get('intent'), str)
+                          or e['intent'].strip().casefold() in ('', 'unknown', 'unknown intent', '?')
+                          for e in enemies):
         reasons.append('current enemy intent is unknown')
+    if any(explicit_nonattack_intent(e.get('intent')) and e.get('intent_hits') != [] for e in enemies):
+        reasons.append('observed nonattack intent contradicts displayed attack hits')
+    if any(explicit_nonattack_intent(e.get('intent'))
+           and (e.get('name') != 'The Collector' or e.get('move') != COLLECTOR_NONATTACK_MOVE)
+           for e in enemies):
+        reasons.append('unknown nonattack intent needs the reviewed Collector category; it cannot identify an exact move or another encounter')
     inventory = context.get('inventory', {})
     for category in ('relic', 'potion'):
         if inventory.get('coverage', {}).get(category) != 'complete':
@@ -497,6 +569,10 @@ def check_plan(context: dict, plan: dict) -> dict:
         expected = boss_manifest('The Collector', state.get('ascension'))
         if expected is None or boss != expected or context.get('encounter_type') != 'boss':
             reasons.append('Collector requires its matching reviewed Ascension manifest and boss context')
+        if (any(e.get('name') == 'The Collector'
+                and (e.get('move') == COLLECTOR_NONATTACK_MOVE or explicit_nonattack_intent(e.get('intent')))
+                for e in enemies) and collector_turn_bound(state, relics) is None):
+            reasons.append('Collector nonattack category requires reviewed alternatives, complete A2 roster and known modifiers')
     time_eater = any(e.get('name') == 'Time Eater' for e in enemies)
     time_count = counters.get('time_warp') if time_eater else 0
     choker = counters.get('velvet_choker') if 'Velvet Choker' in relics else 0

@@ -39,6 +39,12 @@ captured source. This reviewed path is separate from the standalone runtime's
 automatic-reader calibration requirements. The examples below describe the
 transport; they do not replace per-run arming and reviewed input checks.
 
+A readable game tooltip such as **Unknown (not attacking)** is deliberate
+game uncertainty, not a bridge fault or unreadable frame. Follow the
+[reviewed intent contract](veda-reviewed-play.md#game-uncertainty-and-unreadable-evidence)
+to check supported alternatives. Keep exact hidden moves unknown and report
+an actual evidence or planning blocker before stopping for intent uncertainty.
+
 ## Warm controller session
 
 For autonomous play, do not invoke `scripts/bridge tap` once per input. Each

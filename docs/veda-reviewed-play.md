@@ -95,6 +95,51 @@ powers, and confirmed relic/potion inventory are required. Strategy remains
 Codex's responsibility, including relevant draw/discard inspections and potion
 review; local arithmetic does not guarantee the best move or a win.
 
+## Game uncertainty and unreadable evidence
+
+The game's readable **Unknown (not attacking)** tooltip confirms that enemy's
+nonattack category; its exact move stays unknown. It is not a failed screen
+reading. Record `intent: "Unknown (not attacking)"` (or
+`"unknown_not_attacking"`), `intent_hits: []`, and zero **displayed attack**
+damage only when the tooltip is actually readable. Preserve the source image.
+Zero displayed attack does not mean zero danger: summons, buffs, debuffs and
+other enemies can still matter. Bare `Unknown`, `?`, Runic Dome, or unread
+numbers do not prove a nonattack and must not be converted to zero.
+
+For Collector at A2, the reviewed alternative contract is:
+
+```json
+{
+  "move": "Unknown (not attacking)",
+  "intent_effects": [{
+    "kind": "one_of",
+    "moves": ["Buff", "Mega Debuff", "Spawn", "Revive"]
+  }]
+}
+```
+
+This is a conservative set of alternatives, not a claim that all four share
+the same icon or occur together. It retains the existing source-bound
+`reviewed_reference` evidence with `observed_intent: true`, which here means
+the **category** was observed. The complete current roster, known modifiers,
+confirmed inventory and matching A2 manifest remain required. The checked
+forecast takes the largest reviewed one-turn bound across every alternative;
+the exact move remains null. It includes possible immediate Torch Head attacks
+after a summon, without predicting that they actually happen. Source-based
+opening-Spawn expectations never become an observed exact move.
+
+Use these facts to submit the next legal card to the normal checked adapter.
+Before End Turn, require its conservative survival check, review potions when
+accepting damage and review unused playable zero-cost cards. Re-observe after
+each action; never execute the alternative branches as a sequence. Do not stop
+solely because a readable nonattack category hides the exact move, or tell the
+player to wait for that label to change. Stop when an action depends on an
+unbounded effect, missing evidence, or an actual failed check, and report that
+specific reason. This capability does not cover arbitrary bosses or hidden
+attacks. Offline tests validate these contracts, not live screen recognition.
+
+## Other choices and verification
+
 For menus, include the [choice observation and planned choice](veda-choice-execution.md)
 as `observation` and `choice`, plus the reviewed `inventory`. Its semantic digest
 must match the observation. Controller bindings require a current visible hint

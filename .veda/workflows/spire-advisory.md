@@ -109,11 +109,18 @@ overhead and should be addressed there rather than by reducing safety checks.
   plus attack modifiers. End Turn and forced Time Warp require a supported
   survival forecast; an unavailable forecast is not approval.
 - **Bosses:** confirm inventory with `boss-preflight`. Current boss/Ascension
-  must have a reviewed local manifest and visible intent. The initial pack
+  must have a reviewed local manifest and readable current intent category. The initial pack
   covers Bronze Automaton and Time Eater at A0–20, plus a bounded A2 Collector
-  manifest. Collector summon/buff/debuff ordering remains unsupported; only
-  complete observed attack-only rosters support its turn forecast. Other bosses require research
-  and an updated pack before checked advice. Community sources are attributed;
+  manifest. Collector attacks, summons, buffs and debuffs support a conservative
+  one-turn survival bound when the complete roster, modifiers and reviewed
+  effects are known. Exact enemy order and future state remain unpredicted.
+  A readable **Unknown (not attacking)** tooltip is valid game information:
+  preserve that category and check all reviewed nonattack alternatives, without
+  claiming an exact move. Follow [the reviewed-play intent contract](../../docs/veda-reviewed-play.md#game-uncertainty-and-unreadable-evidence).
+  Do not wait for the game to reveal an exact move it intentionally hides.
+  A bare question mark, unreadable tooltip or missing attack number does not
+  establish nonattack. Other unsupported bosses/effects require an updated
+  pack before relying on a turn forecast. Community sources are attributed;
   they are not labeled official. The visible screen outranks an expected move.
 - **Rest sites:** use `campfire-advice`. Compare Rest and Smith using current
   HP, entry-heal timing, deck size and direct next-boss status. Do not add
