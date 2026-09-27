@@ -5,6 +5,7 @@ An ``unchanged`` declaration means the caller inspected and confirmed that
 field, not that a successful controller acknowledgement proves it unchanged.
 """
 from copy import deepcopy
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -75,7 +76,21 @@ def _observed_ui(draft, pending, checked):
     result = draft['result']
     kind = result.get('kind')
     before_ui = pending['request']['observation']['ui']
-    if kind == 'focus':
+    if kind == 'room_entry':
+        _require(before_ui.get('menu_family') == 'map_nodes'
+                 and pending['proposal']['step_kind'] == 'commit', 'pending map-node activation required')
+        ui = {'screen': result['screen'], 'phase': 'result',
+              'choice_id': 'arrival-' + result['node_id'], 'layout_id': 'reviewed-room-arrival-v1',
+              'options': [], 'order': [], 'focused_id': None, 'selection_mode': 'immediate',
+              'required_count': 0, 'selected_ids': [], 'pending_ids': [], 'navigation': []}
+    elif kind == 'map_view':
+        _require(set(result) == {'kind', 'view'} and pending['proposal']['step_kind'] == 'inspect'
+                 and before_ui.get('menu_family') == 'map_inspect', 'pending map inspection required')
+        ui = {'screen': 'map', 'phase': 'result', 'choice_id': before_ui['choice_id'],
+              'layout_id': before_ui['layout_id'], 'options': [], 'order': [], 'focused_id': None,
+              'selection_mode': 'immediate', 'required_count': 0, 'selected_ids': [],
+              'pending_ids': [], 'navigation': [], 'map_view': deepcopy(result['view'])}
+    elif kind == 'focus':
         _require(set(result) == {'kind', 'focused_id'} and pending['proposal']['step_kind'] == 'focus',
                  'focus review requires the pending focus step')
         ui = _unbound_ui(before_ui)
@@ -121,6 +136,80 @@ def _observed_ui(draft, pending, checked):
     return ui
 
 
+def _room_entry(draft, pending, resources, facts, inventory):
+    """Package observed room lifecycle, never infer a monster or opening hand."""
+    result = draft['result']
+    _require(set(result) <= {'kind', 'screen', 'node_id', 'encounter', 'opening_hand'}
+             and {'kind', 'screen', 'node_id'} <= set(result)
+             and pending['request']['observation']['ui'].get('menu_family') == 'map_nodes'
+             and pending['proposal']['step_kind'] == 'commit', 'observed map-room entry required')
+    before = pending['request']
+    _require(before['choice']['option_ids'] == [result['node_id']], 'arrival must name selected map node')
+    selected = next(o for o in before['observation']['ui']['options'] if o['id'] == result['node_id'])['node']
+    _require(isinstance(facts, dict) and all(facts.get(key) == selected[key] for key in ('act', 'floor'))
+             and facts.get('current_node_id') == result['node_id'], 'actual room floor/node differs from map selection')
+    post = before['choice']['postconditions']
+    branches = [post] if 'alternatives' not in post else [b['postconditions'] for b in post['alternatives']]
+    # Resource/fact branch matching is still performed by the ordinary verifier.
+    contexts = [b['context'] for b in branches if b['screen'] == result['screen'] and b['phase'] == 'result']
+    _require(contexts and all(c == contexts[0] for c in contexts), 'room screen needs one unambiguous declared context')
+    context = deepcopy(contexts[0])
+    _require(context['floor_id'] != before['context']['floor_id'], 'room entry needs a new provisional floor context')
+    _require('context' not in draft or draft['context'] == context, 'room context is derived from checked arrival')
+    note = draft['observed_result']
+    state = {'screen': result['screen'], 'act': facts['act'], 'floor': facts['floor'],
+             'node_id': result['node_id'], **deepcopy(resources)}
+    transitions = [{'kind': 'advance_floor', 'act': facts['act'], 'floor': facts['floor'],
+        'node_type': selected['kind'], 'previous_outcome': 'departed',
+        'previous_ending_state': {'screen': 'map', **deepcopy(before['observation']['resources'])},
+        'starting_state': deepcopy(state), 'evidence_note': note}]
+    changes = {'transitions': transitions}
+    if result['screen'] == 'combat':
+        encounter = result.get('encounter')
+        _require(isinstance(encounter, dict) and set(encounter) == {'name', 'type', 'opening_state'}
+                 and _text(encounter['name'], 128) and encounter['type'] in {'enemy', 'elite', 'boss'}
+                 and isinstance(encounter['opening_state'], dict), 'observed encounter identity and state required')
+        _require(selected['kind'] == 'event' or encounter['type'] == selected['kind'],
+                 'map room classification conflicts with observed encounter type')
+        _require(selected['kind'] != 'event' or encounter['type'] == 'enemy',
+                 'question room needs a normal combat or separately reviewed exceptional transition')
+        _require(context['combat_id'] is not None and context['turn_id'] is not None,
+                 'combat arrival needs provisional combat and turn context')
+        opening = deepcopy(encounter['opening_state'])
+        _require(type(opening.get('turn')) is int and opening['turn'] == 1 and opening.get('screen') == 'combat'
+                 and all(opening.get(k) == v for k, v in resources.items())
+                 and not set(opening) & {'run_id', 'floor_id', 'combat_id', 'turn_id', 'observed_at'},
+                 'observed opening turn must match resources and omit database IDs/source timestamps')
+        for key in ('act', 'floor', 'ascension'):
+            if key in opening:
+                _require(key in facts and type(opening[key]) is int and opening[key] == facts[key],
+                         'opening state conflicts with inspected ' + key)
+        transitions.extend([
+            {'kind': 'start_combat', 'opening_state': opening, 'encounter_name': encounter['name'],
+             'encounter_type': encounter['type'], 'evidence_note': note},
+            {'kind': 'start_turn', 'turn_number': 1, 'phase': 'combat', 'opening_state': deepcopy(opening),
+             'evidence_note': note}])
+        if 'opening_hand' in result:
+            _require(inventory['coverage']['card'] == 'complete', 'opening zone baseline needs complete known deck')
+            hand = result['opening_hand']
+            _require(isinstance(hand, list) and all(_text(name, 128) for name in hand),
+                     'opening hand must explicitly list observed card names')
+            if 'hand' in opening:
+                _require(isinstance(opening['hand'], list), 'opening state hand must be a list')
+                names = [card.get('name') if isinstance(card, dict) else card for card in opening['hand']]
+                _require(all(_text(name, 128) for name in names) and Counter(names) == Counter(hand),
+                         'opening state hand conflicts with zone baseline')
+            changes.update(zone_coverage='complete', zone_baseline={
+                'deck': deepcopy(inventory['current']['card']), 'hand': deepcopy(result['opening_hand']),
+                'complete': True, 'opening': True, 'evidence_note': note})
+    else:
+        _require('encounter' not in result and 'opening_hand' not in result
+                 and context['combat_id'] is None and context['turn_id'] is None,
+                 'noncombat arrival cannot assert combat or card-zone facts')
+    _require(not draft.get('telemetry'), 'room lifecycle is derived from the inspected arrival, not overridden')
+    return context, changes
+
+
 def _request(draft, pending, checked, control_profile, clock):
     _require(control_profile == CONTROL_PROFILE, 'explicit default PS5 control profile required')
     before = pending['request']
@@ -143,12 +232,17 @@ def _request(draft, pending, checked, control_profile, clock):
         'action_id': pending['action_id'], 'before_frame_id': old['frame']['frame_id'],
         'before_sha256': before['source']['sha256'], 'choice_id': before['choice']['choice_id'],
         'option_ids': before['choice']['option_ids'], 'observed_result': draft['observed_result']})
+    resources = observed('resources', old['resources'])
+    facts = observed('facts', old['facts'])
     context = deepcopy(draft.get('context', before['context']))
+    room_changes = None
+    if draft['result'].get('kind') == 'room_entry':
+        context, room_changes = _room_entry(draft, pending, resources, facts, inventory)
     observation = {'schema': OBSERVATION_SCHEMA,
         'frame': {'frame_id': checked['frame_id'], 'image_sha256': checked['source']['sha256'],
                   'observed_at': checked['source']['captured_at']},
         'review': review, 'context': context, 'inventory_digest': inventory_digest(inventory),
-        'resources': observed('resources', old['resources']), 'facts': observed('facts', old['facts']),
+        'resources': resources, 'facts': facts,
         'ui': _observed_ui(draft, pending, checked)}
     if observation['ui'].get('menu_family'):
         observation = bind_reviewed_menu_controls(observation, control_profile=control_profile, now=clock)
@@ -157,6 +251,8 @@ def _request(draft, pending, checked, control_profile, clock):
     _require(isinstance(changes, dict) and not set(changes) - {
         'inventory_events', 'inventory_baseline', 'zone_events', 'zone_baseline',
         'zone_coverage', 'transitions'}, 'unknown telemetry override')
+    if room_changes is not None:
+        changes = room_changes
     if old['ui'].get('menu_family') == 'card_upgrade' and pending['proposal']['step_kind'] == 'commit':
         target = next(o for o in old['ui']['options'] if o['id'] == before['choice']['option_ids'][0])
         event = {'kind': 'card', 'action': 'replaced', 'item': target['card']['name'],
@@ -165,6 +261,9 @@ def _request(draft, pending, checked, control_profile, clock):
         changes = {'inventory_events': [event]}
     after = {'kind': 'choice', 'context': context, 'source': checked['source'],
              'review': deepcopy(review), 'observation': observation, 'inventory': inventory}
+    if room_changes is not None:
+        from .map_transitions import validate_map_arrival
+        validate_map_arrival(before, after, changes)
     if changes:
         after['mutation_review'] = dict(checked['review'], kind='reviewed_mutation', changes=deepcopy(changes))
     operation_id = str(uuid5(NAMESPACE_URL, pending['action_id'] + ':' + checked['frame_id']))

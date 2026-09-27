@@ -796,6 +796,51 @@ class TelemetryDatabase(AdvisoryMemory):
             )
         return baseline_id
 
+    def record_inventory_discovery(
+        self,
+        *,
+        run_id: str,
+        items: list[dict[str, Any]],
+        reviewed_categories: dict[str, str],
+        reviewer: str,
+        reviewed: bool,
+        source: str,
+        floor_id: str | None = None,
+        screenshot_path: str | None = None,
+        confidence: float | None = None,
+    ) -> str:
+        """Record only inspected inventory categories, retaining all others.
+
+        ``complete`` declares every item in that category was inspected; an
+        empty list therefore confirms that category is empty. ``partial``
+        merges the observed multiplicities without removing known items.
+        Omitted categories are not re-observed or copied into this baseline:
+        replay preserves their prior coverage, provenance and properties.
+        This review declaration records evidence; it grants no input authority.
+        """
+        kinds = {"card", "relic", "potion"}
+        if reviewed is not True or not isinstance(reviewer, str) or not reviewer.strip():
+            raise ValueError("inventory discovery requires an explicit review and reviewer")
+        if (not isinstance(reviewed_categories, dict) or not reviewed_categories
+                or not set(reviewed_categories) <= kinds
+                or any(not isinstance(level, str) or level not in {"complete", "partial"}
+                       for level in reviewed_categories.values())):
+            raise ValueError("reviewed categories must name inspected card, relic, or potion as complete or partial")
+        if not isinstance(items, list) or not isinstance(source, str) or not source.strip():
+            raise ValueError("discovery items list and source are required")
+        if any(not isinstance(item, dict) or not isinstance(item.get("kind"), str)
+               or item["kind"] not in reviewed_categories for item in items):
+            raise ValueError("discovery items must belong only to explicitly reviewed categories")
+        coverage = {kind: reviewed_categories.get(kind, "unknown") for kind in kinds}
+        review_source = (
+            f"{source.strip()}; inventory category discovery reviewed by {reviewer.strip()}: "
+            + ", ".join(sorted(reviewed_categories))
+        )
+        return self.record_inventory_baseline(
+            run_id=run_id, items=items, coverage=coverage, source=review_source,
+            floor_id=floor_id, screenshot_path=screenshot_path, confidence=confidence,
+        )
+
     def inventory_ledger(self, *, run_id: str, include_history: bool = True) -> dict[str, Any]:
         """Replay confirmed inventory; a partial category never erases known items.
 

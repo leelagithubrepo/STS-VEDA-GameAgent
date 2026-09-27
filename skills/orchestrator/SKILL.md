@@ -72,6 +72,15 @@ once before input. Finish Neow through the distinct `event_leave` rule and
 verify map arrival. A verified result awaiting logging needs finalization or
 the supported missing-note repair, never repeated input or another verify.
 
+For maps, load `docs/veda-map-play.md` before the first map input. It covers
+bounded directional inspection, reviewed overlapping views, route comparisons,
+expected-boss preparation, compact node selection and room-entry results.
+Count the focused node among the selectable siblings; reticle marks are not
+path connections. Preserve uninspected inventory categories with
+`inventory-discover`. Survey the boss and future branches when controls permit;
+incomplete future coverage remains explicit and does not block an otherwise
+checked immediate move. Re-plan after HP, deck, potion or gold changes.
+
 Read `docs/veda-general-decisions.md` and `docs/veda-action-evidence.md`. Keep three cases separate:
 
 - **Supported game uncertainty:** hidden draws, event outcomes and readable nonattack categories may remain unknown when the existing checked contract covers the action. Use applicable reviewed bounds or complete alternatives; record the actual result afterward. Bare unknown intent does not prove zero attack.

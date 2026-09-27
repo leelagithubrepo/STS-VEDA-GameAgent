@@ -329,6 +329,8 @@ class ReviewedPlaySession(CombatInputAdapter):
             proposal = plan_choice_step(before, request["choice"], now=self.clock(),
                                         max_age_seconds=MAX_AGE, action_id=action_id)
             command = proposal["command"]
+            if proposal["step_kind"] == "inspect":
+                self._map_inspection_budget(before, command["buttons"][0])
             semantic = {"kind": "navigation" if proposal["step_kind"] != "commit" else "choice",
                         "choice": request["choice"], "step_kind": proposal["step_kind"]}
         else:
@@ -370,6 +372,8 @@ class ReviewedPlaySession(CombatInputAdapter):
         before = self._before(request)
         if request["kind"] == "choice":
             validate_choice_proposal(pending["proposal"], before, now=self.clock())
+            if pending["proposal"]["step_kind"] == "inspect":
+                self._map_inspection_budget(before, pending["command"]["buttons"][0])
         state = before.context["state"] if request["kind"] == "combat" else {
             "resources": before["resources"], "facts": before["facts"], "ui": before["ui"]}
         decision = {"schema": "veda.play-telemetry.v1", "operation_id": action_id,
@@ -406,7 +410,9 @@ class ReviewedPlaySession(CombatInputAdapter):
         after = _copy(request["after"])
         after["source"] = self._source(after["source"], retain=True)
         before = pending["request"]
-        _require(after["source"]["sha256"] != before["source"]["sha256"]
+        inspection = before["kind"] == "choice" and pending["proposal"]["step_kind"] == "inspect"
+        _require((after["source"]["sha256"] != before["source"]["sha256"]
+                  or inspection and after["source"]["path"] != before["source"]["path"])
                  and _time(after["source"]["captured_at"]) > _time(pending["attempted_at"]),
                  "outcome needs a distinct image captured after dispatch")
         observed = self._before(after, check_plan_now=False)
@@ -429,6 +435,10 @@ class ReviewedPlaySession(CombatInputAdapter):
         changes = request.get("telemetry", {})
         _require(set(changes) <= {"inventory_events", "inventory_baseline", "zone_events", "zone_baseline",
                                  "zone_coverage", "transitions"}, "unknown telemetry override")
+        if (before['kind'] == 'choice' and before['observation']['ui'].get('menu_family') == 'map_nodes'
+                and pending['proposal']['step_kind'] == 'commit'):
+            from .map_transitions import validate_map_arrival
+            validate_map_arrival(before, after, changes)
         self._transitions(before["context"], after["context"], changes.get("transitions", []))
         self._mutations(before, after, changes, complete)
         outcome = {"schema": "veda.play-telemetry.v1", "operation_id": request["operation_id"],
@@ -684,6 +694,19 @@ class ReviewedPlaySession(CombatInputAdapter):
                 kwargs["verified_evidence"] = pending["outcome_verification"]
             receipt = self.telemetry.record_outcome(pending["outcome_request"], **kwargs)
             complete = pending["logical_action_complete"]
+            if (pending["request"]["kind"] == "choice"
+                    and pending["proposal"]["step_kind"] == "inspect"):
+                before = pending["request"]["observation"]
+                button = pending["command"]["buttons"][0]
+                scope, progress = self._map_inspection_budget(before, button)
+                view = pending["outcome_request"]["state"].get("ui", {}).get("map_view", {})
+                failures = dict(progress.get("without_viewport_progress", {}))
+                if view.get("effect") == "viewport_changed":
+                    failures = {}
+                failures[button] = (0 if view.get("effect") == "viewport_changed"
+                                    else failures.get(button, 0) + 1)
+                self.state["map_inspection_progress"] = {"scope": scope,
+                    "total": progress.get("total", 0) + 1, "without_viewport_progress": failures}
             self.state["last_verified"] = {"action_id": pending["action_id"],
                 "source": pending["outcome_request"]["source"], "receipt": receipt}
             self.state["pending"] = None
@@ -694,6 +717,20 @@ class ReviewedPlaySession(CombatInputAdapter):
             raise
         return {"status": "verified", "logical_action_complete": complete,
                 "next_context": receipt["next_context"], "requires_fresh_review": True}
+
+    def _map_inspection_budget(self, before, direction):
+        """Bound nonprogressing map browsing across captures and adapter restarts."""
+        scope = hashlib.sha256(json.dumps({k: before[k] for k in
+            ("context", "inventory_digest", "resources", "facts")}, sort_keys=True,
+            separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        progress = self.state.get("map_inspection_progress", {})
+        if progress.get("scope") != scope:
+            progress = {}
+        _require(progress.get("total", 0) < 64,
+                 "map inspection limit reached; plan with reviewed coverage")
+        _require(progress.get("without_viewport_progress", {}).get(direction, 0) < 2,
+                 "map inspection made no viewport progress twice; re-plan using confirmed nodes")
+        return scope, progress
 
     def disarm(self):
         self.armed = False

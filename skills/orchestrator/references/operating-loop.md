@@ -40,6 +40,23 @@ replay when `verified_pending_log` requires finalization/metadata recovery.
 
 ## Non-combat choices
 
+At a map boundary, read `docs/veda-map-play.md` once. Review every selectable
+sibling including the focused node, inspect overlapping views through the
+reviewed map survey action, and build a source-linked map/route plan with
+`veda_map.py`. Ask Spire to compare actual paths, elite readiness, rests,
+useful upgrades and merchants using current inventory and HP. Identify the
+expected boss from an inspected top-map portrait and retrieve applicable
+ascension rules for preparation; keep it separate from combat identity.
+Use compact `map_nodes` requests and `room_entry` results, then use returned
+canonical context IDs. An exhausted inspection direction calls for choosing
+among confirmed nodes, not restarting to repeat it. Preserve cropped future
+paths and the A20 second Act 3 boss as unknown until observed.
+
+When a picker reveals cards, use category-scoped `inventory-discover` after
+the prior pending input resolves. Do not mark uninspected relics or potions
+complete and empty while logging a deck. Check the current HUD against the
+saved inventory before creating the next action digest.
+
 For event choices and upgrade pickers, load `docs/veda-menu-controls.md` before
 declaring a missing button hint a blocker. Apply its named profile only to the
 reviewed supported menu family. Opening the picker, focusing a card, selecting

@@ -25,9 +25,9 @@
       "sources": [{"url": "https://slaythespire.wiki.gg/wiki/Burn", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.85}]
     },
     {
-      "statement": "VEDA may only use a boss profile after the boss's displayed name is readable in the current state. Visual resemblance or an expected boss from the map is insufficient.",
+      "statement": "VEDA may use a reviewed map boss portrait as an expected boss for route and deck preparation, recording its source and uncertainty separately. Combat predictions require the encountered boss's readable displayed name; a map expectation alone cannot confirm the current enemy or its move profile.",
       "kind": "situational_strategy",
-      "conditions": "Identity gate created after VEDA's own 2026-09-03 teaching-run misidentification; it is a safety policy, not a game rule.",
+      "conditions": "Identity gate created after VEDA's own 2026-09-03 teaching-run misidentification and clarified on 2026-09-27 to distinguish advance preparation from combat identity; this is VEDA policy, not a game rule.",
       "tags": ["boss", "vision", "identity", "safety", "own_experience"],
       "confidence": 0.97,
       "sources": [{"url": "workspace://data/teaching_run_2026-09-02.json", "publisher": "VEDA", "source_type": "own experience", "reliability": 0.65}, {"url": "https://slaythespire.wiki.gg/wiki/Hexaghost", "publisher": "Slay the Spire Wiki", "source_type": "reference wiki", "reliability": 0.85}]

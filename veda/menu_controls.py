@@ -18,8 +18,15 @@ EVENT_FOCUS_RULE = "ps5-event-adjacent-focus-v1"
 NEOW_LEAVE_RULE = "ps5-neow-granted-leave-v1"
 GRID_FOCUS_RULE = "ps5-upgrade-grid-adjacent-focus-v1"
 GRID_SELECT_RULE = "ps5-upgrade-grid-select-v1"
-_RULES = {EVENT_RULE, EVENT_FOCUS_RULE, NEOW_LEAVE_RULE, GRID_FOCUS_RULE, GRID_SELECT_RULE}
+MAP_FOCUS_RULE = "ps5-map-adjacent-sibling-focus-v1"
+MAP_SELECT_RULE = "ps5-map-focused-node-select-v1"
+MAP_INSPECT_RULE = "ps5-map-directional-inspection-v1"
+_RULES = {EVENT_RULE, EVENT_FOCUS_RULE, NEOW_LEAVE_RULE, GRID_FOCUS_RULE, GRID_SELECT_RULE,
+          MAP_FOCUS_RULE, MAP_SELECT_RULE, MAP_INSPECT_RULE}
 _DELTAS = {"up": (-1, 0), "down": (1, 0), "left": (0, -1), "right": (0, 1)}
+_MAP_SCREENS = {"enemy": {"combat"}, "elite": {"combat"}, "boss": {"combat"},
+                "rest": {"rest"}, "merchant": {"shop"}, "treasure": {"treasure", "reward"},
+                "event": {"event", "combat", "shop", "treasure", "reward"}}
 
 
 def _base(obs, family):
@@ -106,6 +113,105 @@ def _neow_leave(obs):
     return ui
 
 
+def _map_ui(obs, family):
+    ui = _base(obs, family)
+    _require(ui.get("screen") == "map" and ui.get("phase") == "choose"
+             and ui.get("selection_mode") == "immediate"
+             and ui.get("selected_ids") == [] and ui.get("pending_ids") == []
+             and ui.get("confirm") is None and ui.get("grid") is None
+             and ui.get("upgrade_preview") is None,
+             "map controls require a reviewed immediate map without a card grid or confirmation")
+    facts, resources = obs["facts"], obs["resources"]
+    _require(type(facts.get("act")) is int and 1 <= facts["act"] <= 4
+             and type(facts.get("floor")) is int and 0 <= facts["floor"] <= 99
+             and _text(facts.get("current_node_id")),
+             "map controls require the reviewed act, floor and stable current node")
+    _require(all(type(resources.get(k)) is int and resources[k] >= 0 for k in ("hp", "max_hp", "gold"))
+             and 0 < resources["hp"] <= resources["max_hp"],
+             "map controls require reviewed living HP, maximum HP and gold")
+    _require(all(o.get("enabled") is True and o.get("costs") == {} for o in ui["options"]),
+             "map controls require enabled free options")
+    return ui
+
+
+def _map_nodes(obs):
+    """A complete current set of selectable siblings, not a two-dimensional grid.
+
+    Completeness, geometry and reachability are explicit reviewer declarations.
+    They do not recognize pixels, establish a full-act route or identify a boss.
+    An unread sibling kind stays unknown; selecting another known node remains
+    possible once every selectable sibling and its focus order are reviewed.
+    """
+    ui = _map_ui(obs, "map_nodes")
+    siblings = ui.get("map_siblings")
+    _require(ui.get("map_inspection") is None and isinstance(siblings, dict)
+             and set(siblings) == {"complete", "selectable_count", "from_node_id", "evidence_note"}
+             and siblings["complete"] is True
+             and type(siblings["selectable_count"]) is int
+             and siblings["selectable_count"] == len(ui["options"])
+             and 1 <= siblings["selectable_count"] <= 7
+             and siblings["from_node_id"] == obs["facts"]["current_node_id"]
+             and _text(siblings["evidence_note"]),
+             "complete reviewed selectable siblings, exact count and current-node evidence required")
+    positions = []
+    for option in ui["options"]:
+        node = option.get("node")
+        _require(isinstance(node, dict) and set(node) == {
+            "node_id", "kind", "act", "floor", "x", "y", "reachable",
+            "reachability_evidence", "classification_evidence"}
+                 and node["node_id"] == option["id"]
+                 and node["node_id"] != siblings["from_node_id"]
+                 and node["kind"] in set(_MAP_SCREENS) | {"unknown"}
+                 and type(node["act"]) is int and node["act"] == obs["facts"]["act"]
+                 and type(node["floor"]) is int and node["floor"] == obs["facts"]["floor"] + 1
+                 and all(type(node[k]) is int and 0 <= node[k] <= 32768 for k in ("x", "y"))
+                 and node["reachable"] is True and _text(node["reachability_evidence"])
+                 and _text(node["classification_evidence"]),
+                 "each map sibling needs a stable next-floor identity, kind, coordinates and reachability evidence")
+        positions.append(node["x"])
+        activate = option.get("activate")
+        _require(activate is None or isinstance(activate, dict)
+                 and activate.get("button") == "cross" and isinstance(activate.get("evidence"), dict)
+                 and activate["evidence"].get("kind") == RULE_KIND
+                 and activate["evidence"].get("rule_id") == MAP_SELECT_RULE,
+                 "map nodes use only their explicitly selected default-profile Cross rule")
+    _require(positions == sorted(set(positions)),
+             "map sibling order must be the complete unique left-to-right screen order")
+    for edge in ui["navigation"]:
+        _require(edge.get("evidence", {}).get("kind") == RULE_KIND
+                 and edge["evidence"].get("rule_id") == MAP_FOCUS_RULE,
+                 "map siblings cannot inherit unrelated navigation controls")
+    return ui
+
+
+def _map_inspect(obs):
+    """A declared survey action; the profile is not a fabricated visible option."""
+    ui = _map_ui(obs, "map_inspect")
+    inspection = ui.get("map_inspection")
+    _require(ui.get("map_siblings") is None and isinstance(inspection, dict)
+             and set(inspection) == {"direction", "evidence_note", "purpose"}
+             and inspection["direction"] in {"up", "down"}
+             and inspection["purpose"] == "survey" and _text(inspection["evidence_note"]),
+             "map inspection requires a reviewed upper/lower survey purpose")
+    direction = inspection["direction"]
+    identity = "inspect-" + direction
+    _require(ui["order"] == [identity] and ui["focused_id"] == identity
+             and ui["navigation"] == [] and len(ui["options"]) == 1,
+             "map inspection is exactly one directional survey action")
+    option = ui["options"][0]
+    _require(option.get("role") == "map_inspection"
+             and option.get("label") == ("Inspect upper map" if direction == "up" else "Inspect lower map")
+             and option.get("node") is None,
+             "map inspection must be identified as a survey, not a selectable node")
+    activate = option.get("activate")
+    _require(activate is None or isinstance(activate, dict)
+             and activate.get("button") == direction and isinstance(activate.get("evidence"), dict)
+             and activate["evidence"].get("kind") == RULE_KIND
+             and activate["evidence"].get("rule_id") == MAP_INSPECT_RULE,
+             "map inspection uses only its named directional default-profile rule")
+    return ui
+
+
 def _grid(ui):
     grid = ui.get("grid")
     _require(isinstance(grid, dict) and set(grid) == {"complete", "cells"} and grid["complete"] is True
@@ -168,6 +274,27 @@ def validate_menu_control_binding(binding, observation, meaning, *, navigation=F
         _neow_leave(observation)
         _require(not navigation and binding["button"] == "cross" and meaning == "activate:leave",
                  "Neow Leave rule only activates the reviewed Leave with Cross")
+    elif rule == MAP_INSPECT_RULE:
+        ui = _map_inspect(observation)
+        direction = ui["map_inspection"]["direction"]
+        _require(not navigation and binding["button"] == direction
+                 and meaning == "activate:inspect-" + direction,
+                 "map inspection rule only sends its single declared survey direction")
+    elif rule in {MAP_SELECT_RULE, MAP_FOCUS_RULE}:
+        ui = _map_nodes(observation)
+        if rule == MAP_SELECT_RULE:
+            _require(not navigation and binding["button"] == "cross"
+                     and any(meaning == "activate:" + o["id"] for o in ui["options"]),
+                     "map select rule only activates a reviewed reachable sibling")
+        else:
+            source, target = binding.get("from"), binding.get("to")
+            _require(navigation and binding["button"] in {"left", "right"}
+                     and source in ui["order"] and target in ui["order"]
+                     and meaning == f"focus:{source}->{target}",
+                     "map focus needs two reviewed siblings and a horizontal direction")
+            delta = -1 if binding["button"] == "left" else 1
+            _require(ui["order"].index(target) == ui["order"].index(source) + delta,
+                     "map focus allows one adjacent sibling only; no wrap, skip or hidden node")
     elif rule in {EVENT_RULE, EVENT_FOCUS_RULE}:
         ui = _event(observation)
         if rule == EVENT_RULE:
@@ -205,6 +332,46 @@ def validate_menu_choice(choice, observation):
     family = observation["ui"].get("menu_family")
     if family == "event_options":
         _event(observation)
+    elif family == "map_nodes":
+        ui = _map_nodes(observation)
+        wanted = choice.get("option_ids", [])
+        _require(choice.get("kind") == "map" and len(wanted) == 1,
+                 "map selection requires exactly one reviewed node")
+        target = next((o["node"] for o in ui["options"] if o["id"] == wanted[0]), None)
+        _require(target is not None and target["kind"] in _MAP_SCREENS,
+                 "chosen map node kind needs review; an unread sibling can remain unknown")
+        post = choice.get("postconditions", {})
+        branches = post.get("alternatives", [{"postconditions": post}])
+        for branch in branches:
+            result = branch["postconditions"]
+            _require(result.get("screen") in _MAP_SCREENS[target["kind"]]
+                     and result.get("phase") == "result"
+                     and result.get("inventory_digest") in {"unchanged", observation["inventory_digest"]}
+                     and result.get("resources", {}).get("max_hp") == observation["resources"]["max_hp"],
+                     "map entry requires a matching room result, preserved inventory and exact maximum HP")
+            context = result.get("context", {})
+            _require(context.get("floor_id") != observation["context"]["floor_id"]
+                     and (all(_text(context.get(key)) for key in ("combat_id", "turn_id"))
+                          if result["screen"] == "combat"
+                          else context.get("combat_id") is None and context.get("turn_id") is None),
+                     "map entry needs a new provisional floor and combat context only for a combat room")
+            required = {"act": target["act"], "floor": target["floor"],
+                        "current_node_id": target["node_id"], "node_type": target["kind"]}
+            _require(all(key in result.get("facts", {})
+                         and _same_json(result["facts"][key], value) for key, value in required.items()),
+                     "map entry must constrain the selected act, next floor, node identity and map kind")
+    elif family == "map_inspect":
+        ui = _map_inspect(observation)
+        post = choice.get("postconditions", {})
+        _require(choice.get("kind") == "map" and choice.get("option_ids") == ui["order"]
+                 and post.get("screen") == "map" and post.get("phase") == "result"
+                 and _same_json(post.get("context"), observation["context"])
+                 and _same_json(post.get("resources"), observation["resources"])
+                 and post.get("inventory_digest") in {"unchanged", observation["inventory_digest"]}
+                 and post.get("allow_changed_facts") == []
+                 and all(key in observation["facts"] and _same_json(value, observation["facts"][key])
+                         for key, value in post.get("facts", {}).items()),
+                 "map inspection must preserve gameplay context, resources, inventory and facts")
     elif family == "event_leave":
         _neow_leave(observation)
         post = choice.get("postconditions")
@@ -317,6 +484,25 @@ def bind_reviewed_menu_controls(observation, *, control_profile, now=None, max_a
                 if option["enabled"] and option.get("activate") is None:
                     option["activate"] = _binding(obs, "cross", "activate:" + option["id"], GRID_SELECT_RULE)
             _bind_adjacency(obs, GRID_FOCUS_RULE)
+    elif ui.get("menu_family") == "map_nodes":
+        _map_nodes(obs)
+        for option in ui["options"]:
+            if option.get("activate") is None:
+                option["activate"] = _binding(obs, "cross", "activate:" + option["id"], MAP_SELECT_RULE)
+        existing = {(edge["from"], edge["button"]) for edge in ui["navigation"]}
+        for index, source in enumerate(ui["order"]):
+            for button, offset in (("left", -1), ("right", 1)):
+                target_index = index + offset
+                if 0 <= target_index < len(ui["order"]) and (source, button) not in existing:
+                    target = ui["order"][target_index]
+                    ui["navigation"].append(dict(_binding(obs, button, f"focus:{source}->{target}", MAP_FOCUS_RULE),
+                                                  **{"from": source, "to": target}))
+    elif ui.get("menu_family") == "map_inspect":
+        _map_inspect(obs)
+        direction = ui["map_inspection"]["direction"]
+        option = ui["options"][0]
+        if option.get("activate") is None:
+            option["activate"] = _binding(obs, direction, "activate:" + option["id"], MAP_INSPECT_RULE)
     else:
         _require(False, "no default control rule for this menu family")
     checked = _observation(obs, clock, max_age_seconds)

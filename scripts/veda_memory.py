@@ -321,6 +321,23 @@ def main() -> int:
     inventory_baseline.add_argument("--source", required=True)
     inventory_baseline.add_argument("--confidence", type=float)
 
+    inventory_discovery = commands.add_parser(
+        "inventory-discover", help="record inspected inventory categories while preserving uninspected categories",
+    )
+    inventory_discovery.add_argument("--run-id", required=True)
+    inventory_discovery.add_argument("--items", type=_document, required=True, help='JSON object with an "items" list; only inspected categories')
+    inventory_discovery.add_argument(
+        "--categories", type=_document, required=True,
+        help='JSON object naming only inspected categories, e.g. {"card":"complete"}; complete empty explicitly clears that category',
+    )
+    inventory_discovery.add_argument("--reviewer", required=True)
+    inventory_discovery.add_argument("--reviewed", action="store_true", required=True, help="declare the supplied categories were inspected")
+    inventory_discovery.add_argument("--floor-id")
+    inventory_discovery.add_argument("--screenshot")
+    inventory_discovery.add_argument("--capture", action="store_true", help="passively capture inventory evidence before logging")
+    inventory_discovery.add_argument("--source", required=True)
+    inventory_discovery.add_argument("--confidence", type=float)
+
     map_snapshot = commands.add_parser("map-snapshot", help="record the full map graph visibly present on one screen")
     map_snapshot.add_argument("--run-id", required=True)
     map_snapshot.add_argument("--current-node", required=True)
@@ -592,6 +609,17 @@ def main() -> int:
         evidence = _evidence_for_logging(parser, args)
         print(database.record_inventory_baseline(
             run_id=args.run_id, items=items, coverage=args.coverage, floor_id=args.floor_id,
+            screenshot_path=evidence.screenshot_path, source=_source_with_evidence(args.source, evidence),
+            confidence=_evidence_confidence(args.confidence, evidence),
+        ))
+    elif args.command == "inventory-discover":
+        items = args.items.get("items")
+        if not isinstance(items, list):
+            parser.error("--items must be an object with an items list")
+        evidence = _evidence_for_logging(parser, args)
+        print(database.record_inventory_discovery(
+            run_id=args.run_id, items=items, reviewed_categories=args.categories,
+            reviewer=args.reviewer, reviewed=args.reviewed, floor_id=args.floor_id,
             screenshot_path=evidence.screenshot_path, source=_source_with_evidence(args.source, evidence),
             confidence=_evidence_confidence(args.confidence, evidence),
         ))

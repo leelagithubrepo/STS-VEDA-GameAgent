@@ -26,7 +26,7 @@ _SCREENS = {
     "map": {"map"}, "reward": {"reward", "card_reward"}, "rest": {"rest"},
     "event": {"event"}, "shop": {"shop"}, "continue_run": {"title"},
 }
-_ALL_SCREENS = set().union(*_SCREENS.values()) | {"combat", "result"}
+_ALL_SCREENS = set().union(*_SCREENS.values()) | {"combat", "result", "treasure"}
 _CONTEXT = {"run_id", "floor_id", "combat_id", "turn_id"}
 
 
@@ -105,7 +105,10 @@ def _review(review, frame, kind):
 def _proof(binding, observation, meaning, *, navigation=False):
     _require(isinstance(binding, dict), "reviewed button binding required")
     button = binding.get("button")
-    _require(button in (_DIRECTIONS if navigation else _BUTTONS), "unreviewed or non-atomic button")
+    inspection = (not navigation and observation["ui"].get("menu_family") == "map_inspect"
+                  and binding.get("evidence", {}).get("kind") == "documented_control_profile")
+    _require(button in (_DIRECTIONS if navigation else {"up", "down"} if inspection else _BUTTONS),
+             "unreviewed or non-atomic button")
     proof = binding.get("evidence")
     _require(isinstance(proof, dict) and _text(proof.get("reviewer"))
              and proof.get("meaning") == meaning
@@ -312,7 +315,7 @@ def plan_choice_step(observation, choice, *, now=None, max_age_seconds=5, action
             button = _proof(option.get("activate"), obs, "activate:" + target)
             if ui["selection_mode"] == "immediate":
                 _require(len(wanted) == 1 and not ui["selected_ids"], "immediate choices cannot imply multiple selections")
-                kind = "commit"
+                kind = "inspect" if ui.get("menu_family") == "map_inspect" else "commit"
             else:
                 kind, expectation = "select", {"selected_ids": ui["selected_ids"] + [target]}
     action_id = action_id or uuid4().hex
@@ -393,12 +396,42 @@ def verify_choice_step(proposal, before, after, *, now=None):
     proposal = validate_choice_proposal(proposal, before, now=_time(before["frame"]["observed_at"]))
     after = _observation(after, now or datetime.now(timezone.utc), proposal["max_age_seconds"])
     _require(after["frame"]["frame_id"] != before["frame"]["frame_id"]
-             and after["frame"]["image_sha256"] != before["frame"]["image_sha256"]
+             and (after["frame"]["image_sha256"] != before["frame"]["image_sha256"]
+                  or proposal["step_kind"] == "inspect")
              and _time(after["frame"]["observed_at"]) > _time(before["frame"]["observed_at"]),
              "verification needs a later distinct source")
     kind, ui = proposal["step_kind"], deepcopy(before["ui"])
     matched_outcome_id = None
-    if kind in {"focus", "select"}:
+    if kind == "inspect":
+        _require(before["ui"].get("menu_family") == "map_inspect"
+                 and _same_json(_stable(after), _stable(before)),
+                 "map inspection cannot change game context/resources/inventory/facts")
+        _match_outcome(proposal["choice"], before, after)
+        view = after["ui"].get("map_view")
+        _require(isinstance(view, dict) and set(view) == {
+            "top_visible", "bottom_visible", "focused_node_id", "visible_node_ids", "effect", "evidence_note"}
+            and all(type(view[k]) is bool for k in ("top_visible", "bottom_visible"))
+            and (view["focused_node_id"] is None or _text(view["focused_node_id"]))
+            and isinstance(view["visible_node_ids"], list) and len(view["visible_node_ids"]) <= 128
+            and all(_text(k) for k in view["visible_node_ids"])
+            and len(set(view["visible_node_ids"])) == len(view["visible_node_ids"])
+            and (view["focused_node_id"] is None or view["focused_node_id"] in view["visible_node_ids"])
+            and view["effect"] in {"viewport_changed", "focus_changed", "unchanged"}
+            and _text(view["evidence_note"]), "explicit inspected map viewport result required")
+        _require(after["ui"]["screen"] == "map" and after["ui"]["phase"] == "result"
+                 and not after["ui"]["options"] and not after["ui"]["navigation"]
+                 and after["ui"].get("confirm") is None,
+                 "inspection result supplies no node activation authority")
+        if after["frame"]["image_sha256"] == before["frame"]["image_sha256"]:
+            _require(view["effect"] == "unchanged", "identical pixels cannot prove map movement")
+        outcome = after["review"].get("outcome", {})
+        _require(outcome.get("action_id") == proposal["action_id"]
+                 and outcome.get("before_frame_id") == before["frame"]["frame_id"]
+                 and outcome.get("before_sha256") == before["frame"]["image_sha256"]
+                 and outcome.get("choice_id") == proposal["choice"]["choice_id"]
+                 and outcome.get("option_ids") == proposal["choice"]["option_ids"]
+                 and _text(outcome.get("observed_result")), "source-bound named inspection review required")
+    elif kind in {"focus", "select"}:
         _require(_same_json(_stable(after), _stable(before)), "game context/resources/inventory changed during choice navigation")
         if kind == "focus":
             ui["focused_id"] = proposal["expectation"]["focused_id"]

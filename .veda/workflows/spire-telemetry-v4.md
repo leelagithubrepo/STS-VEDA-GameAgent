@@ -80,6 +80,12 @@ python3 scripts/veda_memory.py bridge-preflight --run-id "$RUN_ID" \
 
 ## Persistent run facts
 
+For a newly inspected subset such as cards in a picker, use `inventory-discover`
+with explicit `--categories '{"card":"complete"}'`, `--reviewer`, `--reviewed`,
+items and screenshot. It retains other categories and their provenance.
+Do not declare relics/potions complete and empty merely because the current
+inspection only covers cards. See [map and inventory workflow](../../docs/veda-map-play.md).
+
 Record every confirmed card, relic, and potion acquisition/removal/consumption
 with `inventory-event`. Use `property_confirmed` only after the tooltip or
 other named evidence was read. Preserve unknown relic or potion effects as

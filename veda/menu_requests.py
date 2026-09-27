@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from uuid import NAMESPACE_URL, uuid5
 
 from .choice_execution import SCHEMA as OBSERVATION_SCHEMA, _checked, _require, _same_json, plan_choice_step
 from .menu_controls import bind_reviewed_menu_controls
@@ -104,16 +105,18 @@ def _ui(value):
     _require(isinstance(value, dict), "compact reviewed menu UI required")
     allowed = {"menu_family", "choice_id", "layout_id", "phase", "focused_id", "options", "grid",
                "selected_ids", "pending_ids", "upgrade_preview", "confirm_hint", "screen", "order",
-               "control_layout", "selection_mode", "required_count", "navigation", "selection_purpose"}
+               "control_layout", "selection_mode", "required_count", "navigation", "selection_purpose",
+               "map_siblings", "map_inspection"}
     _require(not set(value) - allowed, "source fields and control proofs do not belong in a menu draft")
     ui = deepcopy(value)
     family = ui.get("menu_family")
-    _require(family in {"event_options", "event_leave", "card_upgrade"}, "unsupported draft menu family")
+    _require(family in {"event_options", "event_leave", "card_upgrade", "map_nodes", "map_inspect"},
+             "unsupported draft menu family")
     _require(isinstance(ui.get("options"), list), "complete visible draft options required")
     for option in ui["options"]:
-        _require(isinstance(option, dict) and not set(option) - {"id", "label", "enabled", "costs", "card", "role"},
+        _require(isinstance(option, dict) and not set(option) - {"id", "label", "enabled", "costs", "card", "role", "node"},
                  "draft options need visible semantics, not prebound controls")
-    derived = {"screen": "selection" if family == "card_upgrade" else "event",
+    derived = {"screen": "selection" if family == "card_upgrade" else "map" if family.startswith("map_") else "event",
         "order": [option["id"] for option in ui["options"]], "control_layout": "ps5_default",
         "selection_mode": "toggle" if family == "card_upgrade" else "immediate",
         "required_count": 1, "navigation": []}
@@ -163,6 +166,14 @@ def _request(draft, checked, control_profile, clock):
     choice = {"kind": draft["choice"]["kind"], "option_ids": deepcopy(draft["choice"]["option_ids"]),
         "choice_id": ui["choice_id"], "review": dict(review, kind="reviewed_choice"),
         "postconditions": _postconditions(draft["choice"]["postconditions"], draft["context"])}
+    post = choice["postconditions"]
+    branches = post.get("alternatives", [{"postconditions": post}])
+    for branch in branches:
+        outcome = branch["postconditions"]
+        if outcome.get("context") == "next_room":
+            _require(ui["menu_family"] == "map_nodes" and len(choice["option_ids"]) == 1,
+                     "next_room context belongs only to one reviewed map node")
+            outcome["context"] = map_arrival_context(draft["context"], choice["option_ids"][0], outcome["screen"])
     plan_choice_step(observation, choice, now=clock, max_age_seconds=30)
     if ui["menu_family"] == "card_upgrade":
         target = next(option for option in ui["options"] if option["id"] == choice["option_ids"][0])
@@ -176,6 +187,26 @@ def _request(draft, checked, control_profile, clock):
     return {"operation": "prepare", "kind": "choice", "source": deepcopy(checked["source"]),
         "context": deepcopy(draft["context"]), "review": deepcopy(review), "observation": observation,
         "inventory": deepcopy(draft["inventory"]), "choice": choice, "reasoning": draft["reasoning"]}
+
+
+def map_arrival_context(context, node_id, screen):
+    """Name provisional arrival scopes; no ledger records or combat facts exist yet.
+
+    The same selected node has one floor identity across outcome alternatives.
+    Only a combat-screen branch receives provisional combat/turn identities.
+    Actual observation and the ordinary lifecycle receipt establish real rows.
+    """
+    from .choice_execution import _context
+    _context(context)
+    _require(_text(node_id, 256) and screen in {"combat", "rest", "shop", "event", "treasure", "reward"},
+             "map arrival requires a named node and supported room screen")
+    _require(context["combat_id"] is None and context["turn_id"] is None,
+             "map arrival starts from a noncombat context")
+    basis = json.dumps(["veda.map-arrival.v1", context["run_id"], context["floor_id"], node_id], separators=(",", ":"))
+    identity = str(uuid5(NAMESPACE_URL, basis))
+    return {"run_id": context["run_id"], "floor_id": "map-floor-" + identity,
+            "combat_id": "map-combat-" + identity if screen == "combat" else None,
+            "turn_id": "map-turn-" + identity if screen == "combat" else None}
 
 
 def _digest(draft):

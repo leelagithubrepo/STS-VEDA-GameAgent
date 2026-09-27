@@ -1,5 +1,9 @@
 # Continue through event and upgrade menus
 
+For map inspection, route comparison, node focus/activation and room-entry
+results, use [the map workflow](veda-map-play.md). The same compact request and
+result CLI handles those scoped map families.
+
 A missing button glyph is not, by itself, missing game state. When the operator
 has explicitly selected the unchanged default PS5 control layout, use its named
 menu rules. Keep that rule separate from evidence actually seen on screen.
@@ -59,22 +63,23 @@ using the existing telemetry workflow, then take a fresh source for the next
 request. A discovery is not a card acquisition. Do not combine a new inventory
 digest with an opening contract that promised an unchanged digest.
 
-The [inventory-baseline workflow](../.veda/workflows/spire-telemetry-v4.md#persistent-run-facts)
+The [inventory workflow](../.veda/workflows/spire-telemetry-v4.md#persistent-run-facts)
 accepts JSON files, avoiding fragile shell-quoted card names. Put the observed
-items in an object with an `items` list of `{kind, item}` entries, preserving
-duplicate counts, and coverage in a separate `card`/`relic`/`potion` object:
+cards in an object with an `items` list of `{kind, item}` entries, preserving
+duplicate counts. Declare only the category actually inspected:
 
 ```sh
-python3 scripts/veda_memory.py inventory-baseline \
+python3 scripts/veda_memory.py inventory-discover \
   --run-id CURRENT_RUN_ID --floor-id CURRENT_FLOOR_ID \
   --items @/absolute/path/to/observed-items.json \
-  --coverage @/absolute/path/to/observed-coverage.json \
+  --categories '{"card":"complete"}' --reviewer 'Codex Orchestrator' --reviewed \
   --screenshot /absolute/path/to/inspected-picker.png \
   --source 'Inspected upgrade picker after verified opening'
 ```
 
-Use `complete` only for fully inspected categories, then refresh compact play
-context and the action image. This bookkeeping is not controller input.
+Use `complete` only for fully inspected categories. Unmentioned categories
+retain their prior ledger evidence, then refresh compact play context and the
+action image. This bookkeeping is not controller input.
 
 Ask Spire to compare the actual upgrades with the current deck and known route.
 Do not ask the player to make an ordinary upgrade decision. Card choice follows
@@ -253,8 +258,8 @@ For a newly opened picker, `result` is `{"kind":"menu","ui": ...}` with its
 complete compact `card_upgrade` UI: actual options, focus and grid. Keep action
 inventory `unchanged` while verifying the opening. Once the pending action is
 clear, record newly discovered card knowledge through `veda_memory.py
-inventory-baseline`, using the exact inspected picker screenshot, explicit
-items and coverage. Do not claim the opening acquired those cards or infer a
+inventory-discover`, using the exact inspected picker screenshot, explicit
+items and reviewed categories. Do not claim the opening acquired those cards or infer a
 starter deck that was not fully visible. Do this once; navigation retains it.
 
 For a completed upgrade, set `inventory` to `selected_upgrade_applied` only

@@ -488,7 +488,7 @@ class PlayTelemetry:
             receipt = self._receipt("resume", req, recorded, checkpoint_id=checkpoint, status="resumed")
             return self._finish(db, event, req, digest, receipt)
 
-    def _outcome_guard(self, db, req, captured):
+    def _outcome_guard(self, db, req, captured, *, reviewed_inspection=False):
         row = db.execute("SELECT d.*,e.payload_json FROM decisions d JOIN evidence_events e ON e.id=d.event_id WHERE d.id=?",
                          (req["decision_id"],)).fetchone()
         if row is None or row["status"] != "recommended":
@@ -506,7 +506,20 @@ class PlayTelemetry:
         if captured <= _time(prior["request"]["source"]["captured_at"]):
             raise ValueError("outcome needs a later observation")
         if req["status"] == "verified" and req["source"]["sha256"] == original["source"]["sha256"]:
-            raise ValueError("unchanged source bytes do not establish a performed action")
+            action = original.get("action", {})
+            before, after = original.get("state", {}), req["state"]
+            inspection_only = (reviewed_inspection
+                and action.get("kind") == "navigation" and action.get("step_kind") == "inspect"
+                and before.get("ui", {}).get("menu_family") == "map_inspect"
+                and after.get("ui", {}).get("screen") == "map"
+                and after.get("ui", {}).get("phase") == "result"
+                and after.get("ui", {}).get("map_view", {}).get("effect") == "unchanged"
+                and req["source"]["path"] != original["source"]["path"]
+                and all(_json(after.get(k)) == _json(before.get(k)) for k in ("resources", "facts"))
+                and not any(req.get(k) for k in ("inventory_events", "inventory_baseline", "zone_events",
+                                               "zone_baseline", "transitions")))
+            if not inspection_only:
+                raise ValueError("unchanged source bytes do not establish a performed action")
         pause_reconciled = False
         if self._revision(db, req["context"]["run_id"]) != prior["revision"]:
             pause_reconciled = self._only_intervening_pause(db, req, prior)
@@ -550,7 +563,9 @@ class PlayTelemetry:
                     if audit.get("repaired_outcome_sha256") != digest or audit.get("recorded_at") != proof["reviewed_at"]:
                         raise ValueError("metadata repair audit differs from durable outcome")
                 recorded = clock.isoformat()
-            original, pause_reconciled = self._outcome_guard(db, req, captured)
+            original, pause_reconciled = self._outcome_guard(db, req, captured,
+                reviewed_inspection=verified_evidence is not None
+                    and verified_evidence.get("basis") == "fresh_verified_result")
             if verified_evidence is not None and original["operation_id"] != verified_evidence["action_id"]:
                 raise ValueError("durable review belongs to a different input")
             ids = {"inventory": [], "zones": [], "inventory_baseline": None, "zone_baseline": None}
@@ -813,10 +828,12 @@ class PlayTelemetry:
                 _object(transition["previous_ending_state"], "previous ending state")
                 self._state_context(db, transition["previous_ending_state"], context, req["source"])
                 _object(transition["starting_state"], "starting state")
-                old = db.execute("SELECT act,floor FROM floors WHERE id=?", (context["floor_id"],)).fetchone()
+                old = db.execute("SELECT act,floor,outcome FROM floors WHERE id=?", (context["floor_id"],)).fetchone()
                 if old[1] is not None and transition["floor"] <= old[1]:
                     raise ValueError("new floor must advance; missing intermediate floors are not reconstructed")
-                self.database.complete_floor(floor_id=context["floor_id"], outcome=transition["previous_outcome"], ending_state=transition["previous_ending_state"], summary=summary)
+                # Departure must preserve an already reviewed floor conclusion.
+                if old[2] is None:
+                    self.database.complete_floor(floor_id=context["floor_id"], outcome=transition["previous_outcome"], ending_state=transition["previous_ending_state"], summary=summary)
                 context["floor_id"] = self.database.record_floor(run_id=context["run_id"], act=transition["act"], floor=transition["floor"],
                     node_type=transition["node_type"], outcome=None, starting_state=transition["starting_state"], summary=summary)
                 self._state_context(db, transition["starting_state"], context, req["source"])
