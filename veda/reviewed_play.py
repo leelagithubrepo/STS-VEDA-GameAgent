@@ -95,6 +95,14 @@ def verify_choice_observation(proposal, before, after, *, policy='strict', now=N
     try:
         return {**verify_choice_step(proposal, before, after, now=now, historical=historical), 'observed_mismatches': []}
     except ValueError:
+        if policy == 'learning' and proposal.get('step_kind') == 'focus' and before.get('ui', {}).get('menu_family') == 'map_nodes':
+            from .map_focus import verify_focus
+            validate_choice_proposal(proposal, before, now=_time(before['frame']['observed_at']))
+            after = validate_choice_observation(after, now or datetime.now(timezone.utc), None if historical else proposal['max_age_seconds'])
+            _require(after['frame']['frame_id'] != before['frame']['frame_id']
+                     and _time(after['frame']['observed_at']) > _time(before['frame']['observed_at']),
+                     'map focus needs a distinct later inspected frame')
+            return verify_focus(proposal, before, after)
         if policy == 'learning' and proposal.get('step_kind') == 'focus' and before.get('ui', {}).get('menu_family') in {'shop_stock', 'shop_remove'}:
             from .shop_controls import verify_focus
             validate_choice_proposal(proposal, before, now=_time(before['frame']['observed_at']))
@@ -820,6 +828,8 @@ class ReviewedPlaySession(CombatInputAdapter):
         pending.update(status="verified_pending_log", outcome_request=outcome, outcome_verification=verification,
                        verified_after_digest=verified_result_digest(after),
                        after_context=after["context"], logical_action_complete=complete)
+        if after.get('observation', {}).get('ui', {}).get('menu_family') == 'map_nodes':
+            pending['verified_map_after'] = deepcopy(after)
         self._save()
         return self.finalize()
 
@@ -1099,6 +1109,8 @@ class ReviewedPlaySession(CombatInputAdapter):
             self.state["last_verified"] = {"action_id": pending["action_id"],
                 "source": pending["outcome_request"]["source"], "receipt": receipt,
                 "verified_after_digest": pending.get('verified_after_digest')}
+            if pending.get('verified_map_after') is not None:
+                self.state['last_verified']['map_after'] = deepcopy(pending['verified_map_after'])
             step_kind = pending['semantic']['kind']
             self._timing_event('verified_input', action_id=pending['action_id'],
                                step_kind=step_kind, move_complete=bool(complete))

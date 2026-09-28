@@ -50,6 +50,17 @@ rest. Future edges require saved bound views. A single reachable next-node
 choice works without a full survey or boss identity, including mid-act resumes.
 Unknown future coverage does not mean the route is safe; weigh the uncertainty.
 
+Use `kind:"event"` for a visible question mark, which the game's legend labels
+"Unknown." Its actual room is revealed on
+entry and can be an event or another room type; `kind:"unknown"` means the icon
+itself is unread. Compare enemy icons with the on-screen legend: a focus border
+does not turn a normal enemy into an elite. With little spending gold, normally
+prefer a useful fight or question mark to a merchant unless there is a concrete
+shopping or route benefit. At the archived 64/80 HP, 39-gold fork, the center
+normal enemy was a reasonable choice; it was incorrectly called an elite.
+Choose once from available information and continue. Do not turn this example
+into a fixed rule to always fight or never visit a low-gold merchant.
+
 Prepare one checked step and save the choice:
 
 ```sh
@@ -73,31 +84,57 @@ Inspect the after-image. If only focus changed:
 
 ```sh
 python3 scripts/veda_map_step.py --focus-result ACTUAL_FOCUSED_NODE \
-  --action-id EXACT_PENDING_ACTION --unchanged \
+  --unchanged \
   --observed-result 'Actual focus inspected; other map facts and resources unchanged.' \
   --session SESSION_DIRECTORY/state.json --capture EXACT_AFTER.png \
   --reviewer 'Codex Orchestrator' --evidence-note 'Actual observed focus transition.' \
-  --reviewed --output NEW_FOCUS_VERIFICATION.json
+  --reviewed
 ```
 
 Submit this result pointer first and require verification. `--unchanged` means
 the advisor actually inspected unchanged options, inventory, resources and
 other facts; a button acknowledgement cannot establish it.
+The pending action ID and a new result-file path are supplied automatically.
+In learning mode, record the actual selectable focus even if it differs from
+the prediction. The adapter logs the mismatch and resolves that navigation;
+it does not resend the tap or infer a controller edge from a possibly incorrect
+before-focus declaration. An icon correction can be supplied in an explicit
+menu result with the same node IDs, positions and connections; its changed
+classification is also logged. This is a reviewed correction, not automatic
+icon recognition.
 
-Reuse the original snapshot and destination, supplying only actual focus:
+Reuse the verified actual map state and saved destination:
 
 ```sh
-python3 scripts/veda_map_step.py --snapshot MAP_SNAPSHOT.json \
-  --cache ACT_CACHE.json --focus ACTUAL_FOCUSED_NODE --unchanged \
+python3 scripts/veda_map_step.py --last-result --cache ACT_CACHE.json \
   --session SESSION_DIRECTORY/state.json --capture EXACT_AFTER.png \
-  --reviewer 'Codex Orchestrator' --evidence-note 'Same inspected frame; only focus changed from snapshot.' \
-  --reviewed --execute --output NEXT_REQUEST.json
+  --reviewer 'Codex Orchestrator' --evidence-note 'Same inspected verified map state.' \
+  --reviewed --execute
 ```
 
 The inspected after-image can also be the next before-image with no intervening
 input or outside change. Do not recapture because thinking exceeded 30 seconds.
 Session input epochs prevent reuse across later inputs. If anything else changed,
 update the snapshot instead of declaring it unchanged.
+For a session with a result seal but no retained map state, use
+`--after-result EXACT_VERIFIED_RESULT.json` once. An older unsealed session needs
+an inspected snapshot; never resend its old input. Unverified or modified
+result packets cannot be reused. Reusing `--snapshot`
+with the exact last verified image also carries forward its verified focus;
+an old snapshot cannot turn the intended activation into another Left press.
+For a different image, inspect and supply actual focus with `--focus NODE
+--unchanged`, or update the snapshot if more than focus changed. Original
+partial inventory coverage stays partial; navigation does not identify random
+upgrades. The old-snapshot fallback refreshes **only focus**. After correcting
+icons, use `--last-result` or update the snapshot's classifications too. If
+retaining optional destination-specific `entry_resources` forecasts, use
+`--snapshot` with those forecasts and the actual corrected icons, resources and
+inventory. `--last-result`/`--after-result` reuse observed state and do not carry
+those separate predictions.
+
+If an image was initially logged as uncertain, an exact reviewed verification
+can resolve that same post-input image later. The earlier uncertainty remains
+in the audit. No 30-second recapture loop or controller replay is needed.
 
 After activation, use the ordinary compact `room_entry` result in
 [map controls](veda-map-play.md#focus-and-enter-one-room). Record actual screen,

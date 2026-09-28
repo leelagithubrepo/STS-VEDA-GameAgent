@@ -6,6 +6,8 @@ No controller, capture, database or model calls occur in this module.
 """
 from copy import deepcopy
 from math import ceil
+import hashlib
+from pathlib import Path
 
 from .map_survey import _merge_survey, _require, _text, survey_digest
 from .menu_controls import CONTROL_PROFILE, _MAP_SCREENS
@@ -254,3 +256,46 @@ def focus_result(session, action_id, focused_id, *, unchanged=False, observed_re
     return {'schema': 'veda.menu-result.v1', 'action_id': action_id,
             'resources': 'unchanged', 'inventory': 'unchanged', 'facts': 'unchanged',
             'result': {'kind': 'focus', 'focused_id': focused_id}, 'observed_result': observed_result}
+
+
+def snapshot_from_result(packet, session):
+    """Recover the exact sealed observation, not the old action's prediction."""
+    from .shop import snapshot_from_result as verified_snapshot
+    value = verified_snapshot(packet, session)
+    value['schema'] = SNAPSHOT_SCHEMA
+    return _snapshot(value)
+
+
+def last_snapshot(session):
+    from .map_survey import read_json
+    path = Path(session)
+    state = read_json(path/'state.json' if path.is_dir() else path)
+    last = state.get('last_verified', {})
+    _require(last.get('map_after') is not None,
+             'no retained verified map result; use --after-result or an inspected snapshot')
+    return snapshot_from_result({'operation': 'verify', 'action_id': last['action_id'],
+                                 'after': last['map_after']}, session)
+
+
+def reuse_verified_focus(snapshot, session, capture):
+    """An unchanged exact verified frame must not reintroduce an older focus.
+
+    A different capture or explicit focus override remains the reviewer's
+    responsibility. Reuse only this one field; never erase new classifications,
+    inventory uncertainty, entry forecasts or route choices.
+    """
+    from .map_survey import read_json
+    path = Path(session)
+    state = read_json(path/'state.json' if path.is_dir() else path)
+    last = state.get('last_verified', {})
+    if not last.get('map_after') or hashlib.sha256(Path(capture).read_bytes()).hexdigest() != last['source']['sha256']:
+        return snapshot
+    verified = last_snapshot(session)
+    if (snapshot['context'] != verified['context']
+            or snapshot['ui']['choice_id'] != verified['ui']['choice_id']
+            or snapshot['facts'].get('current_node_id') != verified['facts'].get('current_node_id')
+            or {o['id'] for o in snapshot['ui']['options']} != {o['id'] for o in verified['ui']['options']}):
+        return snapshot
+    value = deepcopy(snapshot)
+    value['ui']['focused_id'] = verified['ui']['focused_id']
+    return value

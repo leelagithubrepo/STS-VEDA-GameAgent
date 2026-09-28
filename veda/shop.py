@@ -45,7 +45,7 @@ def snapshot_from_result(packet, session):
     after = packet['after']
     from .evidence_continuity import verified_result_digest
     _require(last.get('verified_after_digest') == verified_result_digest(after),
-             'result contents differ or this legacy result lacks a seal; inspect a current merchant snapshot')
+             'result contents differ or this legacy result lacks a seal; inspect a current snapshot')
     _require(all(after['source'][k] == last['source'][k] for k in ('sha256', 'captured_at')),
              'result source differs from the verified source')
     obs = after['observation']

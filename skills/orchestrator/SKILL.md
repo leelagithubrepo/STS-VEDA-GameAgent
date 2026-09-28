@@ -95,7 +95,14 @@ after opening the picker. On maps, use `docs/veda-map-travel.md` and
 `veda_map_step.py`: save a route per run/act, retain its destination through
 focus changes. Exactly one confirmed reachable node uses the automatic forced
 move: omit the decision file and skip route/boss analysis, then verify entry.
-At actual forks retain the chosen destination through focus taps and reuse inspected topology. Reassess material changes; inspect
+At actual forks retain the chosen destination through focus taps and reuse inspected topology.
+After verifying focus, use `--last-result` to carry the actual state forward;
+never reuse the original focus declaration. Record unexpected actual focus with
+`--focus-result` and continue after verification, without resending the tap.
+A visible question mark is `event`, not an unread `unknown` icon. Check the
+legend before calling a normal enemy an elite. With little gold, prefer a useful
+fight/question mark unless a concrete merchant or route benefit warrants it.
+Reassess material changes; inspect
 future branches/boss only when useful. `strategy_required` means choose once
 and continue, not ask permission or stop. Incomplete future coverage should
 not prevent choosing a visible reachable node. Strategy guidance such as

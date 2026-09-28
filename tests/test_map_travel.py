@@ -2,6 +2,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
+from pathlib import Path
 import subprocess
 import sys
 import unittest
@@ -9,9 +10,10 @@ from unittest.mock import patch
 
 from tests import test_map_result_flow as flow
 from tests.test_map_survey import SurveyFixture, edge, make_view, node
-from veda.map_travel import SNAPSHOT_SCHEMA, focus_result, focus_snapshot, plan_map
+from veda.map_travel import (SNAPSHOT_SCHEMA, focus_result, focus_snapshot, plan_map,
+                             last_snapshot, reuse_verified_focus, snapshot_from_result)
 from veda.menu_controls import CONTROL_PROFILE
-from veda.menu_results import validate_menu_result
+from veda.menu_results import validate_menu_result, write_menu_result
 from veda.reviewed_play import ReviewedPlaySession
 
 
@@ -258,6 +260,122 @@ class MapTravelAdapterTests(unittest.TestCase):
         with f.db._connection() as con:
             self.assertEqual(2, con.execute("SELECT count(*) FROM decisions WHERE status='resolved'").fetchone()[0])
             self.assertEqual(1, con.execute("SELECT count(*) FROM floors WHERE node_type='merchant'").fetchone()[0])
+
+    def test_observed_unexpected_map_focus_resolves_without_repeating_input(self):
+        f = self.flow
+        planned = plan_map(self.snapshot, decision=decision('start', 'left'))
+        prepared = f.prepare(planned['draft'])
+        decision_id = f.session.state['pending']['decision_id']
+        _, packet = f.verify(prepared, {'kind': 'focus', 'focused_id': 'right'})
+        self.assertEqual(['left'], [c['buttons'][0] for c in f.controller.inputs])
+        observed = last_snapshot(f.session.path)
+        self.assertEqual('right', observed['ui']['focused_id'])
+        self.assertEqual(observed, snapshot_from_result(packet, f.session.path))
+        with f.db._connection() as con:
+            row = con.execute('SELECT actual_outcome_json FROM decisions WHERE id=?',
+                              (decision_id,)).fetchone()
+        actual = json.loads(row[0])
+        mismatch = actual['learning']['observed_mismatches'][0]
+        self.assertEqual(('map_focus', 'left', 'right'),
+                         (mismatch['field'], mismatch['expected'], mismatch['observed']))
+        self.assertNotIn('shop_focus_transition', actual['learning'])
+        path = packet['after']['source']['path']
+        reused = reuse_verified_focus(self.snapshot, f.session.path, path)
+        self.assertEqual('right', reused['ui']['focused_id'])
+        self.assertEqual('center', self.snapshot['ui']['focused_id'])
+        # The actual focus remains independent of the saved destination.
+        self.assertEqual('left', plan_map(reused, planned['cache'])['destination'])
+        packet['after']['observation']['ui']['focused_id'] = 'left'
+        with self.assertRaisesRegex(ValueError, 'contents differ'):
+            snapshot_from_result(packet, f.session.path)
+
+    def test_focus_mismatch_cannot_hide_resource_option_or_strict_policy_changes(self):
+        f = self.flow
+        prepared = f.prepare(plan_map(self.snapshot, decision=decision('start', 'left'))['draft'])
+        with self.assertRaisesRegex(ValueError, 'gameplay state'):
+            f.verify(prepared, {'kind': 'focus', 'focused_id': 'right'}, resources=dict(f.resources, hp=79))
+        self.assertEqual(1, len(f.controller.inputs))
+        self.assertEqual('attempted', f.session.state['pending']['status'])
+        pending = deepcopy(f.session.state['pending'])
+        _, packet = f.verify(prepared, {'kind': 'focus', 'focused_id': 'right'})
+        from veda.reviewed_play import verify_choice_observation
+        with self.assertRaises(ValueError):
+            verify_choice_observation(pending['proposal'], pending['request']['observation'],
+                packet['after']['observation'], policy='strict', historical=True)
+        bad = deepcopy(packet['after']['observation'])
+        bad['ui']['options'][0]['node']['reachable'] = False
+        with self.assertRaises(ValueError):
+            verify_choice_observation(pending['proposal'], pending['request']['observation'],
+                bad, policy='learning', historical=True)
+
+    def test_unknown_then_reinspect_same_archived_image_resolves_offline(self):
+        from uuid import uuid4
+        f = self.flow
+        prepared = f.prepare(plan_map(self.snapshot, decision=decision('start', 'left'))['draft'])
+        action_id = prepared['action_id']
+        capture = f.capture()
+        output = f.root/'delayed-result.json'
+        draft = focus_result(f.session.path, action_id, 'right', unchanged=True,
+                             observed_result='Actual right focus observed; other map facts unchanged.')
+        write_menu_result(draft, session=f.session.path, action_id=action_id, capture=capture,
+            reviewer='Fixture', evidence_note='Reviewed actual right focus.', reviewed=True,
+            control_profile=CONTROL_PROFILE, output=output, now=f.now)
+        packet = json.loads(output.read_text())
+        after = packet['after']
+        f.session.handle({'operation': 'reconcile', 'action_id': action_id, 'status': 'unknown',
+            'operation_id': str(uuid4()), 'source': after['source'], 'review': after['review'],
+            'frame_id': after['review']['frame_id'],
+            'state': {k: after['observation'][k] for k in ('resources', 'facts', 'ui')}})
+        f.session.close()
+        f.now += timedelta(hours=2)
+        def forbidden():
+            raise AssertionError('offline review touched controller')
+        f.session = ReviewedPlaySession(f.root/'fast-session', run_id=f.run,
+            telemetry=f.session.telemetry, mode='shadow', decision_policy='learning',
+            controller_factory=forbidden, clock=lambda: f.now)
+        answer = f.session.handle(packet)
+        self.assertEqual('verified', answer['status'])
+        self.assertFalse(f.session.armed)
+        self.assertIsNone(f.session.state['pending'])
+        self.assertEqual(1, len(f.controller.inputs))
+        with f.db._connection() as con:
+            self.assertEqual(2, con.execute("SELECT count(*) FROM evidence_events WHERE kind='play_outcome'").fetchone()[0])
+
+    def test_focus_review_can_correct_icons_without_changing_connections(self):
+        from veda.menu_results import _unbound_ui
+        f = self.flow
+        prepared = f.prepare(plan_map(self.snapshot, decision=decision('start', 'left'))['draft'])
+        ui = _unbound_ui(f.session.state['pending']['request']['observation']['ui'])
+        ui['focused_id'] = 'right'
+        ui['options'][1]['label'] = 'Normal enemy'
+        ui['options'][1]['node'].update(kind='enemy', classification_evidence='Normal enemy icon matches legend.')
+        ui['options'][2]['label'] = 'Question mark'
+        ui['options'][2]['node'].update(kind='event', classification_evidence='Visible question mark, room not yet revealed.')
+        f.verify(prepared, {'kind': 'menu', 'ui': ui})
+        snapshot = last_snapshot(f.session.path)
+        self.assertEqual(['merchant', 'enemy', 'event'], [o['node']['kind'] for o in snapshot['ui']['options']])
+        self.assertEqual(1, len(f.controller.inputs))
+
+    def test_cli_uses_verified_focus_instead_of_stale_original_snapshot(self):
+        f = self.flow
+        planned = plan_map(self.snapshot, decision=decision('start', 'right'))
+        prepared = f.prepare(planned['draft'])
+        _, packet = f.verify(prepared, {'kind': 'focus', 'focused_id': 'right'})
+        snap, cache = f.root/'snapshot.json', f.root/'cache.json'
+        snap.write_text(json.dumps(self.snapshot)); cache.write_text(json.dumps(planned['cache']))
+        command = [sys.executable, 'scripts/veda_map_step.py', '--session', str(f.session.path),
+            '--cache', str(cache), '--capture', packet['after']['source']['path'],
+            '--reviewer', 'Fixture', '--evidence-note', 'Actual verified same map.', '--reviewed', '--execute']
+        for mode in (['--snapshot', str(snap)], ['--last-result']):
+            result = subprocess.run(command + mode, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            request = json.loads(Path(json.loads(result.stdout)['request_file']).read_text())
+            self.assertEqual('right', request['observation']['ui']['focused_id'])
+            from veda.choice_execution import plan_choice_step
+            proposal = plan_choice_step(request['observation'], request['choice'], now=f.now)
+            self.assertEqual('commit', proposal['step_kind'])
+            self.assertEqual(['cross'], proposal['command']['buttons'])
+        self.assertEqual(1, len(f.controller.inputs))
 
     def test_unverified_focus_cannot_be_submitted_as_entry_and_wrong_result_does_not_repeat(self):
         f = self.flow

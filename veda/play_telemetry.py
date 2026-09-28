@@ -573,7 +573,15 @@ class PlayTelemetry:
                           "AND json_extract(payload_json,'$.request.decision_id')=? ORDER BY rowid DESC LIMIT 1",
                           (req["decision_id"],)).fetchone()
         prior = json.loads(last[0]) if last else payload
-        if captured <= _time(prior["request"]["source"]["captured_at"]):
+        # Reinterpreting the very same post-input image can resolve a prior
+        # unknown review. Preserve that earlier audit; don't demand a new game
+        # frame just because the first interpretation was incomplete.
+        same_unknown_review = (
+            req['status'] == 'verified' and prior['request'].get('status') == 'unknown'
+            and isinstance(focus_review, dict) and focus_review.get('basis') == 'action_bound_result'
+            and focus_review.get('action_id') == original['operation_id']
+            and all(req['source'][key] == prior['request']['source'][key] for key in ('sha256', 'captured_at')))
+        if captured <= _time(prior["request"]["source"]["captured_at"]) and not same_unknown_review:
             raise ValueError("outcome needs a later observation")
         if req["status"] == "verified" and req["source"]["sha256"] == original["source"]["sha256"]:
             action = original.get("action", {})
