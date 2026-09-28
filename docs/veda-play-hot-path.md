@@ -77,7 +77,8 @@ require another image. Inspect again after an input or an outside state change.
   then inspect the actual destination. A raised card's keyword help is hand focus.
 - Combat loot: use [quick loot](veda-loot-play.md); gold needs no strategic analysis.
 - Other menus: use [menu controls](veda-menu-controls.md).
-- Map: use [map survey and route planning](veda-map-play.md).
+- Map: use [quick map travel](veda-map-travel.md); retain the destination across
+  focus taps and reuse inspected routes instead of surveying every floor.
 
 Once the source-free draft validates: capture if needed after an input/change →
 inspect that exact image → bind

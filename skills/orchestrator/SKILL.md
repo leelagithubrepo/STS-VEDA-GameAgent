@@ -81,8 +81,11 @@ while navigating. Do not repeat strategy or boss research for routine loot.
 For screen-specific commands, use `docs/veda-combat-play.md`,
 `docs/veda-menu-controls.md` or `docs/veda-map-play.md`. Default PS5 profiles
 can supply known controls when a glyph is absent. Inspect actual upgrade cards
-after opening the picker. On maps, compare visible connected options and
-inspect future branches/boss when useful; incomplete future coverage should
+after opening the picker. On maps, use `docs/veda-map-travel.md` and
+`veda_map_step.py`: save a route per run/act, retain its destination through
+focus taps and reuse inspected topology. Reassess material changes; inspect
+future branches/boss only when useful. `strategy_required` means choose once
+and continue, not ask permission or stop. Incomplete future coverage should
 not prevent choosing a visible reachable node. Strategy guidance such as
 Barricade before Corruption, potion timing or elite readiness is advice to
 weigh in context, not a mandatory checklist before every card.

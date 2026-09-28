@@ -105,17 +105,29 @@ class SurveyTests(SurveyFixture):
         with self.assertRaisesRegex(ValueError, "current_node_id"):
             merge_survey(self.draft([bound["view"]]))
 
-    def test_bind_view_rejects_stale_capture_missing_review_or_bad_receipt(self):
+    def test_archival_view_preserves_old_source_but_rejects_missing_review_or_bad_receipt(self):
         image, now = self.captured_image()
-        for reviewed, checked_time in ((False, now), (True, now + timedelta(seconds=40))):
-            with self.subTest(reviewed=reviewed, time=checked_time), self.assertRaises(ValueError):
-                write_bound_view(self.view_draft(), capture=image, reviewer="Fixture reviewer", evidence_note="Inspected fixture",
-                                 reviewed=reviewed, output=self.root / "invalid.json", now=checked_time)
+        write_bound_view(self.view_draft(), capture=image, reviewer="Fixture reviewer", evidence_note="Inspected archival fixture",
+                         reviewed=True, output=self.root / 'archive.json', now=now + timedelta(days=1))
+        saved = json.loads((self.root / 'archive.json').read_text())
+        self.assertFalse(saved['controller_authorized'])
+        self.assertEqual('2026-09-27T10:00:00+00:00', saved['view']['source']['captured_at'])
+        with self.assertRaises(ValueError):
+            write_bound_view(self.view_draft(), capture=image, reviewer="Fixture reviewer", evidence_note="Inspected fixture",
+                             reviewed=False, output=self.root / "invalid.json", now=now)
         image.write_bytes(image.read_bytes() + b"changed")
         with self.assertRaisesRegex(ValueError, "hash_mismatch"):
             write_bound_view(self.view_draft(), capture=image, reviewer="Fixture reviewer", evidence_note="Inspected fixture",
                              reviewed=True, output=self.root / "invalid.json", now=now)
         self.assertFalse((self.root / "invalid.json").exists())
+
+    def test_cropped_middle_view_cannot_claim_top_without_boss_evidence(self):
+        view = self.bottom()
+        view['coverage']['top_visible'] = True
+        with self.assertRaisesRegex(ValueError, 'top coverage'):
+            merge_survey(self.draft([view]))
+        view['coverage']['top_visible'] = False
+        self.assertFalse(merge_survey(self.draft([view]))['coverage']['graph_complete'])
 
     def test_cli_source_free_validation_and_capture_options_are_exclusive(self):
         path = self.root / "view-draft.json"

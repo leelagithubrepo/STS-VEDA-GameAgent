@@ -16,7 +16,7 @@ def main(argv=None):
     inputs.add_argument("--bind-view", type=Path, help="Source-free veda.map-survey-view-draft.v1; derive image identity from its original capture receipt")
     parser.add_argument("--plan", type=Path, help="Optional veda.map-plan-review.v1 resources and strategy review")
     parser.add_argument("--validate", action="store_true", help="Check source-free view structure before capture; writes no artifact")
-    parser.add_argument("--capture", type=Path, help="Exact inspected fresh PNG with original capture receipt")
+    parser.add_argument("--capture", type=Path, help="Exact inspected original PNG with capture receipt; archival topology only")
     parser.add_argument("--reviewer", help="Person or advisor who inspected this exact capture")
     parser.add_argument("--evidence-note", help="Actual reviewed content and limitations")
     parser.add_argument("--reviewed", action="store_true", help="Declare inspection of this exact image")

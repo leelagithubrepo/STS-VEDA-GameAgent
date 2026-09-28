@@ -190,6 +190,9 @@ def _merge_survey(draft, *, verify_sources, require_current):
                      "contradictory complete row: visible node omitted")
             complete_rows[row] = ids
         boss = view.get("expected_boss")
+        _require(not coverage['top_visible'] or boss is not None
+                 or any(n['kind'] == 'boss' for n in local.values()),
+                 'top coverage needs an inspected boss node or portrait; keep cropped upper views partial')
         if boss is not None:
             _keys(boss, {"name", "confidence", "evidence_note"})
             _text(boss["name"], "expected boss", 128)
@@ -265,7 +268,7 @@ def validate_view_draft(draft):
 
 
 def write_bound_view(draft, *, capture, reviewer, evidence_note, reviewed, output, now=None):
-    """Bind one explicitly inspected fresh original capture, never action authority.
+    """Bind one explicitly inspected original capture, never action authority.
 
     The self-contained output keeps the run/act/current-node context around a
     single bound view. Combine its ``view`` with other inspected views in a
@@ -274,7 +277,7 @@ def write_bound_view(draft, *, capture, reviewer, evidence_note, reviewed, outpu
     """
     validate_view_draft(draft)
     bound = reviewed_capture_source(capture=capture, reviewer=reviewer, evidence_note=evidence_note,
-                                    reviewed=reviewed, now=now)
+                                    reviewed=reviewed, now=now, max_age_seconds=None)
     envelope = _view_envelope(draft)
     view = envelope["views"][0]
     view["source"] = {key: bound["source"][key] for key in ("path", "sha256", "captured_at")}
@@ -283,7 +286,7 @@ def write_bound_view(draft, *, capture, reviewer, evidence_note, reviewed, outpu
     # Recheck the original receipt and source after graph validation. No manually
     # copied timestamp/hash or a changed capture can be substituted in this path.
     rechecked = reviewed_capture_source(capture=capture, reviewer=reviewer, evidence_note=evidence_note,
-                                        reviewed=reviewed, now=now)
+                                        reviewed=reviewed, now=now, max_age_seconds=None)
     _require(rechecked == bound, "capture changed while binding map view")
     artifact = {"schema": "veda.bound-map-view.v1", "run_id": draft["run_id"], "act": draft["act"],
                 "current_node_id": draft["current_node_id"], "view": view,
@@ -470,7 +473,7 @@ def plan_routes(survey, review):
         "research_targets": {"expected_boss": prep["expected_name"], "act": survey["act"], "ascension": review["ascension"],
             "second_act3_boss_unresolved": review["act"] == 3 and review["ascension"] == 20,
             "scope": "current ascension boss and elite behavior; preserve source-specific ascension limits"},
-        "replan_after": ["each room arrival", "card or relic reward", "potion change", "material HP or gold change", "new map evidence"],
+        "replan_after": ["saved route ends or is unavailable", "card or relic reward", "potion change", "material HP or gold change", "new map evidence"],
         "warnings": warnings, "fresh_action_review_required": True,
         "controller_authorized": False, "runtime_authorized": False}
 

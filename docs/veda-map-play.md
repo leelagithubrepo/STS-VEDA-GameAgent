@@ -1,7 +1,9 @@
-# Survey the map, prepare for the boss, then enter one room
+# Plan a route, then navigate and verify
 
-Use this workflow at an act entrance and whenever the route branches or the
-deck, potions, gold or health materially changes. Spire reviews the images and
+Start with [quick map travel](veda-map-travel.md) and `veda_map_step.py` for
+ordinary node selection. Reuse the destination through focus changes and save
+inspected routes per run and act. This longer guide covers extra survey and
+route analysis when they could change the decision. Spire reviews the images and
 strategy. The helpers check declarations and package input; they are not image
 recognizers or proof that a route will win. Read this before taking an action
 image. Use the existing warm bridge and reviewed adapter for each input.
@@ -25,6 +27,8 @@ Review the upper map and boss portrait when possible. Use overlapping map views
 and trace shared nodes before joining them. Record only inspected icons and
 connections. An unknown icon is not an event, and an event is not guaranteed
 safe. A cropped map cannot establish that there are no further elites or rests.
+Do not repeat a full survey at every floor. A top claim needs an inspected boss
+node or portrait; empty or cropped middle-map observations remain partial.
 
 ## Browse without entering a node
 
@@ -129,7 +133,8 @@ python3 scripts/veda_map.py --bind-view /absolute/view-draft.json \
 ```
 
 Append the returned envelope's `view` to `survey.views`. The helper derives
-the original receipt and source identity. Upper cropped views may omit the
+the original receipt and source identity, without an age limit for static
+topology. Upper cropped views may omit the
 current node; the merged survey must contain it. Survey validation is archival
 planning evidence; inspect the current viewport/focus after scrolling before binding an action.
 
@@ -176,8 +181,10 @@ evidence. Research coverage is not the same as checked combat-manifest coverage.
 Save the plan privately, and link it from the route recommendation. Record a
 `route-snapshot` for the actual current choices and `route-recommendation` for
 the selected node with safety rationale and reward tradeoff. Use `map-snapshot`
-only for what that inspected view actually contains. Re-plan after new map
-evidence, room arrival, rewards, potions, spending or material HP changes.
+only for what that inspected view actually contains. Advance the cached route
+after actual room arrival. Reassess for changed route knowledge, unavailable
+destinations, inventory changes or material HP/gold changes; routine focus
+movement and small resource changes do not require another route decision.
 
 ## Focus and enter one room
 
@@ -265,8 +272,10 @@ may contain names or objects with a `name`; the optional zone baseline uses
 names and must match their multiplicities. Retain all unrelated before facts
 unless the selected arrival contract explicitly allows their change. For a
 rest/shop/treasure result, omit `encounter` and `opening_hand` entirely. Validate
-the completed result draft before its final capture; then use the normal
-`veda_menu.py --result ... --session ... --capture ... --reviewed` binding path.
+the completed draft and bind the inspected settled after-image with the normal
+`veda_menu.py --result ... --session ... --capture ... --reviewed` path. Take
+another image only after a state change or if the result is not yet readable;
+elapsed thinking time alone does not require recapture.
 
 The helper builds `advance_floor`, and for combat `start_combat` and `start_turn`,
 their required evidence notes and optional opening-zone baseline. Room identity,
