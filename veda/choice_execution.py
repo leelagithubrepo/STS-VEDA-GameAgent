@@ -281,9 +281,9 @@ def _first_edge(ui, target):
 @_checked
 def plan_choice_step(observation, choice, *, now=None, max_age_seconds=5, action_id=None):
     """Plan exactly one tap; this function never sends it or grants authority."""
-    # None is an internal verification-only sentinel, never a public freshness
-    # bypass for planning or the immediate before-send recheck.
-    _require(type(max_age_seconds) in (int, float) and math.isfinite(max_age_seconds)
+    # None is used after the adapter checks a session/input epoch, or for
+    # historical result review. This pure planner never grants dispatch authority.
+    _require(max_age_seconds is None or type(max_age_seconds) in (int, float) and math.isfinite(max_age_seconds)
              and 0 < max_age_seconds <= 30, "freshness limit must be finite and at most 30 seconds")
     now = now or datetime.now(timezone.utc)
     obs = _observation(observation, now, max_age_seconds)
@@ -385,7 +385,7 @@ def _match_outcome(choice, before, after):
 
 
 @_checked
-def verify_choice_step(proposal, before, after, *, now=None):
+def verify_choice_step(proposal, before, after, *, now=None, historical=False):
     """Verify observed semantics, never just a bridge ack or a different image.
 
     Commits require an explicit reviewer outcome tied to both source frames.
@@ -394,7 +394,7 @@ def verify_choice_step(proposal, before, after, *, now=None):
     # A legitimately completed step may outlive its before-frame freshness.
     before = _observation(before, None, None)
     proposal = validate_choice_proposal(proposal, before, now=_time(before["frame"]["observed_at"]))
-    after = _observation(after, now or datetime.now(timezone.utc), proposal["max_age_seconds"])
+    after = _observation(after, now or datetime.now(timezone.utc), None if historical else proposal["max_age_seconds"])
     _require(after["frame"]["frame_id"] != before["frame"]["frame_id"]
              and (after["frame"]["image_sha256"] != before["frame"]["image_sha256"]
                   or proposal["step_kind"] == "inspect")

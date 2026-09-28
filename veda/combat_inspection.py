@@ -207,7 +207,7 @@ def _proposal(before, control_profile, max_age_seconds, action_id, button, ordin
 @_checked
 def plan_tooltip_clear(observation, *, control_profile, now=None, max_age_seconds=MAX_AGE, action_id=None, progress=None):
     _require(control_profile == CONTROL_PROFILE, 'explicit default PS5 control profile required')
-    _require(type(max_age_seconds) in (int, float) and 0 < max_age_seconds <= MAX_AGE,
+    _require(max_age_seconds is None or type(max_age_seconds) in (int, float) and 0 < max_age_seconds <= MAX_AGE,
              'inspection freshness must remain bounded to 30 seconds')
     before = validate_inspection_observation(observation, now=now, max_age_seconds=max_age_seconds)
     focus_key = _focus_key(before)
@@ -251,11 +251,11 @@ def validate_inspection_proposal(proposal, before, *, now=None, allow_legacy=Fal
 
 
 @_checked
-def verify_tooltip_clear(proposal, before, after, *, now=None):
+def verify_tooltip_clear(proposal, before, after, *, now=None, historical=False):
     before = validate_inspection_observation(before, max_age_seconds=None)
     proposal = validate_inspection_proposal(proposal, before, now=_time(before['frame']['observed_at']),
                                             allow_legacy=True, for_result=True)
-    after = validate_inspection_observation(after, now=now, max_age_seconds=proposal['max_age_seconds'])
+    after = validate_inspection_observation(after, now=now, max_age_seconds=None if historical else proposal['max_age_seconds'])
     _require(before['frame']['frame_id'] != after['frame']['frame_id']
              and _time(after['frame']['observed_at']) > _time(before['frame']['observed_at']),
              'focus result requires a distinct later capture')
@@ -298,7 +298,7 @@ def _inventory_digest(value):
     return inventory_digest(value)
 
 
-def _packet(draft, checked, control_profile, clock, execute):
+def _packet(draft, checked, control_profile, clock, execute, max_age_seconds=MAX_AGE):
     _require(isinstance(draft, dict) and set(draft) - {'decision_policy'} == {'schema', 'context', 'inventory', 'resources', 'facts', 'ui', 'reasoning'}
              and draft['schema'] == DRAFT_SCHEMA, 'exact source-free inspection draft required')
     _require(_text(draft['reasoning']), 'inspection reasoning must be nonempty text of at most 256 characters')
@@ -310,7 +310,7 @@ def _packet(draft, checked, control_profile, clock, execute):
         'frame': {'frame_id': checked['frame_id'], 'image_sha256': checked['source']['sha256'],
                   'observed_at': checked['source']['captured_at']},
         'review': dict(checked['review'], kind='reviewed_choice_ui')}
-    plan_tooltip_clear(observation, control_profile=control_profile, now=clock)
+    plan_tooltip_clear(observation, control_profile=control_profile, now=clock, max_age_seconds=max_age_seconds)
     return {'operation': 'execute' if execute else 'prepare', 'kind': 'combat_inspection',
         'decision_policy': policy,
         'context': deepcopy(draft['context']), 'inventory': inventory, 'observation': observation,
@@ -351,14 +351,18 @@ def _write(packet, output):
 
 @_checked
 def write_inspection_request(draft, *, capture, reviewer, evidence_note, reviewed, output,
-                             control_profile=CONTROL_PROFILE, execute=False, now=None):
+                             control_profile=CONTROL_PROFILE, execute=False, now=None, session=None):
     from .play_requests import reviewed_capture_source
     draft = _json(draft)
     validate_inspection_draft(draft, control_profile)
     _require(type(execute) is bool, 'execute must be explicit boolean')
-    checked = reviewed_capture_source(capture=capture, reviewer=reviewer, evidence_note=evidence_note, reviewed=reviewed, now=now)
-    packet = _packet(draft, checked, control_profile, now or datetime.now(timezone.utc), execute)
-    _require(checked == reviewed_capture_source(capture=capture, reviewer=reviewer, evidence_note=evidence_note, reviewed=reviewed, now=now),
+    checked = reviewed_capture_source(capture=capture, reviewer=reviewer, evidence_note=evidence_note, reviewed=reviewed, now=now, max_age_seconds=None if session is not None else MAX_AGE)
+    packet = _packet(draft, checked, control_profile, now or datetime.now(timezone.utc), execute,
+                     max_age_seconds=None if session is not None else MAX_AGE)
+    if session is not None:
+        from .evidence_continuity import bind_session
+        packet['evidence_binding'] = bind_session(session, draft['context'], checked['source'])
+    _require(checked == reviewed_capture_source(capture=capture, reviewer=reviewer, evidence_note=evidence_note, reviewed=reviewed, now=now, max_age_seconds=None if session is not None else MAX_AGE),
              'inspection capture changed during packaging')
     return _write(packet, output)
 
@@ -417,7 +421,7 @@ def _result_packet(draft, pending, checked, clock):
     obs['ui'] = deepcopy(draft['ui'])
     _require(_time(checked['source']['captured_at']) > _time(pending['attempted_at']),
              'inspection result capture must follow dispatch')
-    verify_tooltip_clear(pending['proposal'], before['observation'], obs, now=clock)
+    verify_tooltip_clear(pending['proposal'], before['observation'], obs, now=clock, historical=True)
     return {'operation': 'verify', 'action_id': pending['action_id'],
         'operation_id': str(uuid5(NAMESPACE_URL, pending['action_id'] + ':' + checked['frame_id'])),
         'after': after, 'telemetry': {}}
@@ -443,9 +447,9 @@ def write_inspection_result(draft, *, session, action_id, capture, reviewer, evi
     draft = _json(draft)
     validate_inspection_result(draft, session=session, action_id=action_id, control_profile=control_profile)
     pending, digest = _pending(session, action_id)
-    checked = reviewed_capture_source(capture=capture, reviewer=reviewer, evidence_note=evidence_note, reviewed=reviewed, now=now)
+    checked = reviewed_capture_source(capture=capture, reviewer=reviewer, evidence_note=evidence_note, reviewed=reviewed, now=now, max_age_seconds=None)
     packet = _result_packet(draft, pending, checked, now or datetime.now(timezone.utc))
-    _require(checked == reviewed_capture_source(capture=capture, reviewer=reviewer, evidence_note=evidence_note, reviewed=reviewed, now=now),
+    _require(checked == reviewed_capture_source(capture=capture, reviewer=reviewer, evidence_note=evidence_note, reviewed=reviewed, now=now, max_age_seconds=None),
              'inspection capture changed during packaging')
     _require(_pending(session, action_id)[1] == digest, 'pending inspection changed during packaging')
     return _write(packet, output)

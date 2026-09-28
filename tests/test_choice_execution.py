@@ -280,9 +280,9 @@ class ChoiceExecutionTests(unittest.TestCase):
         before['resources']['hp']=34
         with self.assertRaises(ChoiceError):validate_choice_proposal(step,before,now=NOW)
 
-    def test_public_freshness_limit_cannot_disable_age_checks(self):
+    def test_numeric_freshness_limits_remain_bounded(self):
         before=observation()
-        for limit in (None,False,float('nan'),float('inf'),0,-1,31):
+        for limit in (False,float('nan'),float('inf'),0,-1,31):
             with self.subTest(limit=limit),self.assertRaisesRegex(ChoiceError,'freshness limit'):
                 plan(before,max_age_seconds=limit)
         with self.assertRaisesRegex(ChoiceError,'stale'):

@@ -140,8 +140,8 @@ class MenuControlTests(unittest.TestCase):
     def test_stale_source_or_forged_profile_provenance_is_not_accepted(self):
         with self.assertRaisesRegex(ChoiceError, 'stale'):
             bind_reviewed_menu_controls(event(), control_profile=CONTROL_PROFILE, now=NOW+timedelta(seconds=31))
-        with self.assertRaisesRegex(ChoiceError, 'freshness'):
-            bind_reviewed_menu_controls(event(), control_profile=CONTROL_PROFILE, now=NOW, max_age_seconds=None)
+        # A pure binding may use epoch validation supplied by the reviewed adapter.
+        bind_reviewed_menu_controls(event(), control_profile=CONTROL_PROFILE, now=NOW, max_age_seconds=None)
         for update in [{'frame_id': 'wrong'}, {'rule_id': 'universal-cross'}, {'hint_text': 'invented glyph'},
                        {'reference_id': 'invented hardware'}, {'control_profile': 'unknown'}]:
             obs = bound(event()); obs['ui']['options'][0]['activate']['evidence'].update(update)

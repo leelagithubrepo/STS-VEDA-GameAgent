@@ -49,7 +49,8 @@ not task completion. Do not return a final response asking for “continue.”
    setup. Preserve uncertainties in the draft. A missing damage bound stays
    unknown; it need not prevent End Turn. Briefly explain the tradeoff.
 3. Use the compact combat/menu helper with `decision_policy:"learning"` and
-   validate before the fresh action image. Capture, inspect, bind and submit
+   bind with `--session SESSION_DIRECTORY/state.json`. An inspected settled
+   state does not expire just because time passed. Capture, inspect, bind and submit
    `--execute` for one input through the armed adapter. A warning is information
    for the decision; it is not a request for player approval.
 4. Observe the result and verify what actually happened. Focus or selection
@@ -66,6 +67,17 @@ are separate locations. Use the combat guide's observed, single-step recovery
 and report its actual destination, including no progress. Never declare hand
 focus merely because the intended action was to return there.
 
+Use `docs/veda-evidence-continuity.md`: each input invalidates prior action
+bindings; results can be recorded later without replay. Report observed manual
+input or outside screen changes with `invalidate_evidence` and inspect again.
+Submit the helper's `request_file` object unchanged; the operation/path spelling
+is also accepted. Never resend gameplay input to repair a result envelope.
+
+For combat loot use `docs/veda-loot-play.md` and `veda_loot.py`. Collect free
+gold with the fixed routine reason, collect potions into confirmed empty slots,
+and open card offers. Choose the card or skip once, then reuse that decision
+while navigating. Do not repeat strategy or boss research for routine loot.
+
 For screen-specific commands, use `docs/veda-combat-play.md`,
 `docs/veda-menu-controls.md` or `docs/veda-map-play.md`. Default PS5 profiles
 can supply known controls when a glyph is absent. Inspect actual upgrade cards
@@ -78,7 +90,7 @@ weigh in context, not a mandatory checklist before every card.
 ## Recover within the play loop
 
 `recoverable_review` means keep the task running. Follow its specific recovery
-step: repair an unsent draft, refresh an expired image, choose another playable
+step: repair an unsent draft, inspect a changed state, choose another playable
 card, inspect a changed UI, or finish logging. Keep the owned connection when
 healthy. Do not close/re-arm just because a strategy forecast is unavailable.
 After two unsuccessful inspections of the same unchanged fact, switch approach

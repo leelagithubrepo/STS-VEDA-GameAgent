@@ -311,13 +311,13 @@ class PlayTelemetry:
                 raise ValueError("operation_id was already used with different content")
             return {**payload["receipt"], "idempotent_replay": True}
 
-    def _clock(self, captured, now):
+    def _clock(self, captured, now, *, event_bound=False):
         clock = now or datetime.now(timezone.utc)
         if not isinstance(clock, datetime) or clock.tzinfo is None:
             raise ValueError("clock must be timezone-aware")
         if captured > clock:
             raise ValueError("future source cannot become current evidence")
-        if (clock - captured).total_seconds() > MAX_AGE_SECONDS:
+        if not event_bound and (clock - captured).total_seconds() > MAX_AGE_SECONDS:
             raise ValueError("source is stale; observe again before recording live changes")
         return clock.isoformat()
 
@@ -444,14 +444,19 @@ class PlayTelemetry:
                 "runtime_authorized": False, "controller_authorized": False, "idempotent_replay": False,
                 "recognition_performed": False, **extra}
 
-    def record_decision(self, request, *, now=None):
+    def record_decision(self, request, *, now=None, event_bound=None):
         """Persist intent BEFORE dispatch. Return value is not dispatch permission."""
         req, digest, captured = _request(request, "decision")
+        if event_bound is not None:
+            from .evidence_continuity import check_binding
+            if event_bound.get('source') != req['source'] or event_bound.get('context') != req['context']:
+                raise ValueError('event-bound decision source/context differs')
+            check_binding(event_bound.get('binding'), event_bound.get('binding'), req['context'], req['source'])
         with self.database._transaction(), self.database._connection() as db:
             replay = self._replay(db, req, digest)
             if replay:
                 return replay
-            recorded = self._clock(captured, now)
+            recorded = self._clock(captured, now, event_bound=event_bound is not None)
             self._context(db, req["context"], captured)
             self._chronology(db, req["context"], captured)
             self._state_context(db, req["state"], req["context"], req["source"])
@@ -501,7 +506,7 @@ class PlayTelemetry:
         Identical pixels can be the truthful result of a focus probe. Keep this
         exception narrower than the general verified-action path.
         """
-        if not isinstance(proof, dict) or proof.get('basis') != 'fresh_verified_result':
+        if not isinstance(proof, dict) or proof.get('basis') not in {'fresh_verified_result', 'action_bound_result'}:
             return False
         action = original.get('action', {})
         expected = action.get('expected', {}).get('kind')
@@ -589,12 +594,15 @@ class PlayTelemetry:
                 clock = now or datetime.now(timezone.utc)
                 if (req["status"] != "verified" or proof.get("outcome_sha256") != digest
                         or proof.get("source") != req["source"]
-                        or proof.get("basis") not in {"fresh_verified_result", "reviewed_retained_verified_result"}
+                        or proof.get("basis") not in {"fresh_verified_result", "action_bound_result", "reviewed_retained_verified_result"}
                         or _time(proof.get("reviewed_at")) > clock or captured > _time(proof["reviewed_at"])):
                     raise ValueError("durable verified evidence does not match this outcome")
                 _text(proof.get("action_id"), "verified action", 128)
-                if proof["basis"] == "fresh_verified_result":
-                    self._clock(captured, _time(proof["reviewed_at"]))
+                if proof["basis"] in {"fresh_verified_result", "action_bound_result"}:
+                    if proof['basis'] == 'action_bound_result':
+                        if not _time(proof.get('attempted_at')) < captured:
+                            raise ValueError('result must follow the exact attempted input')
+                    self._clock(captured, _time(proof["reviewed_at"]), event_bound=proof['basis'] == 'action_bound_result')
                     review = _object(proof.get("review"), "saved verified source review")
                     _text(review.get("reviewer"), "source reviewer", 128)
                     _text(review.get("frame_id"), "source frame", 256)
@@ -610,7 +618,7 @@ class PlayTelemetry:
                 recorded = clock.isoformat()
             original, pause_reconciled = self._outcome_guard(db, req, captured,
                 reviewed_inspection=verified_evidence is not None
-                    and verified_evidence.get("basis") == "fresh_verified_result",
+                    and verified_evidence.get("basis") in {"fresh_verified_result", "action_bound_result"},
                 focus_review=verified_evidence)
             if verified_evidence is not None and original["operation_id"] != verified_evidence["action_id"]:
                 raise ValueError("durable review belongs to a different input")

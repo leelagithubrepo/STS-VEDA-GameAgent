@@ -49,7 +49,8 @@ For Down, use `inspect-down`, `direction: "down"`, and `Inspect lower map`.
 These are inspection contracts, not claims that these labels appear on screen.
 The choice is `kind: "map"`, with that single option ID. Postconditions must
 be map/result with unchanged context, exact resources, inventory and facts.
-Use the normal source-free draft validation, fresh capture, exact-image review,
+Use source-free draft validation, an exact inspected settled image,
+`--session SESSION_DIRECTORY/state.json` for event-bound evidence,
 binding and prepare/send sequence from [menu controls](veda-menu-controls.md).
 Do not send an analog movement or raw bridge command as a substitute.
 
@@ -130,7 +131,7 @@ python3 scripts/veda_map.py --bind-view /absolute/view-draft.json \
 Append the returned envelope's `view` to `survey.views`. The helper derives
 the original receipt and source identity. Upper cropped views may omit the
 current node; the merged survey must contain it. Survey validation is archival
-planning evidence; it never replaces the next action's fresh capture.
+planning evidence; inspect the current viewport/focus after scrolling before binding an action.
 
 A top-map view may contain `expected_boss: {name,confidence,evidence_note}`.
 That is advance preparation evidence, never confirmation of the current combat

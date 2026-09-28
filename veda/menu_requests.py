@@ -111,13 +111,13 @@ def _ui(value):
     _require(not set(value) - allowed, "source fields and control proofs do not belong in a menu draft")
     ui = deepcopy(value)
     family = ui.get("menu_family")
-    _require(family in {"event_options", "event_leave", "card_upgrade", "map_nodes", "map_inspect"},
+    _require(family in {"event_options", "event_leave", "card_upgrade", "map_nodes", "map_inspect", "loot_rewards", "loot_cards"},
              "unsupported draft menu family")
     _require(isinstance(ui.get("options"), list), "complete visible draft options required")
     for option in ui["options"]:
-        _require(isinstance(option, dict) and not set(option) - {"id", "label", "enabled", "costs", "card", "role", "node"},
+        _require(isinstance(option, dict) and not set(option) - {"id", "label", "enabled", "costs", "card", "role", "node", "reward", "activate_hint"},
                  "draft options need visible semantics, not prebound controls")
-    derived = {"screen": "selection" if family == "card_upgrade" else "map" if family.startswith("map_") else "event",
+    derived = {"screen": "selection" if family == "card_upgrade" else "map" if family.startswith("map_") else "reward" if family == "loot_rewards" else "card_reward" if family == "loot_cards" else "event",
         "order": [option["id"] for option in ui["options"]], "control_layout": "ps5_default",
         "selection_mode": "toggle" if family == "card_upgrade" else "immediate",
         "required_count": 1, "navigation": []}
@@ -148,7 +148,7 @@ def _draft(value):
     return draft
 
 
-def _request(draft, checked, control_profile, clock):
+def _request(draft, checked, control_profile, clock, max_age_seconds=30):
     policy = draft.get('decision_policy', 'strict')
     frame = {"frame_id": checked["frame_id"], "image_sha256": checked["source"]["sha256"],
              "observed_at": checked["source"]["captured_at"]}
@@ -162,10 +162,20 @@ def _request(draft, checked, control_profile, clock):
             "kind": "visible_hint", "reviewer": review["reviewer"], "meaning": "confirm:" + ui["choice_id"],
             "layout_id": ui["layout_id"], "frame_id": frame["frame_id"], "image_sha256": frame["image_sha256"],
             "hint_text": hint["hint_text"]}}
+    for option in ui['options']:
+        activate_hint = option.pop('activate_hint', None)
+        if activate_hint is not None:
+            _require(ui['menu_family'] in {'loot_rewards', 'loot_cards'}
+                     and isinstance(activate_hint, dict) and set(activate_hint) == {'button', 'hint_text'},
+                     'loot activation hint needs its actual visible button and text')
+            option['activate'] = {'button': activate_hint['button'], 'evidence': {
+                'kind': 'visible_hint', 'reviewer': review['reviewer'], 'meaning': 'activate:' + option['id'],
+                'layout_id': ui['layout_id'], 'frame_id': frame['frame_id'],
+                'image_sha256': frame['image_sha256'], 'hint_text': activate_hint['hint_text']}}
     observation = {"schema": OBSERVATION_SCHEMA, "frame": frame, "review": review,
         "context": deepcopy(draft["context"]), "inventory_digest": inventory_digest(draft["inventory"]),
         "resources": deepcopy(draft["resources"]), "facts": deepcopy(draft["facts"]), "ui": ui}
-    observation = bind_reviewed_menu_controls(observation, control_profile=control_profile, now=clock)
+    observation = bind_reviewed_menu_controls(observation, control_profile=control_profile, now=clock, max_age_seconds=max_age_seconds)
     choice = {"kind": draft["choice"]["kind"], "option_ids": deepcopy(draft["choice"]["option_ids"]),
         "choice_id": ui["choice_id"], "review": dict(review, kind="reviewed_choice"),
         "postconditions": _postconditions(draft["choice"]["postconditions"], draft["context"], policy)}
@@ -177,7 +187,7 @@ def _request(draft, checked, control_profile, clock):
             _require(ui["menu_family"] == "map_nodes" and len(choice["option_ids"]) == 1,
                      "next_room context belongs only to one reviewed map node")
             outcome["context"] = map_arrival_context(draft["context"], choice["option_ids"][0], outcome["screen"])
-    plan_choice_step(observation, choice, now=clock, max_age_seconds=30)
+    plan_choice_step(observation, choice, now=clock, max_age_seconds=max_age_seconds)
     if ui["menu_family"] == "card_upgrade":
         target = next(option for option in ui["options"] if option["id"] == choice["option_ids"][0])
         projected = deepcopy(draft["inventory"])
@@ -239,7 +249,7 @@ def validate_menu_draft(draft, control_profile):
 
 @_checked
 def write_menu_request(draft, *, capture, reviewer, evidence_note, reviewed,
-                       control_profile, output, now=None, execute=False):
+                       control_profile, output, now=None, execute=False, session=None):
     """Exclusively publish a prepare request after explicit exact-image review.
 
     ``reviewed=True`` declares that this exact fresh image was inspected and all
@@ -250,9 +260,12 @@ def write_menu_request(draft, *, capture, reviewer, evidence_note, reviewed,
     draft = _draft(draft)
     _validate(draft, control_profile)  # Diagnose structure before source handling.
     checked = reviewed_capture_source(capture=capture, reviewer=reviewer,
-        evidence_note=evidence_note, reviewed=reviewed, now=now)
+        evidence_note=evidence_note, reviewed=reviewed, now=now, max_age_seconds=None if session is not None else 30)
     clock = now if now is not None else datetime.now(timezone.utc)
-    request = _request(draft, checked, control_profile, clock)
+    request = _request(draft, checked, control_profile, clock, max_age_seconds=None if session is not None else 30)
+    if session is not None:
+        from .evidence_continuity import bind_session
+        request['evidence_binding'] = bind_session(session, draft['context'], checked['source'])
     _require(type(execute) is bool, "execute must be an explicit boolean")
     if execute:
         request["operation"] = "execute"
@@ -267,7 +280,7 @@ def write_menu_request(draft, *, capture, reviewer, evidence_note, reviewed,
     # Recheck the complete original receipt and image after serialization. No
     # caller-supplied timestamp or hash is ever spliced into this request.
     _require(reviewed_capture_source(capture=capture, reviewer=reviewer,
-        evidence_note=evidence_note, reviewed=reviewed, now=now) == checked,
+        evidence_note=evidence_note, reviewed=reviewed, now=now, max_age_seconds=None if session is not None else 30) == checked,
         "capture changed during menu packaging")
     created = False
     try:

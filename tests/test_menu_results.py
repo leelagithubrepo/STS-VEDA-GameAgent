@@ -72,8 +72,7 @@ class MenuResultTests(unittest.TestCase):
         self.assertEqual(packet['telemetry'],{})
 
     def test_requires_exact_attempted_action_and_explicit_image_inspection(self):
-        for kwargs in ({'action_id':str(uuid4())},{'reviewed':False},{'capture':''},
-                       {'now':self.now+timedelta(seconds=31)}):
+        for kwargs in ({'action_id':str(uuid4())},{'reviewed':False},{'capture':''}):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError): self.write(**kwargs)
             self.assertFalse(self.output.exists())
         self.state['pending']['status']='verified_pending_log'; self.save_state()

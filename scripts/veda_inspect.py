@@ -15,20 +15,20 @@ def main(argv=None):
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument('--draft', type=Path, help='Source-free focus-navigation review; validate before action capture.')
     inputs.add_argument('--result', type=Path, help='Actual inspected focus, including unchanged or away from hand; no inferred game-state changes.')
-    parser.add_argument('--session', type=Path, help='Existing state.json read-only; required for results.')
+    parser.add_argument('--session', type=Path, help='Read-only state.json: binds actions to their input epoch; required for results.')
     parser.add_argument('--validate', action='store_true', help='Validate structure only; produces no dispatchable request.')
     parser.add_argument('--execute', action='store_true', help='Package prepare-and-send for the already armed adapter; this helper sends nothing.')
     parser.add_argument('--capture', type=Path)
     parser.add_argument('--reviewer')
     parser.add_argument('--evidence-note')
-    parser.add_argument('--reviewed', action='store_true', help='Declare exact fresh image and supplied facts inspected.')
+    parser.add_argument('--reviewed', action='store_true', help='Declare exact inspected settled image and supplied facts inspected.')
     parser.add_argument('--output', type=Path, help='New packet path; never overwrite.')
     parser.add_argument('--control-profile', required=True, choices=[CONTROL_PROFILE])
     args = parser.parse_args(argv)
     if args.execute and (args.validate or args.result is not None):
-        parser.error('--execute requires binding a fresh --draft')
-    if (args.result is not None) != (args.session is not None):
-        parser.error('--result requires --session; --session applies only to results')
+        parser.error('--execute requires binding an inspected --draft')
+    if args.result is not None and args.session is None:
+        parser.error('--result requires --session')
     if args.validate:
         if args.reviewed or any(v is not None for v in (args.capture, args.reviewer, args.evidence_note, args.output)):
             parser.error('--validate is source-free; omit capture, review and output options')
@@ -49,7 +49,7 @@ def main(argv=None):
         else:
             result = write_inspection_request(value, capture=args.capture, reviewer=args.reviewer,
                 evidence_note=args.evidence_note, reviewed=args.reviewed, output=args.output,
-                control_profile=args.control_profile, execute=args.execute)
+                control_profile=args.control_profile, execute=args.execute, session=args.session)
     except (ValueError, OSError, RecursionError) as error:
         from veda.helper_timing import record_helper_failure
         ids = value.get('context') if isinstance(value, dict) else None

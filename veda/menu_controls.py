@@ -21,7 +21,9 @@ GRID_SELECT_RULE = "ps5-upgrade-grid-select-v1"
 MAP_FOCUS_RULE = "ps5-map-adjacent-sibling-focus-v1"
 MAP_SELECT_RULE = "ps5-map-focused-node-select-v1"
 MAP_INSPECT_RULE = "ps5-map-directional-inspection-v1"
-_RULES = {EVENT_RULE, EVENT_FOCUS_RULE, NEOW_LEAVE_RULE, GRID_FOCUS_RULE, GRID_SELECT_RULE,
+LOOT_SELECT_RULE = "ps5-loot-focused-select-v1"
+LOOT_FOCUS_RULE = "ps5-loot-adjacent-focus-v1"
+_RULES = {LOOT_SELECT_RULE, LOOT_FOCUS_RULE, EVENT_RULE, EVENT_FOCUS_RULE, NEOW_LEAVE_RULE, GRID_FOCUS_RULE, GRID_SELECT_RULE,
           MAP_FOCUS_RULE, MAP_SELECT_RULE, MAP_INSPECT_RULE}
 _DELTAS = {"up": (-1, 0), "down": (1, 0), "left": (0, -1), "right": (0, 1)}
 _MAP_SCREENS = {"enemy": {"combat"}, "elite": {"combat"}, "boss": {"combat"},
@@ -39,6 +41,19 @@ def _base(obs, family):
              "one-card/menu quota and reviewed focus required")
     _require(all(option.get("shortcut") is None for option in ui["options"]),
              "scoped menus cannot inherit unrelated shortcuts")
+    return ui
+
+
+def _loot(obs):
+    family = obs['ui'].get('menu_family')
+    ui = _base(obs, family)
+    _require(family in {'loot_rewards', 'loot_cards'}
+             and ui['screen'] == ('reward' if family == 'loot_rewards' else 'card_reward')
+             and ui['phase'] == 'choose' and ui['selection_mode'] == 'immediate'
+             and not ui['selected_ids'] and not ui['pending_ids'] and ui.get('confirm') is None,
+             'loot controls require a reviewed immediate reward screen')
+    _require(obs['facts'].get('reward_source') == 'combat', 'routine loot is scoped to combat rewards')
+    _grid(ui)
     return ui
 
 
@@ -270,7 +285,15 @@ def validate_menu_control_binding(binding, observation, meaning, *, navigation=F
              "known scoped control rule, selected default profile and current source required")
     _require(not any(k in proof for k in ("hint_text", "reference_id", "before_sha256", "after_sha256")),
              "control rule must not claim observed hints or hardware transitions")
-    if rule == NEOW_LEAVE_RULE:
+    if rule in {LOOT_SELECT_RULE, LOOT_FOCUS_RULE}:
+        ui = _loot(observation)
+        if rule == LOOT_SELECT_RULE:
+            _require(not navigation and binding['button'] == 'cross'
+                     and any(meaning == 'activate:' + o['id'] for o in ui['options']),
+                     'loot select only activates the reviewed focused option')
+        else:
+            _adjacent_binding(binding, ui, meaning, navigation)
+    elif rule == NEOW_LEAVE_RULE:
         _neow_leave(observation)
         _require(not navigation and binding["button"] == "cross" and meaning == "activate:leave",
                  "Neow Leave rule only activates the reviewed Leave with Cross")
@@ -461,11 +484,25 @@ def bind_reviewed_menu_controls(observation, *, control_profile, now=None, max_a
     callers. Existing bindings are preserved and independently validated.
     """
     _require(control_profile == CONTROL_PROFILE, "explicit default PS5 control profile required")
-    _require(max_age_seconds is not None, "freshness cannot be bypassed when attaching controls")
     clock = now or datetime.now(timezone.utc)
     obs = _observation(observation, clock, max_age_seconds)
     ui = obs["ui"]
-    if ui.get("menu_family") == "event_options":
+    if ui.get('menu_family') in {'loot_rewards', 'loot_cards'}:
+        _loot(obs)
+        for option in ui['options']:
+            hint = option.pop('activate_hint', None)
+            if hint is not None:
+                _require(isinstance(hint, dict) and set(hint) == {'button', 'hint_text'}
+                         and option.get('activate') is None, 'one explicit loot activation hint required')
+                option['activate'] = {'button': hint['button'], 'evidence': {
+                    'kind': 'visible_hint', 'reviewer': obs['review']['reviewer'],
+                    'meaning': 'activate:' + option['id'], 'layout_id': ui['layout_id'],
+                    'frame_id': obs['frame']['frame_id'], 'image_sha256': obs['frame']['image_sha256'],
+                    'hint_text': hint['hint_text']}}
+            if option['enabled'] and option.get('activate') is None:
+                option['activate'] = _binding(obs, 'cross', 'activate:' + option['id'], LOOT_SELECT_RULE)
+        _bind_adjacency(obs, LOOT_FOCUS_RULE)
+    elif ui.get("menu_family") == "event_options":
         _event(obs)
         for option in ui["options"]:
             if option["enabled"] and option.get("activate") is None:

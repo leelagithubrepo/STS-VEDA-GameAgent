@@ -135,15 +135,8 @@ def main(argv=None):
                         raise line
                     if len(line) > MAX_BYTES:
                         raise ValueError("request exceeds byte limit")
-                    value = json.loads(line)
-                    # File requests keep large reviewed packets out of terminal
-                    # prompts. This reads JSON only; it cannot execute a script.
-                    if isinstance(value, dict) and set(value) == {"request_file"}:
-                        with Path(value["request_file"]).open("rb") as stream:
-                            raw = stream.read(MAX_BYTES + 1)
-                        if len(raw) > MAX_BYTES:
-                            raise ValueError("request file exceeds byte limit")
-                        value = json.loads(raw)
+                    from veda.request_envelope import load_request
+                    value = load_request(line)
                     result = session.handle(value)
                 except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
                     result = session.recoverable_error(error)

@@ -1,3 +1,8 @@
+For active play, bind compact action drafts with `--session SESSION_DIRECTORY/state.json`.
+[Evidence continuity](veda-evidence-continuity.md) replaces the 30-second limit
+for session-bound settled states; delayed result images retain their original time.
+For ordinary combat rewards, use [quick loot](veda-loot-play.md).
+
 # Continue through event and upgrade menus
 
 Autonomous learning sessions use `decision_policy:"learning"` in compact menu
@@ -140,11 +145,11 @@ source-bound mutation review required by the adapter. Preserve duplicate card
 counts. If the result is unresolved, retain the pending input and inspect;
 never press confirmation again to see whether it worked.
 
-## Prepare the decision before taking the action image
+## Prepare and bind the decision
 
-Finish schema discovery, strategy and draft repair **before** the action image.
-The 30-second window is for inspecting, binding and submitting that image.
-Do not spend it copying hashes, rewriting source fields, or typing repeated
+Finish schema discovery, strategy and draft repair using the inspected settled
+state. Bind it to the current session/input epoch; elapsed thinking time does
+not expire that image. Do not copy hashes, rewrite source fields, or type repeated
 review objects. Do not use shell substitutions or regex replacement to refresh
 a packet; failure can leave an old or empty source attached to a complete review.
 
@@ -180,7 +185,8 @@ This checks the choice/schema/profile only. It cannot authorize an input or
 produce an action request. Fix any reported draft errors now. Keep the adapter
 and bridge ready, with no pending action, before entering the short live path:
 
-1. Run `python3 scripts/capture_observation.py --game-window` as a standalone
+1. If no settled image has been inspected since the latest input/state change,
+   run `python3 scripts/capture_observation.py --game-window` as a standalone
    command. If a specific Movie Recording window was already identified, add
    `--window-id ACTUAL_WINDOW_ID`. An empty result or nonzero exit means no
    capture; stop this attempt before packaging and read the actual error.
@@ -191,14 +197,15 @@ and bridge ready, with no pending action, before entering the short live path:
 
    ```sh
    python3 scripts/veda_menu.py --draft /absolute/path/to/menu-draft.json \
+     --session /absolute/SESSION_DIRECTORY/state.json --execute \
      --capture /absolute/path/to/inspected-frame.png \
      --reviewer 'Codex Orchestrator' --evidence-note 'Actual inspected state and limitations' \
      --reviewed --control-profile ps5-default-cross-confirm-v1 \
      --output /absolute/path/to/new-menu-request.json
    ```
 
-4. Immediately submit the returned `request_file` pointer to the already-armed
-   adapter, then send its one prepared action ID. Read and verify the result
+4. Submit the returned `request_file` pointer to the already-armed adapter.
+   `--execute` already prepares and sends one input; do not send it again. Read and verify the result
    before any next action. Avoid unrelated narration, code search or setup
    between inspection, preparation and send.
 
@@ -206,7 +213,7 @@ The helper reads the image's original capture receipt and derives all source,
 frame and review fields together. It rechecks bytes, receipt, time and the
 decision before exclusively creating a new file. It never overwrites the draft
 or an earlier packet, captures a replacement, or claims inspection automatically.
-An expired frame needs a new inspected capture, not a timestamp change.
+A superseded frame needs a new inspected capture, not a timestamp change.
 `--request` remains available for existing complete packets, but is not the
 recommended live preparation path. A generated profile rule is not pixel
 recognition, and the builder itself never dispatches input.

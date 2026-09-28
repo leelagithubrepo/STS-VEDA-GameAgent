@@ -69,7 +69,14 @@ def _unbound_ui(value):
     for key in ('navigation', 'confirm'):
         ui.pop(key, None)
     for option in ui['options']:
-        option.pop('activate', None)
+        activate = option.pop('activate', None)
+        # A focus result declares the other visible option facts unchanged.
+        # Preserve the actual hint's meaning, then bind it to the inspected
+        # after-frame instead of silently changing Square/Triangle to Cross.
+        if ui.get('menu_family') in {'loot_rewards', 'loot_cards'} and activate:
+            proof = activate.get('evidence', {})
+            if proof.get('kind') == 'visible_hint':
+                option['activate_hint'] = {'button': activate['button'], 'hint_text': proof['hint_text']}
         option.pop('shortcut', None)
     return ui
 
@@ -252,8 +259,8 @@ def _request(draft, pending, checked, control_profile, clock):
         'resources': resources, 'facts': facts,
         'ui': _observed_ui(draft, pending, checked)}
     if observation['ui'].get('menu_family'):
-        observation = bind_reviewed_menu_controls(observation, control_profile=control_profile, now=clock)
-    verified = verify_choice_observation(pending['proposal'], old, observation, policy=policy, now=clock)
+        observation = bind_reviewed_menu_controls(observation, control_profile=control_profile, now=clock, max_age_seconds=None)
+    verified = verify_choice_observation(pending['proposal'], old, observation, policy=policy, now=clock, historical=True)
     changes = deepcopy(draft.get('telemetry', {}))
     _require(isinstance(changes, dict) and not set(changes) - {
         'inventory_events', 'inventory_baseline', 'zone_events', 'zone_baseline',
@@ -266,6 +273,20 @@ def _request(draft, pending, checked, control_profile, clock):
                  'related_item': target['card']['upgrade_name'], 'evidence_note': draft['observed_result']}
         _require(not changes, 'upgrade telemetry is derived from the reviewed selected-card result')
         changes = {'inventory_events': [event]}
+    if old['ui'].get('menu_family') in {'loot_rewards', 'loot_cards'} and pending['proposal']['step_kind'] == 'commit':
+        _require(not changes, 'loot inventory events are derived from the actual reviewed inventory')
+        events = []
+        for kind in ('card', 'relic', 'potion'):
+            prior = Counter(before['inventory']['current'][kind])
+            actual = Counter(inventory['current'][kind])
+            for item, count in (actual - prior).items():
+                events.extend({'kind': kind, 'action': 'acquired', 'item': item,
+                               'evidence_note': draft['observed_result']} for _ in range(count))
+            for item, count in (prior - actual).items():
+                events.extend({'kind': kind, 'action': 'removed', 'item': item,
+                               'evidence_note': draft['observed_result']} for _ in range(count))
+        if events:
+            changes = {'inventory_events': events}
     after = {'kind': 'choice', 'decision_policy': policy, 'context': context, 'source': checked['source'],
              'review': deepcopy(review), 'observation': observation, 'inventory': inventory}
     if room_changes is not None:
@@ -311,14 +332,14 @@ def write_menu_result(draft, *, session, action_id, capture, reviewer, evidence_
     pending, digest = read_pending(session, action_id)
     draft = _draft(draft, pending)
     checked = reviewed_capture_source(capture=capture, reviewer=reviewer,
-        evidence_note=evidence_note, reviewed=reviewed, now=now)
+        evidence_note=evidence_note, reviewed=reviewed, now=now, max_age_seconds=None)
     _require(datetime.fromisoformat(checked['source']['captured_at']) > datetime.fromisoformat(pending['attempted_at']),
              'result capture must follow the actual dispatch')
     packet = _request(draft, pending, checked, control_profile, now or datetime.now(timezone.utc))
     data = (json.dumps(packet, sort_keys=True, indent=2, allow_nan=False) + '\n').encode()
     _require(len(data) <= MAX_BYTES, 'result packet exceeds byte bound')
     _require(reviewed_capture_source(capture=capture, reviewer=reviewer,
-        evidence_note=evidence_note, reviewed=reviewed, now=now) == checked, 'capture changed during result packaging')
+        evidence_note=evidence_note, reviewed=reviewed, now=now, max_age_seconds=None) == checked, 'capture changed during result packaging')
     _require(read_pending(session, action_id)[1] == digest, 'pending action changed during result packaging')
     _require(isinstance(output, (str, Path)) and _text(str(output)), 'new output path required')
     destination = Path(output).expanduser().absolute()

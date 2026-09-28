@@ -193,11 +193,15 @@ def _write(packet, output, *, protected=()):
 
 
 @_checked
-def write_combat_request(value, *, capture, reviewer, evidence_note, reviewed, output, now=None, execute=False):
+def write_combat_request(value, *, capture, reviewer, evidence_note, reviewed, output, now=None, execute=False, session=None):
     draft = _draft(value); validate_combat_draft(draft)
-    args = dict(capture=capture, reviewer=reviewer, evidence_note=evidence_note, reviewed=reviewed, now=now)
+    args = dict(capture=capture, reviewer=reviewer, evidence_note=evidence_note, reviewed=reviewed, now=now,
+                max_age_seconds=None if session is not None else 30)
     checked = reviewed_capture_source(**args)
     request, _, _ = _request(draft, checked)
+    if session is not None:
+        from .evidence_continuity import bind_session
+        request['evidence_binding'] = bind_session(session, draft['context'], checked['source'])
     _require(type(execute) is bool, 'execute must be an explicit boolean')
     if execute:
         request['operation'] = 'execute'
@@ -382,7 +386,7 @@ def validate_combat_result(value, *, session, action_id):
 def write_combat_result(value, *, session, action_id, capture, reviewer, evidence_note, reviewed, output, now=None):
     pending, digest = read_pending(session, action_id); draft = _result_draft(value, pending)
     validate_combat_result(draft, session=session, action_id=action_id)
-    args = dict(capture=capture, reviewer=reviewer, evidence_note=evidence_note, reviewed=reviewed, now=now)
+    args = dict(capture=capture, reviewer=reviewer, evidence_note=evidence_note, reviewed=reviewed, now=now, max_age_seconds=None)
     checked = reviewed_capture_source(**args)
     _require(checked['source']['sha256'] != pending['request']['source']['sha256']
              and datetime.fromisoformat(checked['source']['captured_at']) > datetime.fromisoformat(pending['attempted_at']),

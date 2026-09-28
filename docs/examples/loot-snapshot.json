@@ -1,0 +1,74 @@
+{
+  "schema": "veda.loot-snapshot.v1",
+  "context": {
+    "run_id": "run",
+    "floor_id": "floor",
+    "combat_id": null,
+    "turn_id": null
+  },
+  "inventory": {
+    "current": {
+      "card": [
+        "Strike"
+      ],
+      "relic": [
+        "Burning Blood"
+      ],
+      "potion": []
+    },
+    "coverage": {
+      "card": "complete",
+      "relic": "complete",
+      "potion": "complete"
+    },
+    "properties": {}
+  },
+  "resources": {
+    "hp": 60,
+    "max_hp": 80,
+    "gold": 100
+  },
+  "facts": {
+    "reward_source": "combat",
+    "potion_capacity": 3
+  },
+  "ui": {
+    "menu_family": "loot_rewards",
+    "choice_id": "reward-1",
+    "focused_id": "gold",
+    "options": [
+      {
+        "id": "gold",
+        "label": "27 Gold",
+        "enabled": true,
+        "costs": {},
+        "role": "gold",
+        "reward": {
+          "amount": 27
+        }
+      },
+      {
+        "id": "cards",
+        "label": "Card Reward",
+        "enabled": true,
+        "costs": {},
+        "role": "card_reward"
+      }
+    ],
+    "grid": {
+      "complete": true,
+      "cells": [
+        {
+          "id": "gold",
+          "row": 0,
+          "column": 0
+        },
+        {
+          "id": "cards",
+          "row": 1,
+          "column": 0
+        }
+      ]
+    }
+  }
+}

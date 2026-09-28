@@ -78,7 +78,7 @@ def _source_identity(path):
         raise PlayRequestError("capture_image_invalid") from None
 
 
-def capture_source_identity(*, capture, now=None):
+def capture_source_identity(*, capture, now=None, max_age_seconds=MAX_AGE):
     """Validate source provenance and freshness only; never assert pixel review."""
     _require(isinstance(capture, (str, Path)), "path_invalid")
     _text(str(capture), 4096, "path_invalid")
@@ -119,24 +119,25 @@ def capture_source_identity(*, capture, now=None):
              and current.utcoffset() is not None, "clock_invalid")
     age = (current - observed).total_seconds()
     _require(age >= 0, "capture_future_dated")
-    _require(age <= MAX_AGE, "capture_stale")
+    if max_age_seconds is not None:
+        _require(age <= max_age_seconds, "capture_stale")
     completed = _time(receipt.get("capture_completed_at"), "capture_completed_at_invalid")
     _require(observed <= completed <= current, "capture_time_order_invalid")
     frame_id = "reviewed-" + hashlib.sha256((requested + "\0" + digest).encode()).hexdigest()
     _require(_source_identity(image_path) == (digest, dimensions)
              and _receipt_bytes(receipt_path) == raw, "capture_changed_during_packaging")
-    if now is None:
-        _require(0 <= (datetime.now(timezone.utc) - observed).total_seconds() <= MAX_AGE, "capture_stale")
+    if now is None and max_age_seconds is not None:
+        _require(0 <= (datetime.now(timezone.utc) - observed).total_seconds() <= max_age_seconds, "capture_stale")
     return {"source": {"path": str(image_path), "sha256": digest, "captured_at": requested},
             "frame_id": frame_id}
 
 
-def reviewed_capture_source(*, capture, reviewer, evidence_note, reviewed, now=None):
+def reviewed_capture_source(*, capture, reviewer, evidence_note, reviewed, now=None, max_age_seconds=MAX_AGE):
     """Validate the exact saved capture and record declared inspection, without I/O effects."""
     _require(reviewed is True, "exact_image_review_required")
     _text(reviewer, 128, "reviewer_invalid")
     _text(evidence_note, 4096, "evidence_note_invalid")
-    checked = capture_source_identity(capture=capture, now=now)
+    checked = capture_source_identity(capture=capture, now=now, max_age_seconds=max_age_seconds)
     return {**checked,
             "source": {**checked["source"], "origin": "reviewer", "evidence_note": evidence_note},
             "review": {"complete": True, "reviewer": reviewer, "frame_id": checked["frame_id"],

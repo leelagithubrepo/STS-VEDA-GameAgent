@@ -71,7 +71,7 @@ def main(argv=None):
                         help='Legacy complete reviewed request; prefer --draft for live preparation.')
     inputs.add_argument('--result', type=Path,
                         help='Compact actual result; derive correlation and mutation records from the pending action.')
-    parser.add_argument('--session', type=Path, help='Existing state.json; required only with --result, read-only.')
+    parser.add_argument('--session', type=Path, help='Read-only session: binds actions to its input epoch; required with --result.')
     parser.add_argument('--validate', action='store_true',
                         help='Check only the draft; produces no action request or controller authority.')
     parser.add_argument('--execute', action='store_true',
@@ -80,16 +80,14 @@ def main(argv=None):
     parser.add_argument('--reviewer', help='Name of the person or advisor inspecting the exact image.')
     parser.add_argument('--evidence-note', help='What was actually inspected and any source limitations.')
     parser.add_argument('--reviewed', action='store_true',
-                        help='Declare the draft facts and selected choice match this exact fresh image.')
+                        help='Declare the draft facts and selected choice match this exact inspected settled image.')
     parser.add_argument('--output', type=Path, help='New request file; never overwritten.')
     parser.add_argument('--control-profile', required=True, choices=[CONTROL_PROFILE])
     args = parser.parse_args(argv)
     if args.execute and (args.draft is None or args.validate):
-        parser.error('--execute is only valid when binding a fresh --draft, not for validation/results/legacy requests')
+        parser.error('--execute is only valid when binding an inspected --draft, not for validation/results/legacy requests')
     if args.result is not None and args.session is None:
         parser.error('--result requires --session pointing to the existing state.json')
-    if args.result is None and args.session is not None:
-        parser.error('--session is only valid with --result')
     if args.request is not None:
         if (args.validate or args.reviewed or any(value is not None for value in
                 (args.capture, args.reviewer, args.evidence_note))):
@@ -125,7 +123,7 @@ def main(argv=None):
             else:
                 result = write_menu_request(draft, capture=args.capture, reviewer=args.reviewer,
                     evidence_note=args.evidence_note, reviewed=args.reviewed,
-                    control_profile=args.control_profile, output=args.output, execute=args.execute)
+                    control_profile=args.control_profile, output=args.output, execute=args.execute, session=args.session)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         from veda.helper_timing import record_helper_failure
         ids = draft.get('context') if isinstance(draft, dict) else None

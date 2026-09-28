@@ -67,30 +67,33 @@ a floor whose entry was observed can establish the full-floor timing target.
 Use a planning image and confirmed ledger facts to fill one source-free draft
 with `decision_policy:"learning"` for combat/menu actions. Legacy drafts default
 to strict; regenerate an unsent draft explicitly for the learning session.
-Finish strategy, rule retrieval and draft validation **before** the fresh action
-image. The action image starts the unchanged 30-second freshness window.
+Use the inspected settled image while deciding. Bind with `--session
+SESSION_DIRECTORY/state.json` so [input epochs](veda-evidence-continuity.md)
+replace the blanket age limit during play. Time spent thinking alone does not
+require another image. Inspect again after an input or an outside state change.
 
 - Combat: use [compact combat](veda-combat-play.md).
 - Combat focus outside the hand: use [focus recovery](veda-combat-play.md#combat-focus),
   then inspect the actual destination. A raised card's keyword help is hand focus.
-- Menus: use [menu controls](veda-menu-controls.md).
+- Combat loot: use [quick loot](veda-loot-play.md); gold needs no strategic analysis.
+- Other menus: use [menu controls](veda-menu-controls.md).
 - Map: use [map survey and route planning](veda-map-play.md).
 
-Once the source-free draft validates: capture → inspect that exact image → bind
-with the helper and `--execute` → submit its short `request_file` pointer. The
+Once the source-free draft validates: capture if needed after an input/change →
+inspect that exact image → bind
+with the helper, `--session SESSION_DIRECTORY/state.json` and `--execute` → submit its short `request_file` pointer. The
 armed adapter prepares and sends **one** input in that call. Do not send another
 `send` command. It still performs the ordinary checks and durable writes.
 
 After the input, inspect its result, fill the compact result draft and validate
-it. If the inspected image is still fresh and the result schema was already
-prepared, bind it immediately; do not take a redundant second image. If repair
-or schema work consumed the window, finish it before taking/inspecting a fresh
-result image. Submit its pointer; there is no `--execute` or `send` for verification.
+it. Bind the inspected after-image even if thinking or result preparation took
+longer than 30 seconds. Preserve its original time and pending action identity;
+do not take a redundant image just because time passed. Submit its pointer; there is no `--execute` or `send` for verification.
 Use the canonical `next_context` returned, then continue with the next decision.
 
 Never hand-build hashes, capture times, Reading objects or mutation-review
-objects. Never repair expired source fields. Keep the draft if its game facts
-still match, and let the helper bind a new exact inspected image.
+objects. Never alter source times. Keep the draft and inspected image while the
+state remains unchanged; refresh after an input or observed outside change.
 
 ## Overruns and recovery
 

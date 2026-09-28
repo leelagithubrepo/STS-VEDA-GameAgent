@@ -15,7 +15,7 @@ def main(argv=None):
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument('--draft', type=Path, help='Single source-free combat state, UI and one proposed action.')
     modes.add_argument('--result', type=Path, help='Actual after-state or boundary tied to an attempted action.')
-    parser.add_argument('--session', type=Path, help='Existing state.json, read-only; required with --result.')
+    parser.add_argument('--session', type=Path, help='Existing state.json; binds action evidence to its input epoch, required for results.')
     parser.add_argument('--validate', action='store_true', help='Validate before capture; no executable request is produced.')
     parser.add_argument('--capture', type=Path, help='Exact inspected image with original capture receipt.')
     parser.add_argument('--reviewer')
@@ -24,8 +24,8 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, help='New packet path; never overwritten.')
     parser.add_argument('--execute', action='store_true', help='Package one atomic prepare-and-send request for an already armed adapter.')
     args = parser.parse_args(argv)
-    if bool(args.result) != bool(args.session):
-        parser.error('--session is required only with --result')
+    if args.result and not args.session:
+        parser.error('--result requires --session')
     if args.execute and (args.result or args.validate):
         parser.error('--execute is only for binding an action draft, never validation or results')
     if args.validate:
@@ -44,7 +44,7 @@ def main(argv=None):
         else:
             result = validate_combat_draft(value) if args.validate else write_combat_request(value,
                 capture=args.capture, reviewer=args.reviewer, evidence_note=args.evidence_note,
-                reviewed=args.reviewed, output=args.output, execute=args.execute)
+                reviewed=args.reviewed, output=args.output, execute=args.execute, session=args.session)
     except (ValueError, RuntimeError, OSError, KeyError, TypeError, AttributeError) as error:
         from veda.helper_timing import record_helper_failure
         ids = value.get('context') if isinstance(value, dict) else None

@@ -38,11 +38,13 @@ Require `draft_valid:true`. The preview names the next atomic input; it is not
 controller authority. An unread hand focus requires inspection, not assigning
 the first card as focused. Fix validation errors now, before the action image.
 
-Then capture a new game-window image and inspect it. Confirm **all** draft facts
-and UI still match. If something changed, revise/validate before capturing again.
+Use the inspected settled game image. Confirm **all** draft facts and UI match.
+Bind to the session/input epoch; do not recapture solely because time elapsed.
+See [evidence continuity](veda-evidence-continuity.md).
 
 ```sh
 python3 scripts/veda_combat.py --draft /absolute/combat-draft.json \
+  --session /absolute/SESSION_DIRECTORY/state.json \
   --capture /absolute/INSPECTED.png --reviewer 'Codex Orchestrator' \
   --evidence-note 'Describe the actual inspected facts and limits.' \
   --reviewed --execute --output /absolute/new-action.json
@@ -72,9 +74,8 @@ python3 scripts/veda_combat.py --result /absolute/result-draft.json \
 ```
 
 Prepare the result structure before input where possible. After input, inspect
-the result image and bind it while fresh; the helper also validates internally.
-If result repair consumed the window, finish validation before a replacement
-capture. Do not take two result images just to follow a template:
+the result image and bind it to the exact pending action. Result preparation
+time does not expire an inspected after-image. Do not take two result images just to follow a template:
 
 ```sh
 python3 scripts/veda_combat.py --result /absolute/result-draft.json \
@@ -93,10 +94,10 @@ resolution. Pending delivery/result uncertainty needs inspection, never replay. 
 `finalize`, not replay.
 
 For consecutive focus/selection steps, reuse the just-inspected stable result
-image for the next request if the original capture is still fresh, no input
-has intervened, and all next-draft facts match it. Finalize the pending outcome
+image for the next request with `--session` if no input or outside state change
+has intervened and all next-draft facts match it. Finalize the pending outcome
 first, then bind and submit the next input. This saves a redundant capture; it
-does not renew the timestamp or permit a second input without observing the
+does not alter the timestamp or permit a second input without observing the
 first. Keep distinct output filenames for each request and result.
 
 For a new turn, use the actual after-state and `next_turn:{turn_number:N}`;

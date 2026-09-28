@@ -84,11 +84,11 @@ class CombatInspectionTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 self.plan(value)
 
-    def test_wrong_profile_or_disabled_freshness_rejected(self):
+    def test_wrong_profile_or_invalid_numeric_freshness_rejected(self):
         for profile in ('unknown', None):
             with self.subTest(profile=profile), self.assertRaises(ValueError):
                 inspection.plan_tooltip_clear(self.observation(), control_profile=profile, now=self.now)
-        for age in (None, 31, 0, True, float('inf')):
+        for age in (31, 0, True, float('inf')):
             with self.subTest(age=age), self.assertRaises(ValueError):
                 self.plan(max_age_seconds=age)
         with self.assertRaises(ValueError):
