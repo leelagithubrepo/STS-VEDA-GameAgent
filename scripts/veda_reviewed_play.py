@@ -12,6 +12,7 @@ import termios
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from veda.bridge_client import BridgeClient
+from veda.bridge_channel import DEFAULT_BRIDGE_SOCKET
 from veda.play_telemetry import PlayTelemetry
 from veda.reviewed_play import MAX_BYTES, ReviewedPlaySession
 from veda.telemetry_database import TelemetryDatabase
@@ -95,7 +96,7 @@ def main(argv=None):
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--database", type=Path, default=Path("artifacts/veda-memory.sqlite3"))
     parser.add_argument("--mode", choices=("shadow", "codex"), default="shadow")
-    parser.add_argument("--socket", default="/tmp/veda-ps5-bridge.sock")
+    parser.add_argument("--socket", default=DEFAULT_BRIDGE_SOCKET)
     args = parser.parse_args(argv)
     if not args.database.is_file():
         parser.error("an existing run database is required")

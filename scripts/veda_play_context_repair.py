@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Validate or apply the audited legacy Neow/advisory metadata repair; never play."""
+"""Validate or apply audited first-floor metadata repair; never play.
+
+Validate the completed-combat map variant before obtaining a new image:
+  python3 scripts/veda_play_context_repair.py --draft REPAIR.json --database MEMORY.sqlite3 --session RUN/state.json
+After inspecting the exact fresh capture, repeat with:
+  --apply --backup NEW-BACKUP.sqlite3 --capture CAPTURE.png --reviewer REVIEWER --evidence-note NOTE --reviewed
+
+The closed_first_floor variant explicitly names the closed combat, orphaned
+turn, and expected closure timestamp. It cannot choose a map node or reconstruct
+missing gameplay turns. Apply creates the backup and requires an idle session.
+"""
 import argparse
 import json
 from pathlib import Path

@@ -44,7 +44,15 @@ Then:
 1. Confirm explicit user authorization to arm the currently visible attempt. **“ARM ORCHESTRATOR FOR THIS RUN”** is the standard phrase; an equally explicit instruction such as “let's arm Orchestrator for the current run” also establishes that scope. A skill mention or development approval alone does not. Do not ask again for current-attempt authorization already given. Use the adapter's required literal phrase when packaging that authorized request.
 2. Confirm the game is already open at a safe, identifiable screen and that no other Remote Play/controller client is connected. Never change macOS permissions or pair a device on the user's behalf.
 3. Check `./scripts/bridge status` and identify the actual game, current attempt and screen. If local sandbox permissions prevent the check, use the documented command approval flow before calling the console unreachable. Missing video or an unresolved game/run identity prevents arming. Resolve a readable Neow opening through the existing registration helper when this already-open attempt is authorized; do not bind it to a finished run.
-4. After the user's current-run authorization and identity preflight, start one persistent bridge with `./scripts/warm_bridge --idle-timeout 0`. Wait for `ready`, then require the reviewed adapter's own bridge preflight before capturing its arm frame and arming that adapter. User authorization precedes bridge startup; adapter arming follows readiness. Use that single bridge throughout the run.
+4. After the user's current-run authorization and identity preflight, start one persistent bridge with `./scripts/warm_bridge --idle-timeout 0 --socket /tmp/veda-ps5-bridge.sock`. Require `ready` with `command_channel:"unix_socket"` and the same endpoint, then the reviewed adapter's own bridge preflight. User authorization precedes bridge startup; adapter arming follows readiness. Use that single bridge throughout the run. `--stdio` is a different channel and cannot serve this adapter; a missing socket is not a permissions error.
+
+Prepare arming with `docs/veda-arm-startup.md`: validate the source-free arm
+draft first, then capture/stage/display the exact image in one tool call. After
+inspection, give the short explicit confirmation and submit the emitted normal
+arm request immediately. Stages are unreviewed and cannot arm anything. Do not
+construct long commands or analyze the route inside the arm-image window.
+If an adapter restart is technical recovery, resume its paused play clock
+immediately and record phase `recovery`; that work counts toward the target.
 
 ## Decision loop
 

@@ -16,7 +16,7 @@ import sqlite3
 from uuid import uuid4
 
 from .menu_requests import read_menu_draft
-from .play_requests import reviewed_capture_source
+from .play_requests import reviewed_capture_source, _CAPTURE_NAME
 from .play_telemetry import outcome_request_digest, PlayTelemetry
 from .saved_frame_reader import _identity
 from .telemetry_database import SCHEMA_VERSION, TelemetryDatabase
@@ -48,27 +48,46 @@ def _time(value):
 
 def _shape(value):
     value = json.loads(_json(value))
-    _require(isinstance(value, dict) and set(value) == {'schema', 'expected',
-        'supersede_advisory_decision_id', 'repair_neow_floor', 'neow_exit_event_id', 'observed', 'reasoning'}
+    required = {'schema', 'expected', 'supersede_advisory_decision_id', 'repair_neow_floor',
+                'neow_exit_event_id', 'observed', 'reasoning'}
+    _require(isinstance(value, dict) and required <= set(value) and not set(value) - required - {'closed_first_floor'}
         and value['schema'] == SCHEMA and _text(value['reasoning']), 'exact context repair draft required')
     ids = value['expected']
+    closed = value.get('closed_first_floor')
     _require(isinstance(ids, dict) and set(ids) == {'run_id', 'floor_id', 'combat_id', 'turn_id'}
-        and all(_text(i) and len(i) <= 128 for i in ids.values()), 'exact current run/floor/combat/turn IDs required')
+        and all(_text(ids[k]) and len(ids[k]) <= 128 for k in ('run_id', 'floor_id')),
+        'exact current run/floor/combat/turn IDs required')
+    if closed is not None:
+        _require(isinstance(closed, dict) and set(closed) == {'combat_id', 'orphaned_turn_id', 'expected_closed_at'}
+                 and all(_text(i) and len(i) <= 128 for i in closed.values())
+                 and ids['combat_id'] is None and ids['turn_id'] is None
+                 and value['repair_neow_floor'] is True and value['supersede_advisory_decision_id'] is None,
+                 'closed first-floor repair needs exact historical combat/turn/closure and no active combat or advisory')
+        _time(closed['expected_closed_at'])
+    else:
+        _require('closed_first_floor' not in value and all(_text(ids[k]) and len(ids[k]) <= 128
+                 for k in ('combat_id', 'turn_id')), 'open repair needs exact combat and turn IDs')
     decision = value['supersede_advisory_decision_id']
     _require(decision is None or _text(decision), 'advisory decision ID must be explicit or null')
     _require(type(value['repair_neow_floor']) is bool and (decision is not None or value['repair_neow_floor']),
              'at least one explicit supported correction required')
     _require(value['neow_exit_event_id'] is None or _text(value['neow_exit_event_id']), 'Neow exit event ID invalid')
     observed = value['observed']
-    _require(isinstance(observed, dict) and set(observed) == {'screen', 'act', 'floor', 'ascension',
-        'character', 'hp', 'max_hp', 'energy', 'block', 'gold', 'unknowns'}, 'explicit observed combat HUD and unknowns required')
-    _require(observed['screen'] == 'combat' and type(observed['act']) is int and observed['act'] == 1
+    resources = {'hp', 'max_hp', 'gold', 'deck_size'} if closed else {'hp', 'max_hp', 'energy', 'block', 'gold'}
+    fields = {'screen', 'act', 'floor', 'ascension', 'character', 'unknowns'} | resources
+    if closed:
+        fields |= {'route_graph_complete', 'route_choice_committed'}
+    _require(isinstance(observed, dict) and set(observed) == fields, 'explicit observed combat HUD or map HUD and unknowns required')
+    _require(observed['screen'] == ('map' if closed else 'combat') and type(observed['act']) is int and observed['act'] == 1
              and type(observed['floor']) is int and observed['floor'] == 1,
-             'repair supports only observed Act 1 floor 1 combat')
+             'repair supports only observed Act 1 floor 1 and its explicit combat/map variant')
+    if closed:
+        _require(observed['route_graph_complete'] is False and observed['route_choice_committed'] is False,
+                 'this map repair cannot claim a complete route graph or commit a next node')
     _require(type(observed['ascension']) is int and 0 <= observed['ascension'] <= 20
              and _text(observed['character']), 'observed character and ascension required')
     _require(all(type(observed[k]) is int and 0 <= observed[k] <= 10**9
-                 for k in ('hp', 'max_hp', 'energy', 'block', 'gold'))
+                 for k in resources)
              and 0 < observed['hp'] <= observed['max_hp'], 'living observed combat resources required')
     _require(isinstance(observed['unknowns'], list) and len(observed['unknowns']) <= 64
              and all(_text(i) for i in observed['unknowns']), 'unknowns must remain explicit')
@@ -178,6 +197,34 @@ def _neow_exit(db, value, floor, combat):
             'outcome_sha256': payload['request_sha256']}
 
 
+def _closed_map_evidence(value, combat, turn):
+    """Check retained capture provenance, without claiming automatic pixel review."""
+    closing = json.loads(combat['closing_state_json'])
+    _require(closing.get('screen') == 'map' and all(closing.get(k) == value['observed'][k]
+             for k in ('hp', 'max_hp', 'gold')) and _text(closing.get('screenshot')),
+             'completed combat needs retained map closure with matching observed resources')
+    image = Path(closing['screenshot']).expanduser().resolve()
+    receipt = read_menu_draft(image.with_suffix('.capture.json'))
+    sha, dimensions = _identity(image)
+    _require(receipt.get('schema') == 'veda.game-window-capture.v1' and receipt.get('image_path') == str(image)
+             and receipt.get('image_sha256') == sha and receipt.get('dimensions') == dimensions,
+             'retained victory map capture provenance is invalid')
+    captured = _time(receipt['capture_requested_at']); completed = _time(receipt['capture_completed_at'])
+    name = _CAPTURE_NAME.fullmatch(image.name)
+    _require(name is not None, 'retained map capture filename invalid')
+    fmt = '%Y%m%dT%H%M%S.%f' if '.' in name[1] else '%Y%m%dT%H%M%S'
+    named = datetime.strptime(name[1], fmt).replace(tzinfo=timezone.utc)
+    _require(named == captured and _time(combat['opened_at']) <= _time(turn['opened_at'])
+             < captured <= completed <= _time(combat['closed_at']),
+             'retained map capture chronology does not prove this closed first combat')
+    _require(json.loads(turn['closing_state_json']) == {}, 'orphan turn already has unclassified ending evidence')
+    return {'basis': 'recorded_victory_with_retained_map_capture',
+            'source': {'path': str(image), 'sha256': sha, 'captured_at': captured.isoformat()},
+            'capture_receipt_sha256': hashlib.sha256(image.with_suffix('.capture.json').read_bytes()).hexdigest(),
+            'combat_closed_at': combat['closed_at'], 'automatic_pixel_recognition': False,
+            'actual_number_of_turns': 'unknown', 'actual_final_turn_state': 'unknown'}
+
+
 def _preconditions(db, value, session):
     ids = value['expected']; observed = value['observed']
     schema = db.execute("SELECT value FROM schema_metadata WHERE key='schema'").fetchone()
@@ -189,13 +236,23 @@ def _preconditions(db, value, session):
     floors = db.execute('SELECT * FROM floors WHERE run_id=? ORDER BY recorded_at DESC,rowid DESC', (ids['run_id'],)).fetchall()
     _require(floors and floors[0]['id'] == ids['floor_id'], 'expected floor is no longer latest')
     floor = floors[0]
-    combats = db.execute('SELECT * FROM combats WHERE run_id=? AND closed_at IS NULL', (ids['run_id'],)).fetchall()
-    _require(len(combats) == 1 and combats[0]['id'] == ids['combat_id'] and combats[0]['floor_id'] == ids['floor_id']
-             and combats[0]['outcome'] is None, 'expected sole open combat changed')
+    closed = value.get('closed_first_floor')
+    if closed:
+        combats = db.execute('SELECT * FROM combats WHERE run_id=?', (ids['run_id'],)).fetchall()
+        _require(len(combats) == 1 and combats[0]['id'] == closed['combat_id']
+                 and combats[0]['floor_id'] == ids['floor_id'] and combats[0]['outcome'] == 'victory'
+                 and combats[0]['closed_at'] == closed['expected_closed_at'],
+                 'expected sole completed first victory changed; no open or additional combat allowed')
+    else:
+        combats = db.execute('SELECT * FROM combats WHERE run_id=? AND closed_at IS NULL', (ids['run_id'],)).fetchall()
+        _require(len(combats) == 1 and combats[0]['id'] == ids['combat_id'] and combats[0]['floor_id'] == ids['floor_id']
+                 and combats[0]['outcome'] is None, 'expected sole open combat changed')
     combat = combats[0]
-    turns = db.execute('SELECT * FROM combat_turns WHERE combat_id=? ORDER BY turn_number DESC', (ids['combat_id'],)).fetchall()
-    _require(turns and turns[0]['id'] == ids['turn_id'] and turns[0]['closed_at'] is None
+    turns = db.execute('SELECT * FROM combat_turns WHERE combat_id=? ORDER BY turn_number DESC', (combat['id'],)).fetchall()
+    turn_id = closed['orphaned_turn_id'] if closed else ids['turn_id']
+    _require(turns and turns[0]['id'] == turn_id and turns[0]['closed_at'] is None
              and sum(t['closed_at'] is None for t in turns) == 1, 'expected latest sole open turn changed')
+    closing_proof = _closed_map_evidence(value, combat, turns[0]) if closed else None
     pending = db.execute('SELECT d.*,e.run_id,e.floor_id,e.combat_id,e.turn_id,e.source,e.kind,e.payload_json '
         'FROM decisions d JOIN evidence_events e ON e.id=d.event_id WHERE e.run_id=? AND d.status=\'recommended\'',
         (ids['run_id'],)).fetchall()
@@ -222,7 +279,7 @@ def _preconditions(db, value, session):
                  'observed floor mismatch requires explicit supported floor repair')
         _require(value['neow_exit_event_id'] is None, 'unused Neow exit evidence is not accepted')
     return {'floor': dict(floor), 'combat': dict(combat), 'turn': dict(turns[0]),
-            'advisory': advisory, 'neow_exit': proof, 'run': dict(run)}
+            'advisory': advisory, 'neow_exit': proof, 'run': dict(run), 'closing_proof': closing_proof}
 
 
 def _connection(database, writable=False):
@@ -247,7 +304,8 @@ def validate_context_repair(value, *, database, session):
             return {'schema': 'veda.play-context-repair-validation.v1', 'draft_valid': True,
                 'validation_only': True, 'controller_input_sent': False, 'runtime_authorized': False,
                 'requires_fresh_capture_review': True, 'requires_backup': True,
-                'neow_exit_basis': evidence['neow_exit'], 'expected': value['expected']}
+                'neow_exit_basis': evidence['neow_exit'], 'closed_first_floor_basis': evidence['closing_proof'],
+                'expected': value['expected']}
         finally:
             db.close()
 
@@ -292,6 +350,8 @@ def apply_context_repair(value, *, database, session, backup, capture, reviewer,
             _require(all(captured > _time(row[key]) for row, key in ((prior['run'], 'started_at'),
                 (prior['floor'], 'recorded_at'), (prior['combat'], 'opened_at'), (prior['turn'], 'opened_at'))),
                 'repair capture must follow recorded current context')
+            if prior['closing_proof']:
+                _require(captured > _time(prior['combat']['closed_at']), 'repair capture must follow recorded victory closure')
             PlayTelemetry(TelemetryDatabase(Path(database)))._chronology(db, value['expected'], captured)
             latest_pause = db.execute('SELECT observed_at FROM session_checkpoints WHERE run_id=? '
                 'ORDER BY julianday(observed_at) DESC LIMIT 1', (value['expected']['run_id'],)).fetchone()
@@ -306,16 +366,39 @@ def apply_context_repair(value, *, database, session, backup, capture, reviewer,
                      'session changed during repair')
             old = value['expected']; current = dict(old)
             ident = str(uuid4()); recorded = (now or datetime.now(timezone.utc)).isoformat()
+            closed = value.get('closed_first_floor')
             if value['repair_neow_floor']:
                 current['floor_id'] = str(uuid4())
                 # This is a current-state correction, never a fabricated opening.
                 db.execute('INSERT INTO floors VALUES (?,?,?,?,?,?,?,?,?,?)', (current['floor_id'], old['run_id'],
-                    1, 1, 'enemy', None, '{}', '{}', _json({'context_correction_event_id': ident,
+                    1, 1, 'enemy', 'victory' if closed else None, '{}',
+                    _json({'observed_map_after_victory': value['observed']}) if closed else '{}',
+                    _json({'context_correction_event_id': ident,
                     'opening_state_known': False, 'observed_current_state': value['observed']}), recorded))
-                changed = db.execute('UPDATE combats SET floor_id=? WHERE id=? AND run_id=? AND floor_id=? '
-                    'AND closed_at IS NULL AND outcome IS NULL',
-                    (current['floor_id'], old['combat_id'], old['run_id'], old['floor_id'])).rowcount
+                if closed:
+                    changed = db.execute('UPDATE combats SET floor_id=? WHERE id=? AND run_id=? AND floor_id=? '
+                        'AND closed_at=? AND outcome=\'victory\'', (current['floor_id'], closed['combat_id'],
+                        old['run_id'], old['floor_id'], closed['expected_closed_at'])).rowcount
+                else:
+                    changed = db.execute('UPDATE combats SET floor_id=? WHERE id=? AND run_id=? AND floor_id=? '
+                        'AND closed_at IS NULL AND outcome IS NULL',
+                        (current['floor_id'], old['combat_id'], old['run_id'], old['floor_id'])).rowcount
                 _require(changed == 1, 'combat compare-and-swap failed')
+            if closed:
+                # Close only the orphaned ledger row. Its number and unknown
+                # final state are not evidence of the actual last gameplay turn.
+                summary = json.loads(prior['turn']['summary_json'])
+                _require(isinstance(summary, dict) and 'administrative_closure' not in summary,
+                         'orphaned turn summary cannot be safely extended')
+                summary['administrative_closure'] = {'context_correction_event_id': ident,
+                    'basis': 'parent combat already recorded as victory',
+                    'actual_number_of_turns': 'unknown', 'actual_final_turn_state': 'unknown',
+                    'closed_at_basis': 'recorded parent combat closure, not observed turn-end time'}
+                changed = db.execute('UPDATE combat_turns SET closed_at=?,summary_json=? '
+                    'WHERE id=? AND combat_id=? AND closed_at IS NULL AND closing_state_json=?',
+                    (closed['expected_closed_at'], _json(summary), closed['orphaned_turn_id'], closed['combat_id'],
+                     prior['turn']['closing_state_json'])).rowcount
+                _require(changed == 1, 'orphaned turn compare-and-swap failed')
             advisory = prior['advisory']
             if advisory:
                 changed = db.execute('UPDATE decisions SET status=\'skipped\',chosen_action_json=?,actual_outcome_json=?,resolved_at=? '
@@ -326,15 +409,25 @@ def apply_context_repair(value, *, database, session, backup, capture, reviewer,
             payload = {'schema': SCHEMA, 'request': value, 'old_context': old, 'new_context': current,
                 'source': checked['source'], 'review': checked['review'], 'backup': saved,
                 'session_sha256': session_digest, 'neow_exit_evidence': prior['neow_exit'],
+                'closed_first_floor_evidence': prior['closing_proof'],
                 'previous_advisory': advisory, 'previous_combat_floor_id': prior['combat']['floor_id'],
+                'previous_orphaned_turn': prior['turn'] if closed else None,
                 'historical_evidence_unchanged': True, 'physical_action_execution': 'unknown',
                 'controller_input_sent': False, 'runtime_authorized': False}
             db.execute('INSERT INTO evidence_events '
                 '(id,run_id,floor_id,combat_id,turn_id,kind,phase,observed_at,state_json,payload_json,screenshot_path,source,confidence) '
                 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', (ident, current['run_id'], current['floor_id'], current['combat_id'],
-                current['turn_id'], 'play_context_correction', 'combat', checked['source']['captured_at'],
+                current['turn_id'], 'play_context_correction', 'map' if closed else 'combat', checked['source']['captured_at'],
                 _json(value['observed']), _json(payload), checked['source']['path'], 'play_context_repair:reviewer', None))
             _require(reviewed_capture_source(**args) == checked, 'capture changed before repair commit')
+            for proof in (prior['neow_exit'], prior['closing_proof']):
+                if proof and proof.get('source'):
+                    _require(_identity(Path(proof['source']['path']))[0] == proof['source']['sha256'],
+                             'retained correction evidence changed before commit')
+                    if proof.get('capture_receipt_sha256'):
+                        receipt_path = Path(proof['source']['path']).with_suffix('.capture.json')
+                        _require(hashlib.sha256(receipt_path.read_bytes()).hexdigest() == proof['capture_receipt_sha256'],
+                                 'retained capture receipt changed before commit')
             _require(_read_session(session_path, old['run_id'])[1] == session_digest, 'session changed before repair commit')
             db.commit()
             return {'schema': 'veda.play-context-repair-receipt.v1', 'status': 'corrected', 'event_id': ident,

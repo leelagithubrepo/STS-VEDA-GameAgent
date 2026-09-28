@@ -175,6 +175,7 @@ def record_event(state, event, *, at=None, monotonic_ns=None, clock_id=None):
         "complete_move": {"move_id", "action_id"}, "complete_floor": {"floor_id"},
         "pause": {"category", "reason"}, "resume": set(), "stale_capture": {"capture_id"},
         "failure": {"code", "reason"}, "overrun": {"reason"},
+        "measurement_gap": {"reason"},
         "resume_session": set(), "tick": set()}
     _require(operation in allowed and not set(event) - allowed[operation] - {"operation"}, "unsupported timing event or fields")
     _advance(value, at, monotonic_ns, clock_id)
@@ -252,6 +253,8 @@ def record_event(state, event, *, at=None, monotonic_ns=None, clock_id=None):
         if capture_id not in scope["stale_capture_ids"]:
             scope["stale_recapture_count"] += 1
             scope["stale_capture_ids"] = (scope["stale_capture_ids"] + [capture_id])[-MAX_HISTORY:]
+    elif operation == "measurement_gap":
+        _issue(value, _text(event.get("reason"), "measurement gap"))
     elif operation in {"failure", "overrun"}:
         if operation == "failure":
             _text(event.get("code"), "failure code")

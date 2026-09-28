@@ -102,7 +102,8 @@ model; startup diagnostics and request packaging are local operations.
    ambiguity or pending input; never create a new session directory to hide it.
 2. Load these instructions and prepare command arguments. Confirm current-run
    arming, the intended game feed and the exclusive controller client. Start
-   one warm bridge and wait for `ready`. Start one reviewed adapter using the
+   one warm bridge with `--socket /tmp/veda-ps5-bridge.sock` and wait for `ready`
+   with `command_channel:"unix_socket"` and that endpoint. Start one reviewed adapter using the
    chosen session directory and the existing run ID below.
 3. The adapter itself needs permission to connect to the local socket. Approval
    for `warm_bridge` or `bridge_command.py` does not grant the adapter that
@@ -117,10 +118,12 @@ model; startup diagnostics and request packaging are local operations.
    `bridge_access_ready`. This probes from that same process and closes only
    its temporary client socket. It neither arms nor closes the warm bridge.
    `ready_unarmed` at process startup only means the adapter is running.
-5. Capture and inspect a new game-window image. Then use the helper below to
-   package the inspected image's original metadata, and immediately submit its
-   short `request_file` response followed by a newline. Do not type a large
-   review object into the terminal or repeat schema searches at this point.
+5. Prefer [staged arming](veda-arm-startup.md): prepare and validate the draft
+   before capture, capture/stage/display in one tool call, then explicitly
+   acknowledge that exact image and submit the ordinary `request_file` pointer
+   immediately. The legacy helper below remains supported when its arguments
+   are already prepared. Do not type a large review object or research the map
+   during the arm-image window.
 6. Require `armed_codex_reviewed`, then use the normal one-action checks. If an
    image expires, finish the remaining setup before capturing again. Do not
    loop through old arm files, replace their timestamps, or mark an unseen

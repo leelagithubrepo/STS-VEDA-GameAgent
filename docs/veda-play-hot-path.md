@@ -36,14 +36,15 @@ python3 scripts/veda_play_clock.py start --session SESSION_DIRECTORY --run-id RU
    Inspect a planning screenshot to establish the actual game, attempt and HUD
    floor. A floor-1 fight cannot use a floor-0 Neow record. Reconcile mismatches
    with the observed lifecycle before committing gameplay telemetry.
-3. Start one `./scripts/warm_bridge --idle-timeout 0` and one adapter:
+3. Start one `./scripts/warm_bridge --idle-timeout 0 --socket /tmp/veda-ps5-bridge.sock` and one adapter:
    `python3 scripts/veda_reviewed_play.py SESSION_DIRECTORY --run-id RUN_ID --mode codex`.
    Send `{"operation":"bridge_preflight"}` followed by a newline. Require ready.
-4. Capture and inspect the arm image, then use `veda_play_request.py arm` with
-   the actual run, screen, reviewer, evidence note, `--reviewed`,
-   `--exclusive-client-confirmed`, `--phrase 'ARM ORCHESTRATOR FOR THIS RUN'`,
-   `--capture IMAGE` and a new `--output FILE`. Submit its `request_file` pointer.
-   Full command: [arming](veda-reviewed-play.md#bounded-startup-for-the-operator).
+   The bridge's ready event must report `command_channel:"unix_socket"` and the same
+   endpoint. `connect_socket_missing` means a missing path, not denied permission.
+4. Use [staged arming](veda-arm-startup.md): validate the arm draft before capture,
+   then capture/stage/display in one tool call. After inspecting the exact image,
+   send the short explicit confirmation and immediately submit its ordinary
+   `request_file` pointer. Route planning is separate from this identity review.
 5. Require `armed_codex_reviewed` and immediately continue below. Do not return
    a final response or wait for another "continue" unless asked to arm only.
 
@@ -121,6 +122,13 @@ Never pause the clock for model thinking or technical recovery. Closing the
 adapter records a stop; reopening for play resumes measurement. Restarting does
 not erase an incomplete move. Missing startup coverage or clock rollback is
 reported as incomplete measurement, never as a fast result.
+
+If closing an adapter is part of technical recovery, immediately resume its
+paused clock with `veda_play_clock.py resume` and set phase `recovery`; do not
+exclude time while preparing its replacement. A manual clock start is marked
+partial because earlier handoff work was not observed. If a past interval was
+missed or misclassified, use `measurement_gap --reason REASON_CODE` to label the
+measurement incomplete without inventing elapsed time or clearing its history.
 
 If the helper cannot express any legal next action, record its exact capability
 gap for Builder. Do not investigate source/test schemas during the live loop.

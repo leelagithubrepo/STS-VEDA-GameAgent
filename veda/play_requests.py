@@ -78,11 +78,8 @@ def _source_identity(path):
         raise PlayRequestError("capture_image_invalid") from None
 
 
-def reviewed_capture_source(*, capture, reviewer, evidence_note, reviewed, now=None):
-    """Validate the exact saved capture and record declared inspection, without I/O effects."""
-    _require(reviewed is True, "exact_image_review_required")
-    _text(reviewer, 128, "reviewer_invalid")
-    _text(evidence_note, 4096, "evidence_note_invalid")
+def capture_source_identity(*, capture, now=None):
+    """Validate source provenance and freshness only; never assert pixel review."""
     _require(isinstance(capture, (str, Path)), "path_invalid")
     _text(str(capture), 4096, "path_invalid")
     try:
@@ -130,16 +127,27 @@ def reviewed_capture_source(*, capture, reviewer, evidence_note, reviewed, now=N
              and _receipt_bytes(receipt_path) == raw, "capture_changed_during_packaging")
     if now is None:
         _require(0 <= (datetime.now(timezone.utc) - observed).total_seconds() <= MAX_AGE, "capture_stale")
-    return {"source": {"path": str(image_path), "sha256": digest, "captured_at": requested,
-                       "origin": "reviewer", "evidence_note": evidence_note},
-            "review": {"complete": True, "reviewer": reviewer, "frame_id": frame_id,
-                       "image_sha256": digest}, "frame_id": frame_id}
+    return {"source": {"path": str(image_path), "sha256": digest, "captured_at": requested},
+            "frame_id": frame_id}
+
+
+def reviewed_capture_source(*, capture, reviewer, evidence_note, reviewed, now=None):
+    """Validate the exact saved capture and record declared inspection, without I/O effects."""
+    _require(reviewed is True, "exact_image_review_required")
+    _text(reviewer, 128, "reviewer_invalid")
+    _text(evidence_note, 4096, "evidence_note_invalid")
+    checked = capture_source_identity(capture=capture, now=now)
+    return {**checked,
+            "source": {**checked["source"], "origin": "reviewer", "evidence_note": evidence_note},
+            "review": {"complete": True, "reviewer": reviewer, "frame_id": checked["frame_id"],
+                       "image_sha256": checked["source"]["sha256"]}}
 
 
 def write_arm_request(*, run_id: str, capture: Path, screen: str, reviewer: str,
                       evidence_note: str, phrase: str, reviewed: bool,
                       exclusive_client_confirmed: bool, output: Path,
-                      now: datetime | None = None) -> dict:
+                      now: datetime | None = None, expected_identity=None,
+                      expected_receipt_sha256=None) -> dict:
     """Exclusively create one arm JSON file from a fresh, declared review.
 
     ``reviewed=True`` explicitly declares inspection of this exact image, its
@@ -161,6 +169,16 @@ def write_arm_request(*, run_id: str, capture: Path, screen: str, reviewer: str,
         evidence_note=evidence_note, reviewed=reviewed, now=now)
     image_path = Path(checked["source"]["path"])
     receipt_path = image_path.with_suffix(".capture.json")
+    def check_expected_source():
+        _require((expected_identity is None) == (expected_receipt_sha256 is None),
+                 "expected_source_incomplete")
+        if expected_identity is not None:
+            identity = {"source": {key: checked["source"][key] for key in ("path", "sha256", "captured_at")},
+                        "frame_id": checked["frame_id"]}
+            _require(identity == expected_identity, "reviewed_preview_source_changed")
+            _require(hashlib.sha256(_receipt_bytes(receipt_path)).hexdigest() == expected_receipt_sha256,
+                     "reviewed_preview_receipt_changed")
+    check_expected_source()
     declared_output = Path(output).expanduser()
     output_path = declared_output.parent.resolve() / declared_output.name
     _require(output_path.resolve() not in {image_path, receipt_path}, "output_is_capture_source")
@@ -178,6 +196,7 @@ def write_arm_request(*, run_id: str, capture: Path, screen: str, reviewer: str,
     _require(len(data) <= MAX_BYTES, "request_too_large")
     _require(reviewed_capture_source(capture=capture, reviewer=reviewer,
         evidence_note=evidence_note, reviewed=reviewed, now=now) == checked, "capture_changed_during_packaging")
+    check_expected_source()
     created = False
     try:
         with output_path.open("xb") as stream:

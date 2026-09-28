@@ -65,11 +65,17 @@ latency and makes directional input harder to verify. Start a single VEDA-owned
 session instead:
 
 ```zsh
-./scripts/warm_bridge --idle-timeout 0
+./scripts/warm_bridge --idle-timeout 0 --socket /tmp/veda-ps5-bridge.sock
 ```
 
-It emits JSON Lines and accepts JSON Lines on standard input. The first response
-is a `ready` event; all later responses include `latency_ms`.
+It emits JSON Lines and accepts adapter commands on the local socket. The
+default endpoint matches the reviewed adapter. The first response is a `ready`
+event with `command_channel:"unix_socket"` and `socket_path`; later command responses
+include `latency_ms`. Require adapter preflight before arming. An existing
+endpoint is rejected, never unlinked or taken over by a second bridge.
+
+Explicit `--stdio` selects the legacy stdin/PTY command channel instead; it
+cannot serve the socket-based reviewed adapter. Its JSONL command format is:
 
 ```json
 {"action":"tap","buttons":["right"],"delay":0.15}
@@ -115,14 +121,16 @@ inactivity timeout; a positive value closes the session after that many seconds
 without a JSON command. This option does not change a physical DualSense's power
 settings.
 
-When the launcher cannot provide a persistent stdin/PTY, use the Unix-socket command channel instead:
+The socket stays available across client process or shell stdin closure. To
+inspect the already owned socket channel without sending gameplay input:
 
 ```zsh
-./scripts/warm_bridge --idle-timeout 0 --socket /tmp/veda-ps5-bridge.sock
 python3 scripts/bridge_command.py /tmp/veda-ps5-bridge.sock '{"action":"status"}'
 ```
 
-The socket stays available across client process or shell stdin closure. Transport faults still close the session and release inputs.
+Transport faults still close the session and release inputs. Cleanup removes
+only the endpoint owned by that process. A stale existing socket needs its
+owner/exit inspected before removal; startup does not remove it automatically.
 
 Offline verification (no Remote Play SDK or console required):
 

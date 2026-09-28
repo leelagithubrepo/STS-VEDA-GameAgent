@@ -14,6 +14,7 @@ from unittest.mock import patch
 from scripts.veda_play_context_repair import main
 from tests.test_menu_requests import make_capture
 from veda import play_context_repair as repair
+from veda.play_context import read_play_context
 from veda.play_requests import reviewed_capture_source
 from veda.play_telemetry import outcome_request_digest
 from veda.telemetry_database import TelemetryDatabase
@@ -291,6 +292,114 @@ class ContextRepairTests(unittest.TestCase):
         with patch('sys.stdout', new_callable=io.StringIO):
             self.assertEqual(2, main(args+['--apply']))
         self.assertFalse(self.backup.exists())
+
+    def closed_first_floor(self):
+        self.db.resolve_decision(decision_id=self.advisory, chosen_action={}, actual_outcome={})
+        closing_capture = make_capture(self.root, self.now-timedelta(seconds=2), index='c')
+        closing = {'screen': 'map', 'hp': 79, 'max_hp': 80, 'gold': 113, 'screenshot': str(closing_capture)}
+        self.db.complete_combat(combat_id=self.combat, outcome='victory', closing_state=closing,
+            summary={'note': 'Synthetic reward collected; no map path chosen.'})
+        stamp = (self.now-timedelta(seconds=1)).isoformat()
+        with self.db._connection() as con:
+            con.execute('UPDATE combats SET closed_at=? WHERE id=?', (stamp, self.combat))
+        value = deepcopy(self.value)
+        value['expected'] = dict(self.ids, combat_id=None, turn_id=None)
+        value['closed_first_floor'] = {'combat_id': self.combat, 'orphaned_turn_id': self.turn, 'expected_closed_at': stamp}
+        value['supersede_advisory_decision_id'] = None
+        value['observed'] = {'screen': 'map', 'act': 1, 'floor': 1, 'ascension': 2, 'character': 'Ironclad',
+            'hp': 79, 'max_hp': 80, 'gold': 113, 'deck_size': 11, 'route_graph_complete': False,
+            'route_choice_committed': False, 'unknowns': ['Full route and boss are not visible.',
+            'The actual number of combat turns and final turn state are not established.']}
+        return value, closing_capture
+
+    def test_closed_victory_repair_preserves_history_closes_only_orphan_and_keeps_route_uncommitted(self):
+        self.neow_exit()
+        value, _ = self.closed_first_floor()
+        floor = self.rows('floors')[0]; combat = self.rows('combats')[0]; turn = self.rows('combat_turns')[0]
+        events = self.rows('evidence_events'); decisions = self.rows('decisions')
+        self.assertTrue(repair.validate_context_repair(value, database=self.db.path, session=self.session)['draft_valid'])
+        result = self.apply(value); context = result['next_context']
+        self.assertIsNone(context['combat_id']); self.assertIsNone(context['turn_id'])
+        self.assertEqual(floor, self.rows('floors')[0])
+        self.assertEqual(events, self.rows('evidence_events')[:-1]); self.assertEqual(decisions, self.rows('decisions'))
+        self.assertEqual(dict(combat, floor_id=context['floor_id']), self.rows('combats')[0])
+        finished = self.rows('combat_turns')[0]
+        self.assertEqual(combat['closed_at'], finished['closed_at'])
+        self.assertEqual(turn['opening_state_json'], finished['opening_state_json'])
+        self.assertEqual(turn['closing_state_json'], finished['closing_state_json'])
+        self.assertEqual(turn['turn_number'], finished['turn_number'])
+        closure = json.loads(finished['summary_json'])['administrative_closure']
+        self.assertEqual('unknown', closure['actual_number_of_turns'])
+        self.assertEqual('unknown', closure['actual_final_turn_state'])
+        fresh_floor = self.rows('floors')[1]
+        self.assertEqual('victory', fresh_floor['outcome']); self.assertEqual('{}', fresh_floor['starting_state_json'])
+        self.assertFalse(json.loads(fresh_floor['ending_state_json'])['observed_map_after_victory']['route_choice_committed'])
+        audit = self.rows('evidence_events')[-1]
+        self.assertEqual('map', audit['phase']); self.assertIsNone(audit['combat_id']); self.assertIsNone(audit['turn_id'])
+        payload = json.loads(audit['payload_json']); self.assertEqual(turn, payload['previous_orphaned_turn'])
+        recorded = read_play_context(self.db.path, run_id=self.run)
+        self.assertEqual(context, recorded['context']['binding'])
+        self.assertEqual(1, recorded['context']['floor']['floor'])
+        self.assertIsNone(recorded['context']['combat']); self.assertIsNone(recorded['context']['turn'])
+        self.assertEqual([], recorded['context']['reasons'])
+        with sqlite3.connect(self.backup) as backup:
+            self.assertIsNone(backup.execute('SELECT closed_at FROM combat_turns').fetchone()[0])
+
+    def test_closed_variant_cannot_fix_open_or_different_outcome_or_closure(self):
+        value, _ = self.closed_first_floor()
+        for updates in ({'outcome': 'defeat'}, {'closed_at': None}, {'closed_at': self.now.isoformat()}):
+            old = self.rows('combats')[0]
+            with self.db._connection() as con:
+                for key, entry in updates.items():
+                    con.execute('UPDATE combats SET ' + key + '=? WHERE id=?', (entry, self.combat))
+            with self.subTest(updates=updates), self.assertRaisesRegex(ValueError, 'sole completed first victory'):
+                self.apply(value)
+            with self.db._connection() as con:
+                con.execute('UPDATE combats SET outcome=?,closed_at=? WHERE id=?', (old['outcome'], old['closed_at'], self.combat))
+        self.assertFalse(self.backup.exists())
+
+    def test_closed_variant_requires_exact_orphan_no_next_node_and_no_invented_energy(self):
+        value, _ = self.closed_first_floor()
+        for update in ({'route_choice_committed': True}, {'route_graph_complete': True}, {'energy': 1}):
+            changed = deepcopy(value); changed['observed'].update(update)
+            with self.subTest(update=update), self.assertRaises(ValueError):
+                self.apply(changed)
+        changed = deepcopy(value); changed['closed_first_floor']['orphaned_turn_id'] = 'another-turn'
+        with self.assertRaisesRegex(ValueError, 'sole open turn'):
+            self.apply(changed)
+        with self.db._connection() as con:
+            con.execute('UPDATE combat_turns SET closing_state_json=? WHERE id=?', ('{"energy":0}', self.turn))
+        with self.assertRaisesRegex(ValueError, 'unclassified ending evidence'):
+            self.apply(value)
+        self.assertFalse(self.backup.exists())
+
+    def test_closed_map_proof_needs_intact_receipt_and_matching_hud(self):
+        value, image = self.closed_first_floor()
+        changed = deepcopy(value); changed['observed']['gold'] += 1
+        with self.assertRaisesRegex(ValueError, 'matching observed resources'):
+            self.apply(changed)
+        receipt_path = image.with_suffix('.capture.json')
+        receipt = json.loads(receipt_path.read_text()); receipt['image_sha256'] = 'a'*64
+        receipt_path.write_text(json.dumps(receipt))
+        with self.assertRaisesRegex(ValueError, 'capture provenance'):
+            self.apply(value)
+        self.assertFalse(self.backup.exists())
+
+    def test_closed_repair_rolls_back_floor_combat_and_orphan_when_commit_review_fails(self):
+        value, _ = self.closed_first_floor()
+        before = self.rows('floors'), self.rows('combats'), self.rows('combat_turns'), self.rows('evidence_events')
+        original = repair.reviewed_capture_source; calls = 0
+        def source(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                raise ValueError('changed final capture')
+            return original(**kwargs)
+        with patch.object(repair, 'reviewed_capture_source', side_effect=source):
+            with self.assertRaisesRegex(ValueError, 'changed final capture'):
+                self.apply(value)
+        self.assertEqual(before, (self.rows('floors'), self.rows('combats'), self.rows('combat_turns'), self.rows('evidence_events')))
+        self.assertTrue(self.backup.is_file())
 
 
 if __name__ == '__main__':

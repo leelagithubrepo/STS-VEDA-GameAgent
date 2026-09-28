@@ -23,14 +23,21 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import errno
+import inspect
 import json
 import logging
 import math
 from pathlib import Path
+import socket
+import stat
 import sys
 import time
 from typing import Any
 from uuid import UUID, uuid4
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from veda.bridge_channel import DEFAULT_BRIDGE_SOCKET
 
 if __package__:
     from .bridge_health import BridgeHealth, BridgeHealthError
@@ -255,6 +262,20 @@ async def _handle(service: Any, health: BridgeHealth, command: dict[str, Any]) -
 
 
 async def _run(args: argparse.Namespace) -> int:
+    socket_path = Path(args.socket) if args.socket else None
+    if socket_path is not None:
+        try:
+            socket_path.lstat()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            _emit({"ok": False, "error": "socket_path_unavailable", **_channel_metadata(socket_path)})
+            return 2
+        else:
+            # Never detach an existing socket, file, or symlink from its owner.
+            # Inspect the previous process/cleanup before removing stale paths.
+            _emit({"ok": False, "error": "socket_path_exists", **_channel_metadata(socket_path)})
+            return 2
     # Lazy imports keep parsing and transport tests independent of the live SDK.
     from ps5rmtctl.config import get_default
     from ps5rmtctl.service import PS5Service
@@ -282,8 +303,9 @@ async def _run(args: argparse.Namespace) -> int:
     health = None
     stdin_transport = None
     socket_server = None
+    listening_socket = None
+    owned_socket_identity = None
     client_tasks: set[asyncio.Task] = set()
-    socket_path = Path(args.socket) if args.socket else None
     exit_code = 0
     started = time.monotonic()
     try:
@@ -293,11 +315,6 @@ async def _run(args: argparse.Namespace) -> int:
         dispatcher = _CommandDispatcher(service, health, command_timeout=args.command_timeout,
                                         max_requests=args.max_requests)
         if socket_path:
-            socket_path.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                socket_path.unlink()
-            except FileNotFoundError:
-                pass
             async def accept_client(reader, writer):
                 if len(client_tasks) >= 8:
                     writer.close()
@@ -312,15 +329,23 @@ async def _run(args: argparse.Namespace) -> int:
                 finally:
                     client_tasks.discard(task)
 
+            # Passing path= to asyncio may unlink an existing Unix socket.
+            # Bind ourselves so a concurrent owner wins atomically and is never
+            # replaced, then give asyncio only the socket we actually own.
+            listening_socket, owned_socket_identity = _bind_command_socket(socket_path)
             socket_server = await asyncio.start_unix_server(
-                accept_client, path=str(socket_path), limit=args.max_request_bytes)
+                accept_client, sock=listening_socket, limit=args.max_request_bytes,
+                **_socket_cleanup_options(asyncio.get_running_loop()))
+            listening_socket = None  # Server owns descriptor after success.
+            _require_owned_socket(socket_path, owned_socket_identity)
             socket_path.chmod(0o600)
+            _require_owned_socket(socket_path, owned_socket_identity)
         else:
             reader = asyncio.StreamReader(limit=args.max_request_bytes)
             stdin_transport, _ = await asyncio.get_running_loop().connect_read_pipe(
                 lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
         _emit({"ok": True, "event": "ready", "connect_ms": round((time.monotonic() - started) * 1000),
-               **_owned_readiness(health)})
+               **_owned_readiness(health), **_channel_metadata(socket_path)})
         if socket_path:
             stopped_task = asyncio.create_task(dispatcher.stopped.wait())
             fault_task = asyncio.create_task(health.failed.wait())
@@ -352,6 +377,9 @@ async def _run(args: argparse.Namespace) -> int:
                     if dispatcher.faulted:
                         exit_code = 3
                     break
+    except CommandSocketError as error:
+        _emit({"ok": False, "error": error.code, **_channel_metadata(socket_path)})
+        exit_code = 2
     except BridgeHealthError:
         _emit({"ok": False, "event": "controller_fault", "error": "controller transport failed; closing session",
                "health": health.status() if health else None})
@@ -365,6 +393,8 @@ async def _run(args: argparse.Namespace) -> int:
         if socket_server is not None:
             socket_server.close()
             await socket_server.wait_closed()
+        if listening_socket is not None:
+            listening_socket.close()
         if client_tasks:
             # Let the closing command acknowledgement drain before releasing
             # the transport; bound idle client shutdown as well.
@@ -372,14 +402,72 @@ async def _run(args: argparse.Namespace) -> int:
             for task in pending:
                 task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
-        if socket_path:
-            try:
-                socket_path.unlink()
-            except FileNotFoundError:
-                pass
+        if not _unlink_owned_socket(socket_path, owned_socket_identity):
+            exit_code = 3
         if not await _close_bridge(service, health):
             exit_code = 3
     return exit_code
+
+
+class CommandSocketError(RuntimeError):
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+
+def _channel_metadata(socket_path):
+    return {"command_channel": "unix_socket" if socket_path is not None else "stdio",
+            "socket_path": str(socket_path) if socket_path is not None else None}
+
+
+def _socket_cleanup_options(loop):
+    # Python 3.13+ also snapshots and unlinks a path when given sock=. Keep
+    # cleanup exclusively under our bind-time ownership check. Older asyncio
+    # does not accept this option and does not perform that automatic cleanup.
+    if "cleanup_socket" in inspect.signature(loop.create_unix_server).parameters:
+        return {"cleanup_socket": False}
+    return {}
+
+
+def _require_owned_socket(path, identity):
+    try:
+        current = path.lstat()
+    except OSError:
+        raise CommandSocketError("socket_path_changed") from None
+    if not stat.S_ISSOCK(current.st_mode) or (current.st_dev, current.st_ino) != identity:
+        raise CommandSocketError("socket_path_changed")
+
+
+def _bind_command_socket(path):
+    """Atomically bind a new endpoint without unlinking another owner's path."""
+    path = Path(path)
+    listener = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.setblocking(False)
+        listener.bind(str(path))
+        identity = path.lstat()
+        return listener, (identity.st_dev, identity.st_ino)
+    except OSError as error:
+        if listener is not None:
+            listener.close()
+        raise CommandSocketError("socket_path_exists" if error.errno in {errno.EADDRINUSE, errno.EEXIST}
+                                 else "socket_bind_failed") from None
+
+
+def _unlink_owned_socket(path, identity):
+    if path is None or identity is None:
+        return True
+    try:
+        current = path.lstat()
+        if stat.S_ISSOCK(current.st_mode) and (current.st_dev, current.st_ino) == identity:
+            path.unlink()
+        return True
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
 
 
 async def _close_bridge(service: Any, health: BridgeHealth | None) -> bool:
@@ -451,18 +539,21 @@ async def _next_socket_client(clients: asyncio.Queue, health: BridgeHealth):
         await asyncio.gather(client_task, fault_task, return_exceptions=True)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="VEDA persistent PS5 controller session (JSONL stdin/stdout).")
+def _parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="VEDA persistent PS5 controller session (local Unix-socket JSONL by default).")
     parser.add_argument(
         "--idle-timeout",
         type=float,
         default=0.0,
         help="Close after this many seconds without a JSON command; 0 disables this timeout.",
     )
-    parser.add_argument(
+    channel = parser.add_mutually_exclusive_group()
+    channel.add_argument(
         "--socket",
-        help="Use a persistent Unix socket for JSONL commands instead of inherited stdin.",
+        default=DEFAULT_BRIDGE_SOCKET,
+        help="Unix socket for JSONL commands (default: %(default)s); existing paths are never replaced.",
     )
+    channel.add_argument("--stdio", action="store_true", help="Use inherited stdin/stdout JSONL instead of a Unix socket.")
     parser.add_argument("--command-timeout", type=float, default=3.0,
                         help="Maximum seconds queued or executing one command; timeout stops the session.")
     parser.add_argument("--request-timeout", type=float, default=2.0,
@@ -470,14 +561,22 @@ def main() -> int:
     parser.add_argument("--max-request-bytes", type=int, default=16384)
     parser.add_argument("--max-requests", type=int, default=4096,
                         help="Per-session deduplication capacity; additional new IDs are rejected.")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.stdio:
+        args.socket = None
+    elif not args.socket.strip():
+        parser.error("--socket must be a nonempty path")
     if not math.isfinite(args.idle_timeout) or args.idle_timeout < 0:
         parser.error("--idle-timeout must be finite and non-negative")
     if any(not math.isfinite(value) or value <= 0 for value in (args.command_timeout, args.request_timeout)):
         parser.error("command and request timeouts must be finite and positive")
     if not 64 <= args.max_request_bytes <= 65536 or not 1 <= args.max_requests <= 65536:
         parser.error("request limits must be bounded: bytes 64..65536, count 1..65536")
-    return asyncio.run(_run(args))
+    return args
+
+
+def main(argv=None) -> int:
+    return asyncio.run(_run(_parse_args(argv)))
 
 
 if __name__ == "__main__":

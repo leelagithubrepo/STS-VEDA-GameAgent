@@ -12,7 +12,7 @@ from veda.play_timing import PlayTiming
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=('start', 'status', 'begin_move', 'begin_floor',
-                                            'phase', 'pause', 'resume', 'stale_capture'))
+                                            'phase', 'pause', 'resume', 'stale_capture', 'measurement_gap'))
     parser.add_argument('--session', type=Path, required=True)
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--move-id')
@@ -28,7 +28,9 @@ def main(argv=None):
     if args.operation != 'start' and not path.exists():
         parser.error('start the play clock before recording progress')
     try:
-        timing = PlayTiming(path, run_id=args.run_id)
+        # A manual CLI start may follow substantial handoff work. Only the
+        # launcher can establish that measurement began before play startup.
+        timing = PlayTiming(path, run_id=args.run_id, startup_observed=False)
         fields = {key: value for key, value in vars(args).items()
                   if key not in {'operation', 'session', 'run_id'} and value is not None}
         if args.operation not in {'start', 'status'}:
