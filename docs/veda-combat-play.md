@@ -12,13 +12,23 @@ unknowns, one card/End Turn plan and reasoning. Start from the
 [synthetic schema example](examples/combat-draft.json), replacing all game facts
 and IDs; its values are not this run. Keep repeated copies as distinct card IDs.
 Use actual `enemy`, `elite` or `boss` for encounter type. Optional `rules` and
-`boss_manifest` retain their existing reviewed semantics.
+`boss_manifest` retain their existing reviewed semantics. For the autonomous
+learning session add `decision_policy:"learning"`; an omitted policy remains
+strict for compatibility. The adapter and draft policies must match.
+
+`plan` contains one `steps` action and may include `potion_review`,
+`zero_cost_review`, `setup_reason` and `claims_lethal`. Reviews are bounded
+explanations, not extra controller actions. In learning mode, missing rule,
+forecast, confidence and strategy coverage produces warnings; unavailable or
+unaffordable cards still require a different action. An End Turn with an
+unknown survival forecast can proceed without inventing zero damage.
 
 `state.end_turn_damage` means additional **non-attack** damage. Each enemy's
 `intent_hits` contains its attack hits; do not also sum those into
 `end_turn_damage`. Preserve unmodeled effects and unread values. Do not infer
 zero powers from an occluded icon or identify an unread enemy from a guess.
-The ordinary checker decides whether the proposed action depends on that fact.
+The assessment reports what can be predicted and what remains unknown.
+Learning mode does not require resolving every unknown before acting.
 
 ```sh
 python3 scripts/veda_combat.py --draft /absolute/combat-draft.json --validate
@@ -76,8 +86,10 @@ python3 scripts/veda_combat.py --result /absolute/result-draft.json \
 
 Submit its pointer. Require `verified`, then use canonical `next_context`.
 `logical_action_complete:false` means focus/selection only; inspect the next UI
-and continue the same recommendation if it remains valid. Pending uncertainty
-requires resolution, never another input. A `verified_pending_log` result needs
+and continue the same recommendation if it remains valid. A `recoverable_review` calls for another observation or request repair while
+the session stays active. An observed HP/energy/effect difference is recorded
+as a forecast mismatch in learning mode; it does not invalidate proven card
+resolution. Pending delivery/result uncertainty needs inspection, never replay. A `verified_pending_log` result needs
 `finalize`, not replay.
 
 For a new turn, use the actual after-state and `next_turn:{turn_number:N}`;
@@ -101,8 +113,10 @@ card or target, actual player resources and explicit unknowns. Do not claim
 card focus while the enemy tooltip is selected.
 
 The example declares deck coverage unknown; visible hand cards do not establish
-the full deck. Use the actual confirmed inventory from the ledger when available
-and preserve its coverage. Relic and potion coverage must remain complete.
+the full deck. Use actual confirmed inventory when available and preserve its
+coverage. Add `decision_policy:"learning"` to the inspection draft to retain
+unknown relic/potion coverage too; strict inspection keeps its earlier
+completeness requirement.
 
 Use `veda_inspect.py` with the same draft/validate then exact-capture binding
 sequence above, adding `--control-profile ps5-default-cross-confirm-v1`.

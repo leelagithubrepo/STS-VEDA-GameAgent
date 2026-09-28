@@ -7,7 +7,10 @@ victory or defeat.
 
 Start with the [compact play loop and timing targets](veda-play-hot-path.md).
 Combat uses [source-free action and result helpers](veda-combat-play.md), and
-an armed adapter accepts `execute` for one reviewed prepare/send cycle. Arming
+an armed adapter accepts `execute` for one reviewed prepare/send cycle.
+The CLI defaults to `--decision-policy learning`; compact combat/menu drafts
+explicitly carry `decision_policy:"learning"`. Strict mode remains available
+for offline/advisory comparisons, not the default autonomous strategy policy. Arming
 continues directly into play; it is not a reason to wait for another prompt.
 The targets measure actual progress and expose delays; they do not certify
 live speed or relax evidence checks.
@@ -18,9 +21,9 @@ with recorded declarations and a fake controller. They still need their first
 live end-to-end check. The local automatic screen reader is not certified for
 standalone play; that separate runtime's calibration requirements remain intact.
 
-One launch check remains: the archive does not yet establish which controller
-button activates the title screen's Continue option. Establish that mapping
-from an observed button-and-result transition before using it in the adapter.
+The title screen's Continue option still needs its actual visible button hint
+or an observed button-and-result transition; the compact default menu profiles
+do not cover title/system menus.
 Synthetic tests and a highlighted option do not establish the mapping.
 
 ## Resume the saved run
@@ -64,7 +67,7 @@ itself. Keep the preview open and confirm each captured frame is current.
 For a manually started task that has not yet received current-run authorization,
 use the following prompt. Launcher users do not need to repeat it:
 
-> Use Orchestrator for the currently visible Slay the Spire attempt. ARM ORCHESTRATOR FOR THIS RUN. Check the live screen and SQLite, bind that attempt, and verify every move through the reviewed adapter. Re-plan conservatively under uncertain game state: favor survival and the lowest defensible damage risk among supported actions. Use reviewed bounds, inspections and protective alternatives. Preserve unresolved input and report exact technical blockers; do not replay input or bypass checks. Stop at victory or defeat.
+> Use Orchestrator for the currently visible Slay the Spire attempt. ARM ORCHESTRATOR FOR THIS RUN. Check the live screen and SQLite, bind that attempt, and verify every move through the reviewed adapter. Re-plan conservatively under uncertain game state: favor survival and the lowest defensible damage risk among supported actions. Use reviewed bounds, inspections and protective alternatives. Preserve unresolved input and report exact technical blockers; do not replay input or bypass checks. Use learning mode and continue through missing rules and forecasts. Record the reason, uncertainty and observed result; retrieve relevant past cases. Recover from rejected drafts without asking for continue. End at full-run victory, defeat or user Stop; stop controls for actual hardware/network/feed failure.
 
 Orchestrator requires explicit current-run arming; the launcher supplies it.
 General development approval does not start the controller. Codex first checks
@@ -79,7 +82,9 @@ a button because a reply or animation was slow. Reopening a session leaves it
 disarmed. A bridge acknowledgement means delivery only, not that a card played.
 Use the [action-evidence policy](veda-action-evidence.md) to distinguish
 supported game uncertainty, a recoverable inspection need and a session stop.
-It preserves every existing adapter requirement.
+Learning mode treats strategic checks as warnings and accepts verified actual
+results that differ from forecasts. Source, control ownership and pending-input
+correlation remain required. Draft errors recover within the active session.
 
 ## Bounded startup for the operator
 
@@ -174,20 +179,24 @@ environment and the existing run ID; no credentials or device pairing change.
 ```sh
 python3 scripts/capture_observation.py --game-window
 python3 scripts/veda_reviewed_play.py artifacts/reviewed-play/CURRENT_RUN \
-  --run-id EXISTING_RUN_ID --database artifacts/veda-memory.sqlite3 --mode codex
+  --run-id EXISTING_RUN_ID --database artifacts/veda-memory.sqlite3 --mode codex --decision-policy learning
 ```
 
-Start `./scripts/warm_bridge --idle-timeout 0 --socket /tmp/veda-ps5-bridge.sock` only after current-run arming and
-preflight. Wait for its ready event. Keep the reviewed-play process alive so it
+After current-run authorization and identity/ownership preflight, start
+`./scripts/warm_bridge --idle-timeout 0 --socket /tmp/veda-ps5-bridge.sock`.
+Wait for ready, run the adapter's bridge preflight, then arm the adapter. Keep the reviewed-play process alive so it
 reuses that socket. Its JSONL input accepts a request object or
-`{"request_file":"/absolute/reviewed-request.json"}`. A malformed request
-disarms the adapter; it cannot fall through into a raw controller command.
+`{"request_file":"/absolute/reviewed-request.json"}`. In learning mode a
+malformed or stale unsent request returns `recoverable_review`; repair it while
+the healthy session stays active. Strict mode retains its earlier disarming
+behavior. Neither policy permits a raw controller command.
 
 The normal cycle is **prepare → send → verify**. `prepare` accepts reviewed
 evidence and strategy, computes one permitted button, retains the source, and
 returns its action ID. `send` requires that ID, fresh unchanged evidence and an
 armed session; it durably records the decision before attempting input.
-`verify` requires a later image and actual matching effects. Every new input
+`verify` requires a later image proving the actual action result. Learning
+mode logs numerical/choice forecast differences instead of rejecting the result. Every new input
 needs a new review. The source freshness limit is 30 seconds at preparation,
 dispatch and outcome review; recapture and inspect when it expires.
 
@@ -214,18 +223,19 @@ and evidence note from the [telemetry contract](veda-play-telemetry.md).
 For combat, include the current `Reading` contract described in
 [execution runtime](veda-execution-runtime.md), a complete named `review`
 bound to its frame ID/hash, and a `plan` containing exactly one card or End Turn.
-The adapter checks visual/context agreement and the shared Spire rules. It does
-not accept caller-provided “allowed” flags. Full hand, current costs, enemy hits,
-powers, and confirmed relic/potion inventory are required. Strategy remains
-Codex's responsibility, including relevant draw/discard inspections and potion
-review; local arithmetic does not guarantee the best move or a win.
+The adapter checks visual/context agreement and assesses shared Spire rules.
+It does not accept caller-provided “allowed” flags. Learning retains incomplete
+knowledge as unknown and makes strategy/forecast gaps warnings. Actual action
+identity, UI mapping and contradictory current-state facts still need repair.
+Strategy remains Codex's responsibility, including useful draw/discard and
+potion considerations; local arithmetic does not guarantee the best move.
 
 A non-turn-ending card uses the shared checker's immediate-action scope. Its
 conditional enemy-turn forecast may still show insufficient defense; that does
 not imply the card itself causes those incoming hits. Verify the card and re-plan
-the remaining defense from a fresh frame. Actual End Turn, forced turn endings,
-immediate lethal HP costs and every source/inventory/control check retain their
-guards. See [forecast horizons and defensive prefixes](veda-action-evidence.md#a-card-action-is-not-automatically-end-turn).
+the remaining defense from a fresh frame. Learning mode can also accept End Turn without a proven survival bound;
+losing the run is an allowed learning outcome. It does not turn an unknown
+forecast into zero damage. See the [learning policy](veda-action-evidence.md).
 
 ## Game uncertainty and unreadable evidence
 
@@ -254,21 +264,19 @@ This is a conservative set of alternatives, not a claim that all four share
 the same icon or occur together. It retains the existing source-bound
 `reviewed_reference` evidence with `observed_intent: true`, which here means
 the **category** was observed. The complete current roster, known modifiers,
-confirmed inventory and matching A2 manifest remain required. The checked
-forecast takes the largest reviewed one-turn bound across every alternative;
+confirmed inventory and matching A2 manifest are needed to establish this
+specific numerical forecast. Their absence remains a warning in learning mode.
+When available, the checked forecast takes the largest reviewed one-turn bound across every alternative;
 the exact move remains null. It includes possible immediate Torch Head attacks
 after a summon, without predicting that they actually happen. Source-based
 opening-Spawn expectations never become an observed exact move.
 
-Use these facts to submit the next legal card to the normal checked adapter.
-Before End Turn, require its conservative survival check, review potions when
-accepting damage and review unused playable zero-cost cards. Re-observe after
-each action; never execute the alternative branches as a sequence. Do not stop
-solely because a readable nonattack category hides the exact move, or tell the
-player to wait for that label to change. Stop when an action depends on an
-unbounded effect, missing evidence, or an actual failed check, and report that
-specific reason. This capability does not cover arbitrary bosses or hidden
-attacks. Offline tests validate these contracts, not live screen recognition.
+Use these facts when available. Consider potion use, unused zero-cost cards
+and survival before End Turn; these are strategy recommendations in learning
+mode. Re-observe after each action and record its actual outcome. An unmodeled
+boss or effect can leave the forecast unknown without ending the session.
+Strict mode retains the conservative survival and completeness checks for
+comparison. Offline tests validate the declared contracts, not recognition.
 
 ## Other choices and verification
 
@@ -276,20 +284,21 @@ For unfamiliar layouts and readable random outcomes, use the
 [general-decision workflow](veda-general-decisions.md). Its route brief reports
 visible connections and uncertainty without selecting a path. A verified option
 can remain usable when another reachable icon is unclear. Map/event/reward
-choices can declare 2–8 complete outcome alternatives; verification must match
-exactly one and persists its derived `choice_outcome_id`. Keep every branch's
-run, costs, resources and inventory constrained. This does not authorize new
-controller bindings or arbitrary random inventory additions.
+choices can declare 2–8 complete outcome alternatives. Strict mode must match
+exactly one; learning can record a verified unexpected commit and its forecast
+mismatch. Actual inventory/lifecycle changes still need explicit observation
+and typed logging. Predictions do not authorize new controller bindings.
 
 For menus, include the [choice observation and planned choice](veda-choice-execution.md)
 as `observation` and `choice`, plus the reviewed `inventory`. Its semantic digest
 must match the observation. Controller bindings use a current visible hint,
 a previously reviewed transition, or an applicable explicit
 [default control profile](veda-menu-controls.md). A missing on-screen glyph
-alone is not a blocker when that profile covers the reviewed menu. Only title
-Continue may carry unknown relic or potion coverage, because it loads the same
-saved run. Opening an upgrade picker may retain unknown card coverage; inspect
-and record the actual cards before choosing the upgrade.
+alone is not a blocker when that profile covers the reviewed menu. Learning
+mode permits unknown inventory coverage while keeping observed contents and
+coverage honest. Strict mode retains its narrower completeness requirements.
+Opening an upgrade picker may retain unknown card coverage; inspect and record
+actual cards before choosing the upgrade.
 
 Verification supplies `action_id`, a new UUID `operation_id`, and `after` with
 the new source and reviewed reading/choice observation. Optional `telemetry`

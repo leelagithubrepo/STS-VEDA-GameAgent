@@ -1,164 +1,98 @@
-# Evidence needed for the next action
+# Learning policy and action evidence
 
-The operator needs enough reliable information to check the next action and its
-result. It does not need to know every future draw, hidden enemy move or random
-reward. This policy guides inspection and planning; it cannot override the
-reviewed adapter's required fields, source checks, inventory coverage, controller
-evidence, lifecycle checks or pending-action journal.
+Autonomous Orchestrator uses `--decision-policy learning`. Its compact combat
+and menu drafts explicitly carry `decision_policy:"learning"`; omitted fields
+retain strict compatibility for existing callers. The draft and active session
+must agree. Spire's advisory checker remains strict when used directly.
 
-The player's policy is to keep moving under uncertain game state: favor survival
-and the lowest defensible damage risk. Missing exact state calls for conservative
-planning or inspection. It is not a standalone session-stop condition.
+The player's policy is to keep playing through uncertainty, record decisions
+and use the observed outcomes to improve later choices. Strategic preferences,
+missing rules and incomplete forecasts are advice. A poor move or a lost run
+is an acceptable learning result. Unknown damage is never recorded as zero.
 
-## Choose conservatively
+## What changes in learning mode
 
-Compare supported legal candidates, including protective cards, lethal damage,
-potions and setup when applicable. Avoid lethal outcomes when an available
-checked alternative does so. Then prefer lower damage risk over the supported
-planning horizon; do not protect this turn at the expense of greater known
-near-term harm. State the horizon and uncertainty behind the choice.
+Combat assessment retains the strict check's warnings and whatever forecast
+is supported. It can permit a card or End Turn despite an unmodeled enemy move,
+missing optional potion/zero-cost review, incomplete strategic coverage or a
+survival forecast that cannot establish a win. It still rejects an unavailable
+card, a known unaffordable cost, malformed state or a contradictory declaration;
+the operator selects another action or repairs the declaration and continues.
 
-Where the checked rules provide several possible outcomes, compare their
-conservative damage bounds. Use expected damage only when applicable probabilities
-are established. Missing probabilities are not zero probability, and an unknown
-attack is not zero damage. Inventory and setup can break otherwise comparable
-choices; no fixed "always Defend" or "always use a potion" rule replaces judgment.
+Current screen and controller semantics still matter: a recommendation must
+map to a real input in the current UI. There is no raw-button bypass. Exact
+source, run ownership and pending-input correlation prevent accidental repeated
+input or controlling the wrong game. These are execution requirements; they
+are not strategic opinions or requirements to predict hidden outcomes.
 
-This preference applies to the advisor's checked candidates and the routine
-planner's supported numeric bounds; it is not an exemption from adapter
-requirements. The routine planner now ranks a higher conservative player-HP
-bound ahead of damage dealt, then uses enemy HP and action economy to break
-ties. It does not enumerate every potion, card interaction or future turn.
-If the adapter cannot validate any candidate despite a readable game and functioning
-controls, identify the exact capability gap for Builder. Preserve the failed
-check and considered alternatives; never fabricate facts or dispatch raw input
-to conceal that gap. This implementation limitation remains to be expanded where
-encountered and must not be described as a strategic need for perfect certainty.
+After input, the observed result governs the ledger. Learning can verify a
+resolved card or committed menu outcome that differs from predicted HP, energy,
+Block, enemy state or reward effects. It stores the difference for review. An
+unchanged card/option or a focus change alone does not prove an effect. Menu
+outcome forecasts are predictions; actual inventory and lifecycle changes must
+be explicitly observed and logged, never filled from a preferred branch.
 
-## A card action is not automatically End Turn
+## Keep recovering
 
-The reviewed adapter checks one card's immediate legality without requiring that
-the player could already survive ending the turn after that card. For example,
-at 5 HP facing 10 damage, the first Defend leaves 5 Block and the player is still
-at 5 HP. A second Defend can complete the defense. Rejecting the first card
-because ending the turn immediately would be fatal prevents that valid setup.
-
-The first Defend still requires fresh evidence and one verified result. Re-read
-the hand, energy and Block before checking the second; lookahead never sends a
-sequence automatically. End Turn and a card that actually forces the turn to
-end still require the survival check. Immediate lethal HP costs remain rejected.
-
-Internally, `check_plan` retains its strict `complete_line` default. The reviewed
-adapter and bounded routine search explicitly use `survival_scope="action_prefix"`.
-This is a checker API option, not a user-supplied request flag that disables
-checks. The forecast labels its horizon as `if_turn_ended_now` or
-`committed_enemy_turn`, and exposes `survival_required` and whether the bound
-establishes survival (`survival_established`). A hypothetical HP value of zero is not a claim that playing the non-turn-ending
-card immediately killed the player.
-
-Routine search can extend a legal defensive prefix to a supported survivable
-continuation, rank it, and return only the first action. Its `prediction_horizon`
-and notes describe the first action's conditional HP projection. It does not
-present a later planned card's Block or HP as already observed. Search limits
-and unsupported draw/effect boundaries remain explicit.
-
-## Continue, inspect or pause
-
-For each candidate, identify what its legality, cost, target, relevant effects
-and outcome verification depend on. Classify an unknown according to that
-dependency, rather than stopping because the word "unknown" appears:
-
-| Situation | Operator response |
+| Situation | Next action |
 | --- | --- |
-| Confirmed next map option beside an unread icon | Exclude the unread option. Evaluate the confirmed option normally, with its own source/control/route checks. |
-| Cropped future map | Keep unshown paths unknown. Use confirmed visible connections without claiming a safe route or unseen rest site. |
-| Supported random outcome | Use applicable reviewed bounds or complete alternatives; verify the observed branch afterward. Do not predict its identity as fact. |
-| Readable Collector nonattack category covered by the existing A2 contract | Keep the exact move unknown and apply the reviewed conservative bound, including other enemies. Bare unknown intent is not zero damage. |
-| Proposed card needs an unread pile | Inspect the pile using a supported checked action, or exclude that card and evaluate another candidate whose complete review passes. |
-| Two legal tactical preferences | Choose using strategy and state the reason. A disagreement about observed energy, HP or other required facts must be resolved first. |
-| Source expired before dispatch | Capture and inspect a fresh source, cancel an unsent prepared proposal if necessary, then prepare again. Never rewrite the old capture time. |
-| Required inventory, target, effect or menu control cannot be checked | Inspect the missing evidence if a supported inspection exists. Otherwise exclude the candidate and evaluate a protective alternative. If every action is technically unsupported, record the exact adapter capability gap. |
-| No game video, wrong/unknown run, bridge fault, unresolved dispatch or failed consequential logging | Pause controls, preserve evidence and pending state, close the owned bridge and report the specific problem. |
+| Missing rule, uncertain enemy move or unsupported numeric forecast | Keep it unknown, choose using available evidence and log the outcome. |
+| Optional strategy review missing | Weigh the warning; do not ask the player for approval. |
+| Incomplete future map or an unread neighboring icon | Inspect if useful, then choose an actual visible connected option. |
+| New event or random outcome | Read the options, make a decision, observe the actual result. |
+| Expired or malformed unsent request | Refresh/repair it; keep the healthy session active. |
+| Candidate is unavailable or unaffordable | Choose another playable action or End Turn. |
+| Forecast differs from a proven observed result | Log the mismatch and re-plan from actual state. |
+| Input result unclear | Inspect and reconcile the pending input before the next move; never blindly repeat it. |
+| Verified result waiting for durable logging | Finalize the saved outcome, without replaying the input. |
+| Repeated unchanged inspection or timing overrun | Change approach; report the specific delay and continue recovery. |
+| Hardware/network/bridge failure or missing game feed/target | Stop controls, preserve pending evidence and report the actual connection problem. |
+| User Stop, confirmed defeat or completed run | End this session and verify owned bridge cleanup. |
 
-Inspection is work, not an automatic session failure. Use the smallest relevant
-view. Never press a button simply to discover its binding. A controller-assisted
-inspection still needs the same reviewed input checks as another action.
-For the same unchanged evidence blocker, allow at most two unsuccessful fresh
-capture/inspection attempts; then re-plan among supported candidates rather
-than treating that inspection budget as an automatic session stop or looping
-through stale captures. If every candidate is rejected, preserve the concrete
-capability gap. A material change, such as a restored picture or newly readable required fact, can justify
-a new assessment. A new filename, timestamp or unrelated animation does not
-reset the attempt budget. The limit does not permit replaying an
-uncertain input, reconnecting after a fault or overriding a rejected contract.
+`recoverable_review` is a response within the play loop, not a terminal answer.
+It names the next recovery step and whether any input may have been sent. A
+healthy adapter remains armed. Do not interpret every rejected request as a
+reason to close the bridge or request the player's authorization again.
 
-If an actual input was attempted, no further gameplay input is allowed until
-the adapter establishes resolution and clears its pending action. Reconciliation
-that records an unknown result retains that pending action and does not permit
-continued input. Multiple valid outcome alternatives are useful
-only when exactly one matches. A screenshot showing an unsupported result is
-evidence to preserve, not permission to broaden the contract after dispatch.
+After two unsuccessful inspections of the same unchanged fact, try another
+approach or an available conservative move. A new filename is not progress.
+Do not spend repeated 30-second capture windows discovering request schemas;
+prepare and validate drafts first. Keep recovery time on the play clock.
 
-## Preserve a useful blocker record
+Unknown delivery is distinct from unknown strategy. Preserve the pending record
+and observe what happened. A reconciliation marked `unknown` does not clear
+that record or permit replay. Hardware failure during dispatch preserves the
+record for recovery after reconnection. A durable-storage failure also needs
+repair before another consequential input; do not silently lose the journal.
 
-Keep a private JSON record alongside the session artifacts when an evidence
-problem prevents progress. Use the existing screenshots, action IDs and SQLite
-context rather than copying entire history. No new database schema is required.
-The operator supplies these factual fields; this record is descriptive and
-grants no permission:
+If no implemented action can express the current UI, keep pursuing observation
+or another supported path and record the precise software gap. Report ongoing
+recovery honestly. This policy does not claim the adapter can autonomously
+recognize every screen or recover from every possible software failure.
 
-```json
-{
-  "schema": "veda.action-blocker.v1",
-  "run_id": null,
-  "action_id": null,
-  "last_verified_state": {},
-  "missing_fact_or_failed_check": "Exact missing fact or adapter error",
-  "affected_action": "The proposed action that depends on it",
-  "category": "missing_action_evidence",
-  "inspections_attempted": [],
-  "alternatives_considered": [],
-  "evidence": [],
-  "input_status": "not_attempted",
-  "pending_preserved": true,
-  "next_recovery_step": "Specific supported inspection or external repair",
-  "bridge_cleanup": "not_started"
-}
-```
+## Decisions become retrievable cases
 
-Use null for IDs that cannot be established; do not attach a no-video capture to
-an arbitrarily selected run. Suggested categories are `missing_action_evidence`,
-`unsupported_contract`, `identity_or_video`, `control_or_delivery`, and
-`logging_failure`. Evidence entries identify actual retained source path/hash
-and capture time. Input status distinguishes not attempted, proven not sent,
-attempted with unresolved delivery/result, and verified. Do not mark pending
-state cleared or cleanup complete without the adapter/bridge evidence.
-When describing recovery, state whether the adapter actually cleared pending
-input. Avoid "continue after reconciliation": a successful reconciliation that
-records `unknown` deliberately leaves the input pending and blocks further play.
-For an `unsupported_contract` report, include the actual rejected adapter check
-and the candidate/inspection alternatives considered. This is a product gap to
-fix, not a request for the player to guess hidden state or repeat authorization.
+Before dispatch, SQLite records the chosen action, reason, policy warnings and
+available forecast. After verified observation, it records actual state and
+prediction mismatches. `veda_play_lessons.py` reads relevant confirmed cases
+by encounter, card, action or screen. Query at encounter start or after a new
+mechanic, then reuse the result while relevant; do not query on every focus tap.
 
-In the player update, lead with the concrete issue and next step, for example:
-"The capture says No Video, so I cannot identify the game screen. No input was
-sent. Restore the picture in QuickTime; the current-attempt authorization is
-already recorded." Avoid "uncertain, stopped" without an explanation.
+Cases preserve uncertainty and source references. They are historical advice,
+not current game state, causal proof or automatic model training. An unresolved
+input cannot become a successful learning case. Reusable rule changes still
+need corroboration and offline tests, without stopping play for missing rules.
 
-## Parallel development and rollout
+## Preserve recovery evidence
 
-During evidence collection, the play task owns controller actions and run
-telemetry. Builder works in a separate checkout and uses temporary databases
-for tests. Do not change the active checkout or installed play instructions
-under a running operator. Read-only inspection of retained play artifacts is
-permitted; do not edit its session state or resolve its actions from Builder.
+Alongside the session journal, a concise recovery record may contain the run
+and action IDs, actual last verified state, failed check, input status, attempted
+inspection, alternatives considered and next recovery step. Reuse screenshot
+paths and hashes rather than copying the entire history. Never label a pending
+input cleared or hardware cleanup verified without the corresponding evidence.
 
-The reviewed skill source is tracked in `skills/orchestrator/`. After the
-play session reaches a safe stop and its adapter/bridge are closed, merge the
-approved documentation/skill-source change and install its `SKILL.md` and
-`references/operating-loop.md` into the matching existing personal skill. Compare
-the current installed files against the reviewed baseline first, preserve
-unrelated files/metadata and keep rollback copies. A fresh Orchestrator session
-must load the revised instructions; an already-running session may retain older
-ones. Staged guidance is not a deployed fix and an offline behavior check is not
-evidence of live speed, recognition accuracy or improved win rate.
+The play task owns controller actions and live run telemetry. Builder changes
+code and runs tests using temporary databases and fake controllers. A fresh
+operator must load reviewed skill/code changes; an already-running process
+may retain old behavior. Installing revised guidance is not proof of live
+floor completion, recognition accuracy, speed or win rate.

@@ -1,132 +1,107 @@
 ---
 name: orchestrator
-description: "Play the currently open Slay the Spire run with Spire strategy and VEDA's reviewed PlayStation adapter. Requires current-run arming; re-plans conservatively under game-state uncertainty and verifies each input from fresh evidence."
+description: "Play the current Slay the Spire run with Spire strategy and VEDA's reviewed PlayStation adapter. After current-run arming, keep playing under gameplay uncertainty, record decisions and learn from observed outcomes."
 ---
 
 # Orchestrator
 
-Coordinate strategic advice and game execution as two separate roles:
+Play the currently open, authorized attempt. Spire supplies game strategy;
+Orchestrator owns controller execution and outcome logging. Read the Spire
+skill for advice, but keep its advisory-only role intact.
 
-- **Spire advises.** Read and follow `/Users/leela/.codex/skills/spire/SKILL.md` for game strategy and evidence discipline. Spire itself remains advisory-only and must never send controller inputs.
-- **Orchestrator executes.** You alone may translate Spire's one-step recommendation into a controller action through this repository's VEDA-owned bridge, but only after the user explicitly arms this run.
+The player's policy is **learning through continued play**. Missing enemy
+rules, uncertain forecasts, incomplete future maps, optional potion reviews
+and imperfect strategy are reasons to choose and observe, not end the task.
+A suboptimal move or a lost run is an acceptable learning outcome. Do not
+require a guaranteed win or a complete model of the game before acting.
 
-This skill is an observe–advise–act–verify loop. Invocation starts preflight;
-current-run arming authorizes continuing that loop. After successful arming,
-continue to the first checked action in the same turn and keep playing; do not
-return an "armed" final answer or wait for "continue" unless the user requested
-arming only. Do not start another run or change the in-game save profile.
+## Start once, then keep playing
 
-## Required preflight
+Read `docs/veda-play-hot-path.md` and only the guide for the current screen.
+Use `veda_play_context.py` for recorded IDs, inventory and pending actions;
+these are historical expectations until compared with the live game.
 
-Start with `docs/veda-play-hot-path.md` and the Spire skill. Load only the
-operation-specific guide it names. Do not concatenate bridge, telemetry,
-backlog, menu and combat manuals before the first move. Bridge details are
-for a failed bridge check; telemetry schema details are for a failed log
-operation; backlog and source/test discovery belong to Builder after play.
+Current-run authorization such as **ARM ORCHESTRATOR FOR THIS RUN** starts
+continuous play after preflight. The launcher supplies it. Do not ask again
+when that authorization already exists. Development approval alone does not
+start game control. Do not change save profiles or begin a different attempt.
 
-Use `veda_play_context.py --run-id ...` for the compact ledger/session overview.
-Read an exact pending record only when that overview requires it. Do not dump
-every historical request file or guess SQLite table names during preflight.
-Read the applicable menu helper documentation once before the first input;
-normal focus/preview/outcome handling uses its compact CLI, not source/test
-discovery after a screenshot.
+Confirm the intended game feed, actual attempt, exclusive controller ownership
+and bridge readiness. A readable Neow opening uses the existing registration
+helper; a finished run's ledger does not become a new run's identity.
+Start one owned bridge with `./scripts/warm_bridge --idle-timeout 0 --socket
+/tmp/veda-ps5-bridge.sock`. Require its `command_channel:"unix_socket"` and the
+adapter's own ready preflight. Use `veda_reviewed_play.py --mode codex
+--decision-policy learning`. This is a gameplay policy, not automatic arming.
+Follow `docs/veda-arm-startup.md` to stage, inspect and submit the arm review.
 
-Measure startup and every logical move/floor with the persistent play clock.
-Targets are first verified input in 90 seconds, an ordinary card move in 20
-seconds, a noncombat floor in 90 seconds, a combat floor in 240 seconds, an
-elite in 360 seconds and a boss in 480 seconds. These are measured targets,
-not achieved performance or permission to bypass checks. Time spent reading,
-thinking, inspecting and fixing drafts counts. Report overruns and use the
-documented recovery path; never keep silently rebuilding stale packets.
+After arming, take the first action and keep working in the same turn. An
+armed response, timing overrun, rejected draft or verified floor boundary is
+not task completion. Do not return a final response asking for “continue.”
 
-Then:
+## Decide, act, observe, remember
 
-1. Confirm explicit user authorization to arm the currently visible attempt. **“ARM ORCHESTRATOR FOR THIS RUN”** is the standard phrase; an equally explicit instruction such as “let's arm Orchestrator for the current run” also establishes that scope. A skill mention or development approval alone does not. Do not ask again for current-attempt authorization already given. Use the adapter's required literal phrase when packaging that authorized request.
-2. Confirm the game is already open at a safe, identifiable screen and that no other Remote Play/controller client is connected. Never change macOS permissions or pair a device on the user's behalf.
-3. Check `./scripts/bridge status` and identify the actual game, current attempt and screen. If local sandbox permissions prevent the check, use the documented command approval flow before calling the console unreachable. Missing video or an unresolved game/run identity prevents arming. Resolve a readable Neow opening through the existing registration helper when this already-open attempt is authorized; do not bind it to a finished run.
-4. After the user's current-run authorization and identity preflight, start one persistent bridge with `./scripts/warm_bridge --idle-timeout 0 --socket /tmp/veda-ps5-bridge.sock`. Require `ready` with `command_channel:"unix_socket"` and the same endpoint, then the reviewed adapter's own bridge preflight. User authorization precedes bridge startup; adapter arming follows readiness. Use that single bridge throughout the run. `--stdio` is a different channel and cannot serve this adapter; a missing socket is not a permissions error.
+1. Inspect the current screen. Use confirmed inventory and relevant recorded
+   outcomes; retrieve `veda_play_lessons.py` once per encounter or meaningful
+   new mechanic, not on every focus tap. Historical lessons are suggestions,
+   never a claim about current cards, HP or enemy intent.
+2. Choose one useful move using survival, damage, block, potions and future
+   setup. Preserve uncertainties in the draft. A missing damage bound stays
+   unknown; it need not prevent End Turn. Briefly explain the tradeoff.
+3. Use the compact combat/menu helper with `decision_policy:"learning"` and
+   validate before the fresh action image. Capture, inspect, bind and submit
+   `--execute` for one input through the armed adapter. A warning is information
+   for the decision; it is not a request for player approval.
+4. Observe the result and verify what actually happened. Focus or selection
+   is not card play. An unexpected HP, energy, status, draw or reward can be a
+   verified result: record the difference from the prediction and re-plan.
+5. Finish the outcome log, use returned context IDs, then choose the next move.
+   Keep the chosen action, reason, uncertainties, available prediction and
+   observed result linked. Recorded cases inform later choices; they do not
+   automatically retrain the model or establish a universal rule.
 
-Prepare arming with `docs/veda-arm-startup.md`: validate the source-free arm
-draft first, then capture/stage/display the exact image in one tool call. After
-inspection, give the short explicit confirmation and submit the emitted normal
-arm request immediately. Stages are unreviewed and cannot arm anything. Do not
-construct long commands or analyze the route inside the arm-image window.
-If an adapter restart is technical recovery, resume its paused play clock
-immediately and record phase `recovery`; that work counts toward the target.
+For screen-specific commands, use `docs/veda-combat-play.md`,
+`docs/veda-menu-controls.md` or `docs/veda-map-play.md`. Default PS5 profiles
+can supply known controls when a glyph is absent. Inspect actual upgrade cards
+after opening the picker. On maps, compare visible connected options and
+inspect future branches/boss when useful; incomplete future coverage should
+not prevent choosing a visible reachable node. Strategy guidance such as
+Barricade before Corruption, potion timing or elite readiness is advice to
+weigh in context, not a mandatory checklist before every card.
 
-## Decision loop
+## Recover within the play loop
 
-For each meaningful choice, use the hot path below; consult
-`references/operating-loop.md` for a specific strategic or recovery need:
+`recoverable_review` means keep the task running. Follow its specific recovery
+step: repair an unsent draft, refresh an expired image, choose another playable
+card, inspect a changed UI, or finish logging. Keep the owned connection when
+healthy. Do not close/re-arm just because a strategy forecast is unavailable.
+After two unsuccessful inspections of the same unchanged fact, switch approach
+or choose a conservative available action instead of repeating the same work.
 
-1. Capture a fresh screen and read the latest confirmed run/floor/combat ledger. Never infer hidden state from a stale frame.
-2. Ask Spire for one next recommendation grounded in that frame and the ledger. Uncertain current game state triggers conservative re-planning, not a blanket session stop. Prefer survival and the lowest defensible damage risk among supported legal actions, considering block, lethal, potions and setup. Use the action-evidence policy below to inspect relevant facts or assess alternatives. A tactical decision need not predict every random outcome or guarantee a win.
-3. Check that the proposed input corresponds to the visible UI and is the smallest atomic action that advances the recommendation. Use `docs/veda-reviewed-play.md`: the reviewed adapter must prepare, send and verify each input through the existing warm bridge. Never send a strategic suggestion directly to the bridge or weaken an adapter check.
-4. Capture again after the action and verify the expected transition before taking another action. Re-plan after any unexpected transition, draw, enemy turn, potion effect, reward, map/shop change, or other material state change.
-5. Record confirmed actions and outcomes using the existing telemetry workflow. Unknown remains unknown; do not fabricate a card zone, item property, outcome, or screenshot.
+An action that may already have been sent needs fresh observation and outcome
+reconciliation before another input. Never blindly replay it or erase its
+pending record. This is a temporary recovery step, not a game-strategy stop.
+Verified results awaiting logging use `finalize`, not another button press.
+Do not fabricate evidence, rewrite capture times or modify product code during
+play. If a helper cannot express the observed situation, record the specific
+capability gap and keep pursuing a supported inspection or alternative. Report
+an ongoing recovery honestly; do not claim progress when the floor is unchanged.
 
-Never issue a long card-play sequence without re-observing. Do not repeat an input because the screen seems slow; inspect bridge status and capture first. Avoid system-level/controller buttons (PS/Home, pairing, power, settings), desktop navigation, shell commands that control hardware outside the documented bridge, and any action not needed to play the visible game.
+Measure first input (90s), ordinary move (20s), noncombat floor (90s), ordinary
+combat (4m), elite (6m) and boss (8m). These are targets, not measured guarantees
+or stop deadlines. Report an overrun briefly with the delay and next step;
+thinking, inspection and recovery remain on the clock.
 
-## Evidence for the next action
+## End conditions
 
-For a readable event or upgrade menu without a button glyph, use
-`docs/veda-menu-controls.md` and the applicable explicitly selected default PS5
-control profile. The profile supplies known menu semantics; it does not claim
-the glyph or a previous transition was observed. Open an upgrade picker as one
-checked action, inspect its actual cards, then decide and verify the upgrade.
-Do not replay Talk, re-register the run or ask the player to choose the card
-merely because an activation hint is absent. Unknown/remapped controls still
-need their actual mapping established.
+End play on confirmed defeat, confirmed completion of this run, or the user's
+Stop instruction. Stop controls for actual hardware/network/bridge failure or
+loss of the game feed/target; restore the connection and identify the game
+before resuming. Preserve any pending action and verify owned bridge cleanup.
+A normal combat victory continues to rewards and the next floor.
 
-For menu preparation, validate a compact source-free draft with `veda_menu.py
---draft ... --validate` before the action image. Then capture, view, and use
-`--draft ... --capture ... --reviewed` to bind the exact image and submit the
-returned pointer immediately. Do not hand-build frame hashes/review objects,
-patch old source fields, or continue packaging after a failed capture. Complete
-setup outside the 30-second evidence window; the limit itself is unchanged.
-After input, use the same helper's `--result ... --session ...` path for compact
-focus, preview and result reviews. It derives pending-action correlation and
-upgrade-event metadata; do not build full after packets by hand. View every
-exact image you bind, including replacement captures. Read this full menu loop
-once before input. Finish Neow through the distinct `event_leave` rule and
-verify map arrival. A verified result awaiting logging needs finalization or
-the supported missing-note repair, never repeated input or another verify.
-
-For combat, use `veda_combat.py --draft ... --validate` before the fresh action
-image, then its exact-capture binding with `--execute`. The armed adapter
-performs prepare and send together for one input, with all ordinary checks.
-Use the same helper's `--result ... --session ...` path to verify the observed
-result. Do not discover combat schemas in source files or hand-build Reading,
-source hashes, review fields or observed_at. A visible enemy tooltip calls for
-the bounded `veda_inspect.py` tooltip-clear flow before tactical planning;
-do not invent card focus or enemy effects hidden behind it. Read the actual
-HUD floor; reconcile a mismatch with the ledger before a card action.
-
-For maps, load `docs/veda-map-play.md` before the first map input. It covers
-bounded directional inspection, reviewed overlapping views, route comparisons,
-expected-boss preparation, compact node selection and room-entry results.
-Count the focused node among the selectable siblings; reticle marks are not
-path connections. Preserve uninspected inventory categories with
-`inventory-discover`. Survey the boss and future branches when controls permit;
-incomplete future coverage remains explicit and does not block an otherwise
-checked immediate move. Re-plan after HP, deck, potion or gold changes.
-
-Read `docs/veda-general-decisions.md` and `docs/veda-action-evidence.md`. Keep three cases separate:
-
-- **Supported game uncertainty:** hidden draws, event outcomes and readable nonattack categories may remain unknown when the existing checked contract covers the action. Use applicable reviewed bounds or complete alternatives; record the actual result afterward. Bare unknown intent does not prove zero attack.
-- **Uncertainty unrelated to a candidate:** retain it as unknown. An unread neighboring map icon or a difference in tactical preference does not itself invalidate another candidate whose full adapter review passes. This grants no exemption from required inventory, roster, source or control checks.
-- **Missing required evidence:** name the fact and dependent action. Inspect the smallest relevant view, or exclude that candidate and assess a supported alternative. An inspection requiring a button must itself pass the adapter. If no supported inspection or action is available, pause with the specific blocker.
-
-Compare the checked candidates using their applicable conservative damage bounds. Prefer avoiding death, then lower damage risk over the supported horizon, accounting for useful potion effects and future setup. Use expected loss only when defensible probabilities exist; never invent a zero-damage forecast or probability for an unknown. If a rejected candidate cannot be checked, look for a supported protective action or inspection. A system that cannot check any legal next step has a specific capability gap; record its exact rejected requirement for Builder, rather than treating "current state uncertain" as the stop reason or asking the player to solve strategy.
-
-Before dispatch, an expired frame calls for a fresh capture, inspection and newly checked request; never change an old timestamp. Bound repeated unsuccessful capture/inspection attempts to two for the same unchanged blocker; then re-plan among supported candidates instead of looping or automatically ending play. A new timestamp alone does not reset that inspection budget. After an input, do not send another gameplay input until the adapter establishes resolution and clears its pending action. Reconciliation that records an unknown result preserves the blocker. Do not reinterpret an unmatched outcome as permission for another input.
-
-Pause immediately for user stop, loss of video/game identity/control, bridge fault, unresolved input delivery, or inability to persist a consequential action. Preserve pending input, close the owned session and verify cleanup. Report the exact missing fact or failed check, affected action, inspection attempted, alternatives considered and last verified state. If an action is pending, state whether the adapter actually cleared it; never describe completion of reconciliation alone as readiness to resume. Save the evidence needed for Builder; do not edit shared product code during play. Stop wording and a private evidence template are in `docs/veda-action-evidence.md`.
-
-## Boundaries
-
-- Do not modify the Spire skill or silently redefine its advisory-only role.
-- Do not install packages, alter system permissions, or pair/connect hardware without a separate explicit request.
-- Do not claim hidden state was observed. Use confirmed telemetry only where applicable; incomplete history blocks dependent actions, while every candidate still needs the complete review required by the adapter.
-- Do not publish, commit, or change the website as part of a game run.
-- Do not launch or send controller input during skill creation, preflight-only use, or any turn where the user has not armed this run.
+Uncertainty about game strategy, a new event, a missing rule, a forecast miss
+or a time target is **not** an end condition. Keep deciding and learning.
+See `references/operating-loop.md` for recovery details. Do not use system-level
+controller buttons, change device permissions, publish the site or perform
+development work as part of a run.

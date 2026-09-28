@@ -34,7 +34,8 @@ def main():
         + scope +
         'Keep Luna High for gameplay. Check exclusive controller ownership, live game video, the ledger, '
         'pending actions and bridge readiness before arming the reviewed adapter. '
-        'Use the reviewed adapter for every input, retain before/after evidence and record SQLite outcomes. '
+        'Use the reviewed adapter with --decision-policy learning for every input; compact combat/menu drafts '
+        'carry decision_policy:learning. Retain before/after evidence and record SQLite outcomes. '
         'Read docs/veda-play-hot-path.md first and only the guide for the current screen. '
         'Use the explicit /tmp/veda-ps5-bridge.sock bridge channel and docs/veda-arm-startup.md: '
         'validate the arm draft before capture, capture/stage/display together, then briefly confirm '
@@ -44,7 +45,12 @@ def main():
         'finish draft validation before the fresh image and never hand-author source hashes or Reading packets. '
         'Track the persistent play clock: first verified input 90s, ordinary logical move 20s, '
         'noncombat floor 90s, combat floor 240s, elite 360s, boss 480s. Report overruns and fix the named phase; '
-        'timing targets never waive source, pending-action or gameplay checks. '
+        'timing targets never end the run or waive source/pending-action checks. '
+        'Gameplay uncertainty, missing rules, incomplete forecasts and optional potion reviews are warnings, '
+        'not stop conditions. A suboptimal move or a lost run is acceptable learning. '
+        'On recoverable_review stay active, repair/reobserve/re-plan and continue without asking the player. '
+        'Record the reason, uncertainties, available prediction and actual outcome; retrieve relevant '
+        'verified cases with veda_play_lessons.py once per encounter or new mechanic, not per focus tap. '
         'Under uncertain game state, inspect relevant facts and choose a supported move with the lowest '
         'defensible damage risk, considering lethal, block, potions and setup. '
         'For menus without a visible hint, use the applicable reviewed default-PS5 control profile in '
@@ -56,8 +62,10 @@ def main():
         'Never invent observations, replay unresolved input or bypass an adapter check. '
         'Use command-scoped automatic approval review for necessary process, network and socket checks; '
         'do not interpret a sandbox rejection as a broken bridge. Report any unresolved technical gap '
-        'with the exact failed check and alternatives attempted. Do not edit product code. '
-        'Stop at victory, defeat, user stop, or loss of verified control/game identity/video.'
+        'with the exact failed check and alternatives attempted while pursuing recovery. Do not edit product code. '
+        'End at confirmed full-run victory, defeat or user stop; ordinary combat wins continue. '
+        'Stop controls for actual hardware/network/bridge failure or loss of the game feed/target. '
+        'Unknown action delivery needs observation and reconciliation, never blind replay.'
     )
     command = ['codex', '-C', str(root), '-m', 'gpt-5.6-luna',
                '-c', 'model_reasoning_effort="high"', '--approve-for-me', '--no-alt-screen', prompt]

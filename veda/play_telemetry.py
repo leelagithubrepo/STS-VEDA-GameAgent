@@ -591,9 +591,18 @@ class PlayTelemetry:
             event = self.database.record_event(**req["context"], kind="play_outcome", phase="observed_outcome", state=req["state"],
                 screenshot_path=req["source"]["path"], source="play_telemetry:" + req["source"]["origin"])
             if req["status"] != "unknown":
+                actual = {"state": req["state"], "source": req["source"], "event_id": event,
+                          "status": req["status"], "evidence_note": req["evidence_note"]}
+                # Learning records describe an already verified result. They
+                # never change observed state, resolve an unknown input, or
+                # turn a forecast into a game fact.
+                if verified_evidence is not None:
+                    learning = {key: proof[key] for key in
+                                ("decision_policy", "assessment", "observed_mismatches") if key in proof}
+                    if learning:
+                        actual["learning"] = learning
                 self.database.resolve_decision(decision_id=req["decision_id"], chosen_action=original["action"],
-                    actual_outcome={"state": req["state"], "source": req["source"], "event_id": event,
-                                    "status": req["status"], "evidence_note": req["evidence_note"]},
+                    actual_outcome=actual,
                     status="resolved" if req["status"] == "verified" else "skipped")
                 db.execute("UPDATE decisions SET resolved_at=? WHERE id=?", (req["source"]["captured_at"], req["decision_id"]))
             receipt = self._receipt("outcome", req, recorded, decision_id=req["decision_id"], event_id=event,

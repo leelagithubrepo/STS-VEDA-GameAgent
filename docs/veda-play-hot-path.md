@@ -37,7 +37,7 @@ python3 scripts/veda_play_clock.py start --session SESSION_DIRECTORY --run-id RU
    floor. A floor-1 fight cannot use a floor-0 Neow record. Reconcile mismatches
    with the observed lifecycle before committing gameplay telemetry.
 3. Start one `./scripts/warm_bridge --idle-timeout 0 --socket /tmp/veda-ps5-bridge.sock` and one adapter:
-   `python3 scripts/veda_reviewed_play.py SESSION_DIRECTORY --run-id RUN_ID --mode codex`.
+   `python3 scripts/veda_reviewed_play.py SESSION_DIRECTORY --run-id RUN_ID --mode codex --decision-policy learning`.
    Send `{"operation":"bridge_preflight"}` followed by a newline. Require ready.
    The bridge's ready event must report `command_channel:"unix_socket"` and the same
    endpoint. `connect_socket_missing` means a missing path, not denied permission.
@@ -64,7 +64,9 @@ the next decision clock starts immediately, including thinking time.
 If play resumes mid-floor, its timer measures that observed segment only. Only
 a floor whose entry was observed can establish the full-floor timing target.
 
-Use a planning image and confirmed ledger facts to fill one source-free draft.
+Use a planning image and confirmed ledger facts to fill one source-free draft
+with `decision_policy:"learning"` for combat/menu actions. Legacy drafts default
+to strict; regenerate an unsent draft explicitly for the learning session.
 Finish strategy, rule retrieval and draft validation **before** the fresh action
 image. The action image starts the unchanged 30-second freshness window.
 
@@ -130,10 +132,17 @@ partial because earlier handoff work was not observed. If a past interval was
 missed or misclassified, use `measurement_gap --reason REASON_CODE` to label the
 measurement incomplete without inventing elapsed time or clearing its history.
 
-If the helper cannot express any legal next action, record its exact capability
-gap for Builder. Do not investigate source/test schemas during the live loop.
-Game uncertainty calls for a supported inspection or conservative alternative;
-loss of game identity/video/control and unresolved delivery still stop inputs.
+A `recoverable_review` keeps the task active: refresh, repair an unsent draft,
+inspect a result, or re-plan. Missing forecasts and strategy reviews are warnings
+in learning mode. If a helper cannot express the situation, record the exact
+gap and pursue another supported action/inspection. Never replay pending input.
+Actual hardware/network/feed failure stops controls; user Stop, defeat or
+full-run completion ends play. Ordinary combat victories continue. See the
+[action-evidence policy](veda-action-evidence.md) for the distinction.
+
+Retrieve compact historical cases with `veda_play_lessons.py` at encounter
+start or after a new mechanic/forecast miss. Cache those cases while the context
+remains relevant; a database lookup on every focus tap adds no useful learning.
 
 ## What is verified
 

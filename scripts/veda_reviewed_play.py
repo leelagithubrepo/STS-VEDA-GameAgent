@@ -47,6 +47,7 @@ def timed_requests(stream, session):
     Use raw reads so an extra buffered line never waits on an empty OS pipe.
     Polling emits diagnostics only; it cannot dispatch, retry or close input.
     """
+    learning = getattr(session, 'decision_policy', 'strict') == 'learning'
     try:
         descriptor = stream.fileno()
     except (AttributeError, OSError):
@@ -58,19 +59,31 @@ def timed_requests(stream, session):
             if not line:
                 return
             if len(line) > MAX_BYTES:
-                raise ValueError('request exceeds byte limit')
+                if not learning:
+                    raise ValueError('request exceeds byte limit')
+                while line and not line.endswith(b'\n' if isinstance(line, bytes) else '\n'):
+                    line = reader.readline(MAX_BYTES + 1)
+                yield ValueError('request exceeds byte limit; oversized line discarded')
+                continue
             yield line
         return
     pending = b''
+    discarding = False
     while not session.closed:
         if b'\n' in pending:
             line, pending = pending.split(b'\n', 1)
             if len(line) > MAX_BYTES:
-                raise ValueError('request exceeds byte limit')
+                if not learning:
+                    raise ValueError('request exceeds byte limit')
+                yield ValueError('request exceeds byte limit; oversized line discarded')
+                continue
             yield line
             continue
         if len(pending) > MAX_BYTES:
-            raise ValueError('request exceeds byte limit')
+            if not learning:
+                raise ValueError('request exceeds byte limit')
+            pending = b''; discarding = True
+            yield ValueError('request exceeds byte limit; discarding through the next newline')
         ready, _, _ = select.select([descriptor], [], [], 5)
         if not ready:
             timing = session.timing_summary(poll=True)
@@ -84,6 +97,11 @@ def timed_requests(stream, session):
             if pending.strip():
                 raise ValueError('incomplete JSONL request at EOF; newline required')
             return
+        if discarding:
+            if b'\n' not in chunk:
+                continue
+            _, chunk = chunk.split(b'\n', 1)
+            discarding = False
         pending += chunk
 
 
@@ -97,18 +115,24 @@ def main(argv=None):
     parser.add_argument("--database", type=Path, default=Path("artifacts/veda-memory.sqlite3"))
     parser.add_argument("--mode", choices=("shadow", "codex"), default="shadow")
     parser.add_argument("--socket", default=DEFAULT_BRIDGE_SOCKET)
+    parser.add_argument('--decision-policy', choices=('strict', 'learning'),
+                        help='Defaults to learning in codex mode and strict in shadow mode. Learning continues after '
+                             'recoverable review errors; control and pending-input checks remain enforced.')
     args = parser.parse_args(argv)
     if not args.database.is_file():
         parser.error("an existing run database is required")
     try:
         telemetry = PlayTelemetry(TelemetryDatabase(args.database.resolve()))
         with jsonl_terminal(sys.stdin), ReviewedPlaySession(args.directory, run_id=args.run_id, telemetry=telemetry,
-                mode=args.mode, controller_factory=lambda: BridgeClient(args.socket)) as session:
+                mode=args.mode, controller_factory=lambda: BridgeClient(args.socket),
+                decision_policy=args.decision_policy or ('learning' if args.mode == 'codex' else 'strict')) as session:
             print(json.dumps({"status": "ready_unarmed", "summary": session.summary(),
                 "next_operation": "bridge_preflight" if args.mode == "codex" else "summary",
                 "request_format": "newline-terminated JSONL; request_file preferred"}), flush=True)
             for line in timed_requests(sys.stdin, session):
                 try:
+                    if isinstance(line, Exception):
+                        raise line
                     if len(line) > MAX_BYTES:
                         raise ValueError("request exceeds byte limit")
                     value = json.loads(line)
@@ -122,9 +146,7 @@ def main(argv=None):
                         value = json.loads(raw)
                     result = session.handle(value)
                 except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
-                    session.disarm()
-                    result = {"status": "stopped_for_review", "error": str(error), "armed": False,
-                              "cleanup": session.cleanup, "timing": session.timing_summary()}
+                    result = session.recoverable_error(error)
                 print(json.dumps(result, allow_nan=False), flush=True)
     except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
         parser.error(str(error))

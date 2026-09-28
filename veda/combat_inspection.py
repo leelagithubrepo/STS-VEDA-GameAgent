@@ -180,9 +180,9 @@ def verify_tooltip_clear(proposal, before, after, *, now=None):
         'controller_authorized': False, 'runtime_authorized': False}
 
 
-def _inventory(value):
+def _inventory(value, policy='strict'):
     from .menu_requests import _inventory as normalize
-    return normalize(value)
+    return normalize(value, policy)
 
 
 def _inventory_digest(value):
@@ -191,11 +191,10 @@ def _inventory_digest(value):
 
 
 def _packet(draft, checked, control_profile, clock, execute):
-    _require(isinstance(draft, dict) and set(draft) == {'schema', 'context', 'inventory', 'resources', 'facts', 'ui', 'reasoning'}
+    _require(isinstance(draft, dict) and set(draft) - {'decision_policy'} == {'schema', 'context', 'inventory', 'resources', 'facts', 'ui', 'reasoning'}
              and draft['schema'] == DRAFT_SCHEMA and _text(draft['reasoning']), 'exact source-free inspection draft required')
-    inventory = _inventory(draft['inventory'])
-    _require(all(inventory['coverage'][k] == 'complete' for k in ('relic', 'potion')),
-             'inspection requires confirmed relic and potion inventory')
+    policy = draft.get('decision_policy', 'strict')
+    inventory = _inventory(draft['inventory'], policy)
     observation = {'schema': OBSERVATION_SCHEMA, 'context': deepcopy(draft['context']),
         'inventory_digest': _inventory_digest(inventory), 'resources': deepcopy(draft['resources']),
         'facts': deepcopy(draft['facts']), 'ui': deepcopy(draft['ui']),
@@ -204,6 +203,7 @@ def _packet(draft, checked, control_profile, clock, execute):
         'review': dict(checked['review'], kind='reviewed_choice_ui')}
     plan_tooltip_clear(observation, control_profile=control_profile, now=clock)
     return {'operation': 'execute' if execute else 'prepare', 'kind': 'combat_inspection',
+        'decision_policy': policy,
         'context': deepcopy(draft['context']), 'inventory': inventory, 'observation': observation,
         'control_profile': control_profile, 'reasoning': draft['reasoning'],
         'source': deepcopy(checked['source']), 'review': deepcopy(observation['review'])}
@@ -275,6 +275,8 @@ def read_inspection_json(path):
 
 def _pending(session, action_id):
     path = Path(session)
+    if path.is_dir():
+        path = path / 'state.json'
     with path.open('rb') as stream:
         raw = stream.read(MAX_BYTES + 1)
     value = _parse_json(raw)

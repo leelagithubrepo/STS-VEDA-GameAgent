@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
-from .advisory import check_plan
+from .decision_policy import POLICIES, assess_combat, assess_observation, plan_shape_reasons
 from .choice_execution import _checked, _context, _observation, _require
 from .combat_input import CombatInputAdapter
 from .controller_state_machine import ControllerStateMachine
@@ -22,7 +22,6 @@ from .menu_requests import _inventory, _json, _text, read_menu_draft
 from .play_requests import reviewed_capture_source
 from .play_telemetry import validate_outcome_request
 from .reviewed_play import MAX_BYTES, SCHEMA as SESSION_SCHEMA, ReviewedPlaySession, inventory_digest
-from .routine_combat import routine_observation_reasons
 from .vision import StructuredGameState, VisibleEnemy
 
 SCHEMA = 'veda.combat-draft.v1'
@@ -39,8 +38,9 @@ class _Checks(CombatInputAdapter):
     _transitions = staticmethod(ReviewedPlaySession._transitions)
     _combat_boundary = ReviewedPlaySession._combat_boundary
 
-    def __init__(self):
+    def __init__(self, policy='strict'):
         self.machine = ControllerStateMachine()
+        self.decision_policy = policy
 
 
 read_combat_draft = read_menu_draft
@@ -50,7 +50,23 @@ def _confidence(value):
     return type(value) in (int, float) and 0 <= value <= 1
 
 
+def _combat_inventory(value, policy):
+    if policy == 'strict':
+        return _inventory(value)
+    _require(isinstance(value, dict) and isinstance(value.get('current'), dict)
+             and isinstance(value.get('coverage'), dict)
+             and set(value['coverage']) == {'card', 'relic', 'potion'}
+             and all(value['coverage'][k] in {'unknown', 'partial', 'complete'} for k in value['coverage'])
+             and all(isinstance(value['current'].get(k), list)
+                     and all(_text(n, 256) for n in value['current'][k]) for k in value['coverage'])
+             and isinstance(value.get('properties', {}), dict), 'explicit inventory items and coverage required')
+    inventory_digest(value)
+    return deepcopy(value)
+
+
 def _reading(value, checked):
+    policy = value.get('decision_policy', 'strict')
+    _require(policy in POLICIES, 'decision_policy must be strict or learning')
     ids = value['context']; _context(ids)
     _require(all(_text(ids[k], 256) for k in ids), 'combat needs current run, floor, combat and turn IDs')
     state = deepcopy(value['state'])
@@ -59,7 +75,7 @@ def _reading(value, checked):
         'run_id', 'floor_id', 'combat_id', 'turn_id'},
         'one source-free combat state required; schema, source time and IDs are derived')
     state.update(schema='spire.advisory.v1', observed_at=checked['source']['captured_at'])
-    inventory = _inventory(value['inventory'])
+    inventory = _combat_inventory(value['inventory'], policy)
     encounter = value['encounter']; perception = value['perception']
     _require(isinstance(encounter, dict) and set(encounter) == {'name', 'type', 'confidence'}
              and _text(encounter['name'], 128) and encounter['type'] in {'enemy', 'elite', 'boss'}
@@ -76,6 +92,9 @@ def _reading(value, checked):
         and {'phase', 'focused_card_id', 'selected_card_id', 'focused_target_id', 'hand_order'} <= set(ui),
         'combat UI needs explicit phase, focus, selection and hand order; no source or controls')
     ui['screen_type'] = 'combat'
+    shape = assess_observation(None, {'state': state, 'inventory': inventory, 'fresh': True,
+                                    'unknowns': value['unknowns']}, policy=policy)
+    _require(shape['allowed'], 'invalid reviewed combat: ' + '; '.join(shape['hard_reasons']))
     cards = state['hand']; enemies = state['enemies']
     visible = []
     for enemy in enemies:
@@ -100,10 +119,11 @@ def _reading(value, checked):
         enemies=tuple(visible), end_turn_damage=state.get('end_turn_damage'),
         end_turn_damage_confidence=perception['end_turn_damage_confidence'])
     context = {'state': state, 'inventory': inventory, 'fresh': True, 'unknowns': deepcopy(value['unknowns']),
+        'decision_policy': policy,
         'encounter_type': encounter['type'], 'encounter_name': encounter['name'],
         **{key: deepcopy(value[key]) for key in _EXTRAS if key in value}}
-    reasons = routine_observation_reasons(visual, context)
-    _require(not reasons, 'incomplete reviewed combat: ' + '; '.join(reasons))
+    assessment = assess_observation(visual, context, policy=policy)
+    _require(assessment['allowed'], 'incomplete reviewed combat: ' + '; '.join(assessment['hard_reasons']))
     return Reading(checked['frame_id'], checked['source']['sha256'], visual, context, ui,
         encounter['name'], ids['run_id'], ids['floor_id'], ids['turn_id'])
 
@@ -111,23 +131,24 @@ def _reading(value, checked):
 def _draft(value):
     value = _json(value)
     required = {'schema', 'context', 'state', 'inventory', 'encounter', 'perception', 'ui', 'unknowns', 'plan', 'reasoning'}
-    _require(isinstance(value, dict) and required <= set(value) and not set(value) - required - _EXTRAS
-             and value['schema'] == SCHEMA and _text(value['reasoning']), 'source-free veda.combat-draft.v1 required')
-    _require(isinstance(value['plan'], dict) and set(value['plan']) == {'steps'}
-             and isinstance(value['plan']['steps'], list) and len(value['plan']['steps']) == 1
-             and value['plan']['steps'][0].get('kind') in {'card', 'end_turn'},
-             'exactly one card or End Turn required; potions use the choice flow')
+    _require(isinstance(value, dict) and required <= set(value) and not set(value) - required - _EXTRAS - {'decision_policy'}
+             and value['schema'] == SCHEMA, 'source-free veda.combat-draft.v1 required')
+    _require(_text(value['reasoning']), 'reasoning must be nonempty text of at most 4096 UTF-8 bytes')
+    _require(value.get('decision_policy', 'strict') in POLICIES, 'decision_policy must be strict or learning')
+    reasons = plan_shape_reasons(value['plan'])
+    _require(not reasons, '; '.join(reasons))
     return value
 
 
 def _request(draft, checked):
     reading = _reading(draft, checked)
-    result = check_plan(reading.context, draft['plan'], survival_scope='action_prefix')
+    policy = draft.get('decision_policy', 'strict')
+    result = assess_combat(reading.context, draft['plan'], policy=policy, visual=reading.state)
     _require(result['allowed'], 'move rejected: ' + '; '.join(result['reasons']))
-    step, expected = _Checks()._input(reading, draft['plan']['steps'][0])
+    step, expected = _Checks(policy)._input(reading, draft['plan']['steps'][0])
     return {'operation': 'prepare', 'kind': 'combat', 'context': deepcopy(draft['context']),
         'source': deepcopy(checked['source']), 'review': deepcopy(checked['review']), 'reading': asdict(reading),
-        'plan': deepcopy(draft['plan']), 'reasoning': draft['reasoning']}, step, expected
+        'plan': deepcopy(draft['plan']), 'reasoning': draft['reasoning'], 'decision_policy': policy}, step, expected
 
 
 def _synthetic(*, time=_OFFLINE, sha='0' * 64):
@@ -142,11 +163,14 @@ def _synthetic(*, time=_OFFLINE, sha='0' * 64):
 @_checked
 def validate_combat_draft(value):
     draft = _draft(value)
-    _, step, expected = _request(draft, _synthetic())
+    request, step, expected = _request(draft, _synthetic())
+    assessment = assess_combat(request['reading']['context'], draft['plan'], policy=request['decision_policy'],
+                              visual=Reading.from_dict(request['reading']).state)
     return {'schema': 'veda.combat-draft-validation.v1', 'draft_valid': True,
         'draft_digest': hashlib.sha256(json.dumps(draft, sort_keys=True).encode()).hexdigest(),
         'validation_only': True, 'source_bound': False, 'dispatchable': False, 'controller_input_sent': False,
         'next_atomic_input_preview': {'buttons': step['buttons'], 'expected_kind': expected['kind']},
+        'decision_policy': request['decision_policy'], 'assessment': assessment,
         'requires_exact_fresh_capture_review': True}
 
 
@@ -189,7 +213,10 @@ def _unique(items):
 
 
 def read_pending(session, action_id):
-    with Path(session).open('rb') as stream:
+    path = Path(session)
+    if path.is_dir():
+        path = path / 'state.json'
+    with path.open('rb') as stream:
         raw = stream.read(MAX_BYTES + 1)
     _require(len(raw) <= MAX_BYTES, 'session exceeds byte bound')
     def nonfinite(_):
@@ -201,6 +228,10 @@ def read_pending(session, action_id):
              'exact attempted action required; verified_pending_log needs finalize, never replay')
     _require(pending['request']['kind'] == 'combat' and pending['request']['context']['run_id'] == value['run_id'],
              'pending combat action required')
+    policy = value.get('decision_policy', 'strict')
+    _require(policy in POLICIES and pending['request'].get('decision_policy', 'strict') == policy
+             and pending['request']['reading']['context'].get('decision_policy', 'strict') == policy,
+             'pending combat policy differs from its session')
     return pending, hashlib.sha256(raw).hexdigest()
 
 
@@ -208,15 +239,17 @@ def _result_draft(value, pending):
     value = _json(value)
     required = {'schema', 'action_id', 'inventory', 'observed_result'}
     combat = {'state', 'ui', 'encounter', 'perception', 'unknowns'}
-    extras = {'context', 'telemetry', 'card_destination', 'next_turn'} | _EXTRAS
+    extras = {'context', 'telemetry', 'card_destination', 'next_turn', 'decision_policy'} | _EXTRAS
     _require(isinstance(value, dict) and required <= set(value) and value['schema'] == RESULT_SCHEMA
              and value['action_id'] == pending['action_id'] and _text(value['observed_result'], 256),
              'compact veda.combat-result.v1 and exact pending action required')
     if 'boundary' in value:
-        _require(not set(value) - required - {'boundary', 'telemetry'}, 'boundary review cannot carry a combat snapshot or controls')
+        _require(not set(value) - required - {'boundary', 'telemetry', 'decision_policy'}, 'boundary review cannot carry a combat snapshot or controls')
     else:
         _require(combat <= set(value) and not set(value) - required - combat - extras,
                  'actual combat result needs state, UI, encounter, perception and unknowns; no source fields')
+    _require(value.get('decision_policy', pending['request'].get('decision_policy', 'strict')) ==
+             pending['request'].get('decision_policy', 'strict'), 'result cannot change the pending decision policy')
     return value
 
 
@@ -245,7 +278,8 @@ def _boundary(draft, pending, checked, inventory):
     _observation(obs, datetime.fromisoformat(checked['source']['captured_at']), 30)
     after = {'kind': 'choice', 'context': context, 'source': checked['source'], 'review': review,
              'observation': obs, 'inventory': inventory}
-    _Checks()._combat_boundary(pending, after)
+    after['decision_policy'] = old.get('decision_policy', 'strict')
+    _Checks(after['decision_policy'])._combat_boundary(pending, after)
     transitions = []
     if ui['screen'] != 'selection':
         closing = {'screen': ui['screen'], **deepcopy(boundary['resources']), **deepcopy(boundary['facts'])}
@@ -257,10 +291,11 @@ def _boundary(draft, pending, checked, inventory):
 
 def _result_request(draft, pending, checked):
     old = pending['request']; original = old['reading']; old_context = original['context']
-    inventory = _inventory(old_context['inventory'] if draft['inventory'] == 'unchanged' else draft['inventory'])
+    policy = old.get('decision_policy', 'strict')
+    inventory = _combat_inventory(old_context['inventory'] if draft['inventory'] == 'unchanged' else draft['inventory'], policy)
     changes = deepcopy(draft.get('telemetry', {}))
     _require(isinstance(changes, dict) and not set(changes) - _CHANGES, 'unknown combat telemetry override')
-    checks = _Checks()
+    checks = _Checks(policy)
     if 'boundary' in draft:
         after, transitions = _boundary(draft, pending, checked, inventory)
         _require('transitions' not in changes, 'boundary lifecycle is derived from the actual reviewed result')
@@ -275,6 +310,7 @@ def _result_request(draft, pending, checked):
         encounter = {'name': original['encounter_name'], 'type': old_context['encounter_type'],
                      'confidence': original['state']['encounter_confidence']}
         value = {**deepcopy(draft), 'state': state, 'inventory': inventory,
+            'decision_policy': policy,
             'context': deepcopy(draft.get('context', old['context'])),
             'encounter': encounter if draft['encounter'] == 'unchanged' else draft['encounter']}
         if 'next_turn' in draft:
@@ -296,10 +332,12 @@ def _result_request(draft, pending, checked):
                 _require(key in old_context, 'unchanged ' + key + ' has no prior reviewed value')
                 value[key] = deepcopy(old_context[key])
         reading = _reading(value, checked)
-        complete = checks._verify(Reading.from_dict(original), reading, old['plan']['steps'][0],
-                                 pending['proposal']['expected'], pending['proposal']['checked'])
+        from .reviewed_play import verify_combat_observation
+        verification = verify_combat_observation(Reading.from_dict(original), reading, old['plan']['steps'][0],
+                                 pending['proposal']['expected'], pending['proposal']['checked'], policy=policy)
+        complete = verification['logical_action_complete']
         after = {'kind': 'combat', 'context': value['context'], 'source': deepcopy(checked['source']),
-                 'review': deepcopy(checked['review']), 'reading': asdict(reading)}
+                 'review': deepcopy(checked['review']), 'reading': asdict(reading), 'decision_policy': policy}
         outcome_state = reading.context['state']
         if 'next_turn' in draft:
             changes['transitions'] = [

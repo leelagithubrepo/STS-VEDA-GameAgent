@@ -5,8 +5,10 @@ outcomes of one choice. The operator still reads the screen and chooses the
 strategy. An unfamiliar layout or readable random outcome is not, by itself,
 a reason to stop. Missing evidence that affects the next action needs a
 specific explanation and a fresh inspection or supported recovery.
-Use the [action-evidence policy](veda-action-evidence.md) for recovery limits
-and a concrete blocker record when play cannot continue.
+Use the [learning policy](veda-action-evidence.md) for warnings, recovery and
+actual-outcome logging. The complete-branch checks described below remain
+available in strict mode; learning mode records unexpected observed commits
+without requiring a matching prediction.
 
 ## Operator workflow
 
@@ -24,8 +26,9 @@ and a concrete blocker record when play cannot continue.
    alternatives in the [choice contract](veda-choice-execution.md). Do not
    invent an event identity, effect, reward or controller binding.
 5. Submit one reviewed action through the adapter with fresh source evidence.
-   Afterward, inspect the actual result. Exactly one declared outcome must
-   match. Record the observed branch and explicit inventory/lifecycle changes
+   Afterward, inspect the actual result. In strict mode exactly one declared
+   outcome must match; in learning mode a verified unexpected commit is logged
+   as a prediction mismatch. Record the actual inventory/lifecycle changes
    before planning the next action. An unresolved result retains its pending
    action; do not repeat the input.
 
@@ -115,15 +118,16 @@ have separate verifier and temporary-SQLite/fake-controller regression tests.
 
 ## Remaining coverage
 
-- Random inventory changes still require an exact reviewed digest for a
-  declared branch. There is no unrestricted "accept whatever item appeared"
-  inventory policy. A broader typed inventory-change contract needs its own
-  implementation and verification.
-- A new menu still requires an observed control hint or supported reviewed
-  transition. Knowing its meaning does not establish which button activates it.
+- Actual inventory additions/removals need an explicit observed digest and
+  typed inventory-change record. Learning mode permits a result that differs
+  from the predicted inventory, but never invents an item or its property.
+- Input needs a supported control mapping: a visible hint, reviewed transition
+  or applicable default PS5 profile. Missing future effects are a strategy
+  warning; an absent mapping calls for observation/recovery, not fabricated
+  controller evidence.
 - Strategic quality still needs evaluation on held-out real game states,
   including survival, potions, deck/piles and long-fight setup. This benchmark
   contains no preferred-route oracle.
-- Experience is recorded evidence. It does not retrain the model or promote new
-  rules automatically. A rule improvement needs evidence, review and regression
-  coverage before it becomes reusable behavior.
+- Experience is retrieved with `veda_play_lessons.py` to inform later choices.
+  It does not retrain the model or promote new rules automatically. A durable
+  rule improvement still needs evidence and regression coverage.

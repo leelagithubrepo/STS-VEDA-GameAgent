@@ -17,13 +17,15 @@ from .choice_execution import SCHEMA as OBSERVATION_SCHEMA, _checked, _require, 
 from .menu_controls import CONTROL_PROFILE, bind_reviewed_menu_controls
 from .menu_requests import _inventory, _json, _text, _ui
 from .play_requests import reviewed_capture_source
-from .reviewed_play import MAX_BYTES, SCHEMA as SESSION_SCHEMA, inventory_digest
+from .reviewed_play import MAX_BYTES, SCHEMA as SESSION_SCHEMA, inventory_digest, verify_choice_observation
 
 SCHEMA = 'veda.menu-result.v1'
 
 
 def read_pending(path, action_id):
     path = Path(path)
+    if path.is_dir():
+        path = path / 'state.json'
     with path.open('rb') as stream:
         raw = stream.read(MAX_BYTES + 1)
     _require(len(raw) <= MAX_BYTES, 'session exceeds byte bound')
@@ -150,8 +152,12 @@ def _room_entry(draft, pending, resources, facts, inventory):
              and facts.get('current_node_id') == result['node_id'], 'actual room floor/node differs from map selection')
     post = before['choice']['postconditions']
     branches = [post] if 'alternatives' not in post else [b['postconditions'] for b in post['alternatives']]
-    # Resource/fact branch matching is still performed by the ordinary verifier.
-    contexts = [b['context'] for b in branches if b['screen'] == result['screen'] and b['phase'] == 'result']
+    # Use the room actually observed in learning, preserving the selected node.
+    if before.get('decision_policy', 'strict') == 'learning':
+        from .menu_requests import map_arrival_context
+        contexts = [map_arrival_context(before['context'], result['node_id'], result['screen'])]
+    else:
+        contexts = [b['context'] for b in branches if b['screen'] == result['screen'] and b['phase'] == 'result']
     _require(contexts and all(c == contexts[0] for c in contexts), 'room screen needs one unambiguous declared context')
     context = deepcopy(contexts[0])
     _require(context['floor_id'] != before['context']['floor_id'], 'room entry needs a new provisional floor context')
@@ -213,6 +219,7 @@ def _room_entry(draft, pending, resources, facts, inventory):
 def _request(draft, pending, checked, control_profile, clock):
     _require(control_profile == CONTROL_PROFILE, 'explicit default PS5 control profile required')
     before = pending['request']
+    policy = before.get('decision_policy', 'strict')
     old = before['observation']
     def observed(name, previous):
         value = draft[name]
@@ -221,13 +228,13 @@ def _request(draft, pending, checked, control_profile, clock):
         _require(old['ui'].get('menu_family') == 'card_upgrade'
                  and pending['proposal']['step_kind'] == 'commit', 'selected upgrade declaration requires its pending confirm')
         target = next(o for o in old['ui']['options'] if o['id'] == before['choice']['option_ids'][0])
-        inventory = _inventory(before['inventory'])
+        inventory = _inventory(before['inventory'], policy)
         _require(inventory['coverage']['card'] == 'complete'
                  and target['card']['name'] in inventory['current']['card'], 'complete before inventory must contain selected card')
         inventory['current']['card'].remove(target['card']['name'])
         inventory['current']['card'].append(target['card']['upgrade_name'])
     else:
-        inventory = _inventory(observed('inventory', before['inventory']))
+        inventory = _inventory(observed('inventory', before['inventory']), policy)
     review = dict(checked['review'], kind='reviewed_choice_ui', outcome={
         'action_id': pending['action_id'], 'before_frame_id': old['frame']['frame_id'],
         'before_sha256': before['source']['sha256'], 'choice_id': before['choice']['choice_id'],
@@ -246,7 +253,7 @@ def _request(draft, pending, checked, control_profile, clock):
         'ui': _observed_ui(draft, pending, checked)}
     if observation['ui'].get('menu_family'):
         observation = bind_reviewed_menu_controls(observation, control_profile=control_profile, now=clock)
-    verified = verify_choice_step(pending['proposal'], old, observation, now=clock)
+    verified = verify_choice_observation(pending['proposal'], old, observation, policy=policy, now=clock)
     changes = deepcopy(draft.get('telemetry', {}))
     _require(isinstance(changes, dict) and not set(changes) - {
         'inventory_events', 'inventory_baseline', 'zone_events', 'zone_baseline',
@@ -259,7 +266,7 @@ def _request(draft, pending, checked, control_profile, clock):
                  'related_item': target['card']['upgrade_name'], 'evidence_note': draft['observed_result']}
         _require(not changes, 'upgrade telemetry is derived from the reviewed selected-card result')
         changes = {'inventory_events': [event]}
-    after = {'kind': 'choice', 'context': context, 'source': checked['source'],
+    after = {'kind': 'choice', 'decision_policy': policy, 'context': context, 'source': checked['source'],
              'review': deepcopy(review), 'observation': observation, 'inventory': inventory}
     if room_changes is not None:
         from .map_transitions import validate_map_arrival

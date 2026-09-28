@@ -63,7 +63,8 @@ def _text(value, limit=4096):
     return isinstance(value, str) and bool(value.strip()) and len(value.encode()) <= limit and "\0" not in value
 
 
-def _inventory(value):
+def _inventory(value, policy='strict'):
+    _require(policy in {'strict', 'learning'}, 'decision_policy must be strict or learning')
     _require(isinstance(value, dict) and isinstance(value.get("current"), dict)
              and isinstance(value.get("coverage"), dict)
              and set(value["coverage"]) == _KINDS
@@ -71,34 +72,34 @@ def _inventory(value):
              and all(isinstance(value["current"].get(k), list)
                      and all(_text(name, 256) for name in value["current"][k]) for k in _KINDS)
              and isinstance(value.get("properties", {}), dict), "explicit reviewed inventory and coverage required")
-    _require(all(value["coverage"][k] == "complete" for k in ("relic", "potion")),
+    _require(policy == 'learning' or all(value["coverage"][k] == "complete" for k in ("relic", "potion")),
              "menu preparation requires complete reviewed relic and potion coverage")
     inventory_digest(value)  # Exercise the same property representation as the adapter.
     return deepcopy(value)
 
 
-def _postconditions(value, context):
+def _postconditions(value, context, policy='strict'):
     _require(isinstance(value, dict), "explicit menu outcome required")
     if "alternatives" in value:
         _require(set(value) == {"alternatives"} and isinstance(value["alternatives"], list),
                  "complete named alternatives required")
         return {"alternatives": [
-            _branch(branch, context) for branch in value["alternatives"]]}
+            _branch(branch, context, policy) for branch in value["alternatives"]]}
     _require(set(value) in ({"screen", "phase", "resources", "inventory", "facts", "allow_changed_facts"},
                             {"screen", "phase", "context", "resources", "inventory", "facts", "allow_changed_facts"}),
              "compact outcome needs screen, phase, resources, inventory, facts and allowed fact changes")
     post = deepcopy(value)
     inventory = post.pop("inventory")
-    post["inventory_digest"] = "unchanged" if inventory == "unchanged" else inventory_digest(_inventory(inventory))
+    post["inventory_digest"] = "unchanged" if inventory == "unchanged" else inventory_digest(_inventory(inventory, policy))
     post.setdefault("context", deepcopy(context))
     return post
 
 
-def _branch(branch, context):
+def _branch(branch, context, policy='strict'):
     _require(isinstance(branch, dict) and set(branch) == {"id", "postconditions"},
              "each menu outcome alternative needs a name and complete conditions")
     _require("alternatives" not in branch["postconditions"], "nested menu alternatives are unsupported")
-    return {"id": branch["id"], "postconditions": _postconditions(branch["postconditions"], context)}
+    return {"id": branch["id"], "postconditions": _postconditions(branch["postconditions"], context, policy)}
 
 
 def _ui(value):
@@ -134,19 +135,21 @@ def _ui(value):
 
 def _draft(value):
     draft = _json(value)
-    _require(isinstance(draft, dict) and set(draft) == {
+    _require(isinstance(draft, dict) and set(draft) - {'decision_policy'} == {
         "schema", "context", "inventory", "resources", "facts", "ui", "choice", "reasoning"}
         and draft["schema"] == SCHEMA, "source-free veda.menu-draft.v1 schema required")
     _require(_text(draft["reasoning"]), "menu reasoning required")
     _require(isinstance(draft["choice"], dict) and set(draft["choice"]) == {"kind", "option_ids", "postconditions"},
              "draft choice needs kind, option IDs and explicit outcome only")
-    _inventory(draft["inventory"])
+    policy = draft.get('decision_policy', 'strict')
+    _inventory(draft["inventory"], policy)
     _ui(draft["ui"])
-    _postconditions(draft["choice"]["postconditions"], draft["context"])
+    _postconditions(draft["choice"]["postconditions"], draft["context"], policy)
     return draft
 
 
 def _request(draft, checked, control_profile, clock):
+    policy = draft.get('decision_policy', 'strict')
     frame = {"frame_id": checked["frame_id"], "image_sha256": checked["source"]["sha256"],
              "observed_at": checked["source"]["captured_at"]}
     review = dict(checked["review"], kind="reviewed_choice_ui")
@@ -165,7 +168,7 @@ def _request(draft, checked, control_profile, clock):
     observation = bind_reviewed_menu_controls(observation, control_profile=control_profile, now=clock)
     choice = {"kind": draft["choice"]["kind"], "option_ids": deepcopy(draft["choice"]["option_ids"]),
         "choice_id": ui["choice_id"], "review": dict(review, kind="reviewed_choice"),
-        "postconditions": _postconditions(draft["choice"]["postconditions"], draft["context"])}
+        "postconditions": _postconditions(draft["choice"]["postconditions"], draft["context"], policy)}
     post = choice["postconditions"]
     branches = post.get("alternatives", [{"postconditions": post}])
     for branch in branches:
@@ -184,7 +187,7 @@ def _request(draft, checked, control_profile, clock):
         cards.append(target["card"]["upgrade_name"])
         _require(inventory_digest(projected) == choice["postconditions"]["inventory_digest"],
                  "upgrade inventory must replace exactly one selected card and preserve all other inventory")
-    return {"operation": "prepare", "kind": "choice", "source": deepcopy(checked["source"]),
+    return {"operation": "prepare", "kind": "choice", "decision_policy": policy, "source": deepcopy(checked["source"]),
         "context": deepcopy(draft["context"]), "review": deepcopy(review), "observation": observation,
         "inventory": deepcopy(draft["inventory"]), "choice": choice, "reasoning": draft["reasoning"]}
 
@@ -223,6 +226,7 @@ def _validate(draft, control_profile):
                    "image_sha256": "0" * 64}}
     _request(draft, checked, control_profile, _OFFLINE_TIME)
     return {"schema": "veda.menu-draft-validation.v1", "draft_digest": _digest(draft), "draft_valid": True,
+        "decision_policy": draft.get('decision_policy', 'strict'),
         "validation_only": True, "source_bound": False, "dispatchable": False,
         "controller_input_sent": False, "requires_exact_fresh_capture_review": True}
 

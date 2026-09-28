@@ -17,10 +17,9 @@ from pathlib import Path
 import shutil
 from uuid import UUID, uuid4
 
-from .advisory import check_plan
 from .choice_execution import (plan_choice_step, validate_choice_proposal, verify_choice_step,
                                _observation as validate_choice_observation)
-from .combat_input import CombatInputAdapter, RuntimeStop
+from .combat_input import CombatInputAdapter, RuntimeStop, _state_key
 from .controller_state_machine import ControllerStateMachine
 from .execution import ARM_PHRASE, Reading
 from .routine_combat import routine_observation_reasons
@@ -31,6 +30,87 @@ from .play_timing import PlayTiming
 MAX_BYTES = 1_000_000
 MAX_AGE = 30
 SCHEMA = "veda.reviewed-play.v1"
+
+
+def verify_combat_observation(before, after, action, expected, checked, *, policy='strict'):
+    """Separate proof of an observed action from its tactical forecast."""
+    _require(policy in {'strict', 'learning'}, 'unknown decision policy')
+    if policy == 'strict' or expected['kind'] != 'advance':
+        complete = CombatInputAdapter()._verify(before, after, action, expected, checked)
+        return {'logical_action_complete': complete, 'observed_mismatches': []}
+    _require((after.floor_id, after.turn_id) == (before.floor_id, before.turn_id),
+             'floor or turn changed during card input')
+    card, ui = expected['card'], after.ui
+    unchanged = _state_key(before) == _state_key(after)
+    if unchanged and ui.get('phase') in {'card_selected', 'targeting'} and ui.get('selected_card_id') == card['id']:
+        _require(ui != before.ui, 'selection input produced no verified transition')
+        return {'logical_action_complete': False, 'observed_mismatches': []}
+    state = after.context.get('state', {})
+    _require(after.context.get('fresh') and state.get('hand_complete') is True,
+             'card resolution lacks a fresh complete hand')
+    _require(not any(c.get('id') == card['id'] for c in state.get('hand', [])),
+             'card play not verified; planned card remains in hand')
+    _require(ui.get('screen_type') == 'combat' and ui.get('phase') in {'hand', 'tooltip'}
+             and ui.get('selected_card_id') is None, 'card resolution needs a settled actual combat UI')
+    mismatches = []
+    def compare(field, prediction, actual):
+        if prediction != actual:
+            mismatches.append({'field': field, 'expected': deepcopy(prediction), 'observed': deepcopy(actual)})
+    steps = checked.get('steps', [])
+    if steps:
+        if steps[0].get('energy_after') is not None:
+            compare('energy', steps[0]['energy_after'], state.get('energy'))
+        old_hp = before.context['state'].get('hp')
+        loss = steps[0].get('reviewed_effect', {}).get('hp_loss', 0)
+        if type(old_hp) in (int, float) and type(loss) in (int, float):
+            compare('hp', old_hp - loss, state.get('hp'))
+    forecast = checked.get('forecast')
+    if forecast:
+        compare('block', forecast.get('block', forecast.get('player_block')), state.get('block'))
+        for enemy in forecast.get('enemies', []):
+            current = next((e for e in state.get('enemies', []) if e.get('id') == enemy.get('id')), {})
+            for key in ('hp', 'block'):
+                compare('enemies.' + str(enemy.get('id')) + '.' + key, enemy.get(key), current.get(key))
+    return {'logical_action_complete': True, 'observed_mismatches': mismatches}
+
+
+def verify_choice_observation(proposal, before, after, *, policy='strict', now=None):
+    """Keep control/navigation proof exact; learn actual committed menu effects."""
+    _require(policy in {'strict', 'learning'}, 'unknown decision policy')
+    try:
+        return {**verify_choice_step(proposal, before, after, now=now), 'observed_mismatches': []}
+    except ValueError:
+        if policy != 'learning' or proposal.get('step_kind') != 'commit':
+            raise
+    before = validate_choice_observation(before, None, None)
+    validate_choice_proposal(proposal, before, now=_time(before['frame']['observed_at']))
+    after = validate_choice_observation(after, now or datetime.now(timezone.utc), proposal['max_age_seconds'])
+    _require(after['frame']['frame_id'] != before['frame']['frame_id']
+             and after['frame']['image_sha256'] != before['frame']['image_sha256']
+             and _time(after['frame']['observed_at']) > _time(before['frame']['observed_at'])
+             and before['context']['run_id'] == after['context']['run_id'],
+             'committed outcome needs a distinct later source for the same run')
+    outcome = after['review'].get('outcome', {})
+    _require(outcome.get('action_id') == proposal['action_id']
+             and outcome.get('before_frame_id') == before['frame']['frame_id']
+             and outcome.get('before_sha256') == before['frame']['image_sha256']
+             and outcome.get('choice_id') == proposal['choice']['choice_id']
+             and outcome.get('option_ids') == proposal['choice']['option_ids']
+             and isinstance(outcome.get('observed_result'), str) and outcome['observed_result'].strip(),
+             'committed choice needs exact source-bound action and option review')
+    # Match the ordinary commit proof: focus, selection bookkeeping, layout
+    # labels and evidence rebinding alone are not an observed game result.
+    def progress(observation):
+        ui = observation['ui']
+        return {k: observation[k] for k in ('context', 'resources', 'inventory_digest', 'facts')} | {
+            'screen': ui['screen'], 'phase': ui['phase'],
+            'options': [{k: option.get(k) for k in ('id', 'label', 'enabled', 'costs', 'role')}
+                        for option in ui['options']]}
+    _require(progress(before) != progress(after), 'no observed semantic choice result')
+    return {'choice_complete': True, 'step_verified': True, 'observed_mismatches': [{
+        'field': 'choice_postconditions', 'expected': deepcopy(proposal['choice']['postconditions']),
+        'observed': {k: deepcopy(after[k]) for k in ('context', 'resources', 'inventory_digest', 'facts')}
+                    | {'screen': after['ui']['screen'], 'phase': after['ui']['phase']}}]}
 
 
 def _copy(value):
@@ -97,8 +177,9 @@ class ReviewedPlaySession(CombatInputAdapter):
     Offline tests use a fake factory; shadow mode cannot arm or call it.
     """
     def __init__(self, directory, *, run_id, telemetry, controller_factory=None,
-                 mode="shadow", clock=None):
+                 mode="shadow", clock=None, decision_policy='strict'):
         _require(mode in {"shadow", "codex"}, "mode must be shadow or codex")
+        _require(decision_policy in {'strict', 'learning'}, 'decision policy must be strict or learning')
         _require(isinstance(run_id, str) and run_id.strip(), "existing run ID required")
         self.directory = Path(directory).resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -110,6 +191,8 @@ class ReviewedPlaySession(CombatInputAdapter):
             raise RuntimeStop("reviewed play session already has an owner")
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.mode, self.telemetry, self.factory = mode, telemetry, controller_factory
+        self.decision_policy = decision_policy
+        self.transport_failed = False
         self.machine = ControllerStateMachine()
         self.controller = None
         self.armed = False
@@ -127,6 +210,11 @@ class ReviewedPlaySession(CombatInputAdapter):
                          "session belongs to another schema or run")
             else:
                 self.state = {"schema": SCHEMA, "run_id": run_id, "pending": None, "completed": 0}
+                self._save()
+            _require(not self.state.get('pending') or self.state.get('decision_policy', 'strict') == decision_policy,
+                     'finish the pending action under its recorded decision policy before changing policy')
+            if self.state.get('decision_policy') != decision_policy:
+                self.state['decision_policy'] = decision_policy
                 self._save()
             try:
                 self.timing = PlayTiming(self.directory / 'timing.json', run_id=run_id,
@@ -206,6 +294,8 @@ class ReviewedPlaySession(CombatInputAdapter):
                  "complete named review must bind the actual source")
 
     def _before(self, request, *, check_plan_now=True):
+        _require(request.get('decision_policy', self.decision_policy) == self.decision_policy,
+                 'request decision policy differs from active session')
         source = self._source(request["source"])
         context = request["context"]
         _require(set(context) == {"run_id", "floor_id", "combat_id", "turn_id"}
@@ -221,9 +311,11 @@ class ReviewedPlaySession(CombatInputAdapter):
             self._review(request['review'], source, frame['frame_id'])
             _require(request['review'] == observation['review'], 'inspection review differs')
             inventory = request['inventory']
-            _require(all(inventory.get('coverage', {}).get(k) == 'complete' for k in ('relic', 'potion'))
+            _require(all(inventory.get('coverage', {}).get(k) in
+                         ({'complete', 'partial', 'unknown'} if self.decision_policy == 'learning' else {'complete'})
+                         for k in ('relic', 'potion'))
                      and inventory_digest(inventory) == observation['inventory_digest'],
-                     'complete reviewed inventory must match inspection digest')
+                     'reviewed inventory coverage and inspection digest must match the active policy')
             return validate_inspection_observation(observation, now=self.clock())
         if request["kind"] == "choice":
             observation = request["observation"]
@@ -234,9 +326,11 @@ class ReviewedPlaySession(CombatInputAdapter):
             inventory = request["inventory"]
             title_continue = (observation["ui"]["screen"] == "title"
                               and request.get("choice", {}).get("kind") == "continue_run")
-            _require((title_continue or all(inventory.get("coverage", {}).get(k) == "complete" for k in ("relic", "potion")))
+            _require((title_continue or all(inventory.get('coverage', {}).get(k) in
+                         ({'complete', 'partial', 'unknown'} if self.decision_policy == 'learning' else {'complete'})
+                         for k in ('relic', 'potion')))
                      and inventory_digest(inventory) == observation["inventory_digest"],
-                     "complete reviewed inventory must match choice digest")
+                     "reviewed inventory coverage and choice digest must match the active policy")
             validate_choice_observation(observation, self.clock(), MAX_AGE)
             return observation
         _require(request["kind"] == "combat", "unknown reviewed play kind")
@@ -248,15 +342,27 @@ class ReviewedPlaySession(CombatInputAdapter):
                  and reading.context["state"]["observed_at"] == source["captured_at"],
                  "combat reading differs from saved source")
         self._review(request["review"], source, reading.frame_id)
-        reasons = routine_observation_reasons(reading.state, reading.context)
-        _require(not reasons, "incomplete reviewed combat: " + "; ".join(reasons))
+        _require(reading.context.get('decision_policy', self.decision_policy) == self.decision_policy,
+                 'reading decision policy differs from active session')
+        if self.decision_policy == 'strict':
+            reasons = routine_observation_reasons(reading.state, reading.context)
+            _require(not reasons, 'incomplete reviewed combat: ' + '; '.join(reasons))
+        else:
+            from .decision_policy import assess_observation
+            assessment = assess_observation(reading.state, reading.context, policy=self.decision_policy)
+            _require(assessment['allowed'], 'incomplete reviewed combat: ' + '; '.join(assessment['hard_reasons']))
         if check_plan_now:
-            plan = request["plan"]
-            _require(len(plan.get("steps", [])) == 1 and plan["steps"][0].get("kind") in {"card", "end_turn"},
-                     "exactly one card or End Turn; potions use the choice flow")
-            checked = check_plan(reading.context, plan, survival_scope='action_prefix')
-            _require(checked["allowed"], "move rejected: " + "; ".join(checked["reasons"]))
+            self._assess(request, reading)
         return reading
+
+    def _assess(self, request, reading):
+        from .decision_policy import assess_combat
+        plan = request['plan']
+        _require(len(plan.get('steps', [])) == 1 and plan['steps'][0].get('kind') in {'card', 'end_turn'},
+                 'exactly one card or End Turn; potions use the choice flow')
+        assessment = assess_combat(reading.context, plan, policy=self.decision_policy, visual=reading.state)
+        _require(assessment['allowed'], 'move rejected: ' + '; '.join(assessment['hard_reasons']))
+        return assessment
 
     def summary(self):
         recovery = self.telemetry.recover(run_id=self.state["run_id"])
@@ -270,7 +376,7 @@ class ReviewedPlaySession(CombatInputAdapter):
         # not re-send whole hands, menu contracts or historical telemetry.
         recovery = {**recovery, "pending": [{k: row[k] for k in
             ("decision_id", "context", "source", "dispatch_status", "required")} for row in recovery["pending"]]}
-        return {"schema": SCHEMA, "mode": self.mode, "run_id": self.state["run_id"],
+        return {"schema": SCHEMA, "mode": self.mode, "decision_policy": self.decision_policy, "run_id": self.state["run_id"],
                 "armed": self.armed, "pending": deepcopy(brief),
                 "recovery": recovery, "automatic_recognition_complete": False,
                 "runtime_authorized": False, "completed_inputs": self.state["completed"],
@@ -379,6 +485,7 @@ class ReviewedPlaySession(CombatInputAdapter):
         _require(not recovery.get("pending"), "unresolved database decision requires reconciliation")
         problem = self._check_bridge_status(retain_connection=True)
         if problem is not None:
+            self.transport_failed = True
             self.disarm()
             raise RuntimeStop(f"warm bridge is not ready ({problem}); no gameplay input sent") from None
         self.armed = True
@@ -396,7 +503,10 @@ class ReviewedPlaySession(CombatInputAdapter):
                                kind=self._timed_floor_kind(request))
         self._begin_timed_move('decision-' + str(uuid4()))
         self._timing_event('phase', name='prepare')
-        before = self._before(request)
+        before = self._before(request, check_plan_now=False)
+        request['decision_policy'] = self.decision_policy
+        if request['kind'] == 'combat':
+            request['reading']['context']['decision_policy'] = self.decision_policy
         action_id = str(uuid4())
         if request['kind'] == 'combat_inspection':
             from .combat_inspection import plan_tooltip_clear
@@ -413,19 +523,22 @@ class ReviewedPlaySession(CombatInputAdapter):
             semantic = {"kind": "navigation" if proposal["step_kind"] != "commit" else "choice",
                         "choice": request["choice"], "step_kind": proposal["step_kind"]}
         else:
+            assessment = self._assess(request, before)
             self.machine.reset()
             action = request["plan"]["steps"][0]
             step, expected = self._input(before, action)
             command = {"action": "tap", "buttons": step["buttons"], "request_id": action_id}
-            proposal = {"expected": expected, "checked": check_plan(before.context, request["plan"], survival_scope='action_prefix')}
+            proposal = {"expected": expected, "checked": assessment['checked'], 'assessment': assessment}
             semantic = {"kind": "navigation" if expected["kind"] in {"clear", "card_focus", "target_focus"}
-                        else action["kind"], "requested_action": action, "expected": expected}
+                        else action["kind"], "requested_action": action, "expected": expected,
+                        'decision_policy': self.decision_policy, 'assessment': assessment}
         request["source"] = self._source(request["source"], retain=True)
         self.state["pending"] = {"action_id": action_id, "status": "prepared", "request": request,
                                  "proposal": proposal, "command": command, "semantic": semantic}
         self._save()
         return {"status": "prepared", "action_id": action_id, "command": command,
-                "mode": self.mode, "controller_input_sent": False}
+                "mode": self.mode, "decision_policy": self.decision_policy,
+                'assessment': proposal.get('assessment'), "controller_input_sent": False}
 
     def resume(self, request):
         _require(not self.state["pending"], "reconcile pending input before resume")
@@ -449,8 +562,13 @@ class ReviewedPlaySession(CombatInputAdapter):
     def cancel_prepared(self):
         _require(self.state["pending"] and self.state["pending"]["status"] == "prepared",
                  "only an input that never crossed dispatch can be cancelled")
+        retained = self.state['pending']
         self.state["pending"] = None
-        self._save()
+        try:
+            self._save()
+        except BaseException:
+            self.state['pending'] = retained
+            raise
         return {"status": "cancelled_without_input"}
 
     def send(self, action_id):
@@ -460,7 +578,7 @@ class ReviewedPlaySession(CombatInputAdapter):
                  "input already attempted or proposal unknown; never repeat")
         request = pending["request"]
         self._timing_event('phase', name='dispatch')
-        before = self._before(request)
+        before = self._before(request, check_plan_now=False)
         if request['kind'] == 'combat_inspection':
             from .combat_inspection import validate_inspection_proposal, record_inspection_attempt
             validate_inspection_proposal(pending['proposal'], before, now=self.clock())
@@ -469,17 +587,32 @@ class ReviewedPlaySession(CombatInputAdapter):
             validate_choice_proposal(pending["proposal"], before, now=self.clock())
             if pending["proposal"]["step_kind"] == "inspect":
                 self._map_inspection_budget(before, pending["command"]["buttons"][0])
+        else:
+            assessment = self._assess(request, before)
+            step, expected = self._input(before, request['plan']['steps'][0])
+            _require(step['buttons'] == pending['command']['buttons'] and expected == pending['proposal']['expected'],
+                     'reviewed atomic input changed since preparation')
+            pending['proposal'].update(checked=assessment['checked'], assessment=assessment)
+            pending['semantic'].update(decision_policy=self.decision_policy, assessment=assessment)
         state = before.context["state"] if request["kind"] == "combat" else {
             "resources": before["resources"], "facts": before["facts"], "ui": before["ui"]}
         decision = {"schema": "veda.play-telemetry.v1", "operation_id": action_id,
             "context": request["context"], "source": request["source"], "state": state,
             "phase": "combat" if request["kind"] == "combat" else before["ui"]["screen"],
             "action": pending["semantic"], "reasoning": request["reasoning"]}
+        assessment = pending['proposal'].get('assessment', {})
+        decision['prediction'] = {'decision_policy': self.decision_policy,
+            'assessment': {k: deepcopy(assessment.get(k)) for k in
+                ('warnings', 'hard_reasons', 'forecast_status', 'decision_under_uncertainty')},
+            'forecast': deepcopy(assessment.get('forecast')), 'chosen_action': deepcopy(pending['semantic']),
+            'chosen_reason': request['reasoning'], 'retrieved_case_ids': deepcopy(request.get('retrieved_case_ids', []))}
         # Mark ambiguity before the database call too: if the write commits but
         # its return/save fails, recovery must not submit that operation again.
         pending.update(status="preparing_dispatch", decision_request=decision,
                        preparation_started_at=self.clock().isoformat())
         self._save()
+        entered_controller_call = False
+        transport_confirmed = False
         try:
             receipt = self.telemetry.record_decision(decision, now=self.clock())
             pending.update(status="attempted", decision_id=receipt["decision_id"],
@@ -488,14 +621,25 @@ class ReviewedPlaySession(CombatInputAdapter):
                 self.state['combat_inspection_progress'] = inspection_progress
             self._save()
             self._source(request["source"])
+            entered_controller_call = True
             response = self.controller.call(pending["command"])
             pending["response"] = response
+            transport_confirmed = (isinstance(response, dict) and response.get('ok') is True
+                and response.get('status', 'ok') == 'ok' and response.get('request_id') == action_id)
             self._save()
-            _require(response.get("ok") is True and response.get("status", "ok") == "ok"
-                     and response.get("request_id") == action_id,
+            _require(transport_confirmed,
                      "controller delivery uncertain; inspect and reconcile, never resend")
         except BaseException:
-            self.disarm()
+            if entered_controller_call and not transport_confirmed:
+                self.transport_failed = True
+                self.disarm()
+            elif self.decision_policy == 'strict':
+                self.disarm()
+            elif not entered_controller_call and not self.poisoned and pending['status'] == 'attempted':
+                # This process has not entered controller.call. Persist that
+                # positive local fact for existing recover_unsent; never retry.
+                pending.update(status='preparing_dispatch', pre_dispatch_failure={'controller_call_started': False})
+                self._save()
             raise
         self._timing_event('phase', name='verification')
         return {"status": "awaiting_fresh_review", "action_id": action_id,
@@ -514,6 +658,7 @@ class ReviewedPlaySession(CombatInputAdapter):
                  and _time(after["source"]["captured_at"]) > _time(pending["attempted_at"]),
                  "outcome needs a distinct image captured after dispatch")
         observed = self._before(after, check_plan_now=False)
+        observed_mismatches = []
         if before['kind'] == 'combat_inspection':
             from .combat_inspection import verify_tooltip_clear
             _require(after['kind'] == 'combat_inspection', 'tooltip result requires the same inspection contract')
@@ -522,7 +667,9 @@ class ReviewedPlaySession(CombatInputAdapter):
             state = {key: observed[key] for key in ('resources', 'facts', 'ui')}
         elif before["kind"] == "choice":
             _require(after["kind"] == "choice", "choice verification needs the reviewed choice-result contract")
-            verified = verify_choice_step(pending["proposal"], before["observation"], observed, now=self.clock())
+            verified = verify_choice_observation(pending['proposal'], before['observation'], observed,
+                                                 policy=self.decision_policy, now=self.clock())
+            observed_mismatches = verified['observed_mismatches']
             complete = verified["choice_complete"]
             state = {"resources": observed["resources"], "facts": observed["facts"], "ui": observed["ui"]}
             if verified.get("matched_outcome_id") is not None:
@@ -530,11 +677,13 @@ class ReviewedPlaySession(CombatInputAdapter):
                 state["choice_outcome_id"] = verified["matched_outcome_id"]
         elif after["kind"] == "combat":
             original = Reading.from_dict(before["reading"])
-            complete = self._verify(original, observed, before["plan"]["steps"][0],
-                                    pending["proposal"]["expected"], pending["proposal"]["checked"])
+            verified = verify_combat_observation(original, observed, before['plan']['steps'][0],
+                pending['proposal']['expected'], pending['proposal']['checked'], policy=self.decision_policy)
+            complete = verified['logical_action_complete']; observed_mismatches = verified['observed_mismatches']
             state = observed.context["state"]
         else:
             complete = self._combat_boundary(pending, after)
+            observed_mismatches = deepcopy(getattr(self, '_boundary_mismatches', []))
             state = {"resources": observed["resources"], "facts": observed["facts"], "ui": observed["ui"]}
         changes = request.get("telemetry", {})
         if before['kind'] == 'combat_inspection':
@@ -562,7 +711,9 @@ class ReviewedPlaySession(CombatInputAdapter):
         verification = {"basis": "fresh_verified_result", "action_id": pending["action_id"],
             "outcome_sha256": outcome_request_digest(outcome), "source": deepcopy(outcome["source"]),
             "reviewed_at": self.clock().isoformat(),
-            "review": deepcopy(observed["review"] if before["kind"] == "choice" else after["review"])}
+            "review": deepcopy(observed["review"] if before["kind"] == "choice" else after["review"]),
+            'decision_policy': self.decision_policy, 'assessment': deepcopy(pending['proposal'].get('assessment', {})),
+            'observed_mismatches': observed_mismatches}
         # Persist exact idempotent outcome before SQLite. If a crash follows its
         # commit, finalize() repeats the same write, never the controller input.
         pending.update(status="verified_pending_log", outcome_request=outcome, outcome_verification=verification,
@@ -571,6 +722,7 @@ class ReviewedPlaySession(CombatInputAdapter):
         return self.finalize()
 
     def _combat_boundary(self, pending, after):
+        self._boundary_mismatches = []
         before, observation = pending["request"], after["observation"]
         expected = pending["proposal"]["expected"]
         _require(expected["kind"] in {"advance", "end_turn"}, "navigation cannot close combat or open a card choice")
@@ -584,13 +736,21 @@ class ReviewedPlaySession(CombatInputAdapter):
         screen, facts = observation["ui"]["screen"], observation["facts"]
         if screen == "selection":
             card = expected.get("card", {})
-            _require(card.get("name") in {"Headbutt", "Headbutt+", "Warcry", "Warcry+", "True Grit+"}
+            _require((getattr(self, 'decision_policy', 'strict') == 'learning'
+                      or card.get("name") in {"Headbutt", "Headbutt+", "Warcry", "Warcry+", "True Grit+"})
+                     and expected['kind'] == 'advance' and bool(card.get('id'))
                      and facts.get("selection_cause_card_id") == card.get("id")
                      and after["context"] == before["context"], "unconfirmed card-selection boundary")
-            step = pending["proposal"]["checked"]["steps"][0]
-            _require(observation["resources"].get("energy") == step["energy_after"]
-                     and observation["resources"].get("hp") == before["reading"]["context"]["state"]["hp"]
-                     - step.get("reviewed_effect", {}).get("hp_loss", 0), "card-selection resources differ")
+            steps = pending['proposal']['checked'].get('steps', [])
+            step = steps[0] if steps else {}
+            old_hp = before['reading']['context']['state'].get('hp')
+            loss = step.get('reviewed_effect', {}).get('hp_loss', 0)
+            expected_resources = {'energy': step.get('energy_after'), 'hp':
+                old_hp - loss if type(old_hp) in (int, float) and type(loss) in (int, float) else None}
+            self._boundary_mismatches = [{'field': key, 'expected': value, 'observed': observation['resources'].get(key)}
+                for key, value in expected_resources.items() if value is not None and observation['resources'].get(key) != value]
+            _require(getattr(self, 'decision_policy', 'strict') == 'learning' or not self._boundary_mismatches,
+                     'card-selection resources differ')
         else:
             _require(screen in {"reward", "card_reward", "result"}
                      and facts.get("combat_outcome") in {"win", "loss"}
@@ -700,7 +860,11 @@ class ReviewedPlaySession(CombatInputAdapter):
                            status="not_performed", evidence_note="Durable pre-dispatch state proves no controller call occurred.")
             self.telemetry.record_outcome(outcome, now=self.clock())
         self.state["pending"] = None
-        self._save()
+        try:
+            self._save()
+        except BaseException:
+            self.state['pending'] = pending
+            raise
         return {"status": "reconciled_unsent", "controller_input_sent": False}
 
     def reconcile(self, request):
@@ -730,7 +894,8 @@ class ReviewedPlaySession(CombatInputAdapter):
         receipt = self.telemetry.record_outcome(outcome, now=self.clock())
         pending["uncertain_outcome"] = receipt
         self._save()
-        self.disarm()
+        if self.decision_policy == 'strict':
+            self.disarm()
         return {"status": "unresolved", "must_not_repeat": True, "inventory_requires_inspection": True}
 
     def repair_outcome_metadata(self, request):
@@ -798,6 +963,7 @@ class ReviewedPlaySession(CombatInputAdapter):
     def finalize(self):
         pending = self.state["pending"]
         _require(pending and pending["status"] == "verified_pending_log", "no reviewed result to finalize")
+        retained = deepcopy(self.state)
         try:
             kwargs = {"now": self.clock()}
             if pending.get("outcome_verification") is not None:
@@ -840,10 +1006,30 @@ class ReviewedPlaySession(CombatInputAdapter):
                 self._begin_timed_move('after-' + pending['action_id'])
             self._timing_event('phase', name='planning')
         except BaseException:
-            self.disarm()
+            # The SQLite receipt may already exist. Retain the same verified
+            # pending operation in memory too, so a failed final save can only
+            # finalize idempotently or be recovered from disk, never replayed.
+            self.state = retained
+            if self.decision_policy == 'strict':
+                self.disarm()
             raise
+        verified_state = pending['outcome_request']['state']
+        terminal = None
+        if verified_state.get('ui', {}).get('screen') == 'result':
+            facts = verified_state.get('facts', {})
+            terminal = facts.get('run_outcome') if facts.get('run_outcome') in {'victory', 'defeat'} else None
+            if facts.get('combat_outcome') == 'loss':
+                terminal = 'defeat'
+        proof = pending.get('outcome_verification', {})
+        if terminal is not None:
+            self.close()
+            return {'status': 'run_complete', 'reason': terminal, 'next_context': receipt['next_context'],
+                    'armed': False, 'cleanup': deepcopy(self.cleanup), 'controller_input_sent': False,
+                    'observed_mismatches': deepcopy(proof.get('observed_mismatches', []))}
         return {"status": "verified", "logical_action_complete": complete,
-                "next_context": receipt["next_context"], "requires_fresh_review": True}
+                "next_context": receipt["next_context"], "requires_fresh_review": True,
+                'decision_policy': self.decision_policy, 'assessment': deepcopy(proof.get('assessment', {})),
+                'observed_mismatches': deepcopy(proof.get('observed_mismatches', []))}
 
     def _map_inspection_budget(self, before, direction):
         """Bound nonprogressing map browsing across captures and adapter restarts."""
@@ -902,21 +1088,21 @@ class ReviewedPlaySession(CombatInputAdapter):
                 self.lock.close()
 
     def handle(self, request):
-        if isinstance(request, dict) and request.get('operation') == 'timing':
-            _require(set(request) == {'operation', 'event'} and isinstance(request['event'], dict),
-                     'timing needs one explicit progress event')
-            event = dict(request['event'])
-            operation = event.pop('operation', None)
-            _require(operation in {'begin_move', 'begin_floor', 'phase', 'pause', 'resume', 'stale_capture'},
-                     'operator timing cannot assert verified input or completion')
-            self._timing_event(operation, **event)
-            return {'status': 'timing_recorded', 'timing': self.timing_summary(), 'controller_input_sent': False}
         op = request.get('operation') if isinstance(request, dict) else None
         if op in {'bridge_preflight', 'arm'}:
             self._timing_event('phase', name='preflight')
         if op in {'verify', 'finalize'}:
             self._timing_event('phase', name='verification' if op == 'verify' else 'telemetry')
         try:
+            if op == 'timing':
+                _require(set(request) == {'operation', 'event'} and isinstance(request['event'], dict),
+                         'timing needs one explicit progress event')
+                event = dict(request['event'])
+                operation = event.pop('operation', None)
+                _require(operation in {'begin_move', 'begin_floor', 'phase', 'pause', 'resume', 'stale_capture'},
+                         'operator timing cannot assert verified input or completion')
+                self._timing_event(operation, **event)
+                return {'status': 'timing_recorded', 'timing': self.timing_summary(), 'controller_input_sent': False}
             result = self._handle(request)
             if op == 'arm':
                 snapshot = self._timing_snapshot()
@@ -932,7 +1118,43 @@ class ReviewedPlaySession(CombatInputAdapter):
                     source = request.get('source', request.get('after', {}).get('source', {}))
                     identifier = source.get('captured_at', source.get('sha256', 'unidentified'))
                     self._timing_event('stale_capture', capture_id=identifier)
+            if self.decision_policy == 'learning' and isinstance(error, Exception):
+                return self.recoverable_error(error)
             raise
+
+    def recoverable_error(self, error):
+        """Report a local recovery step without another input or implicit replay."""
+        if self.decision_policy != 'learning':
+            self.disarm()
+            return {'status': 'stopped_for_review', 'error': str(error), 'armed': False,
+                    'cleanup': deepcopy(self.cleanup), 'timing': self.timing_summary()}
+        if self.transport_failed:
+            self.close()
+            status, required = 'transport_stopped', 'Restore the hardware/network connection; inspect any pending outcome before rearming.'
+        elif self.poisoned:
+            status, required = 'storage_recovery_required', 'Recover durable session storage, reopen and reconcile the pending action; never resend it.'
+        else:
+            status, required = 'recoverable_review', 'Inspect a fresh frame, correct the reviewed request and continue in this armed session.'
+        pending = self.state.get('pending')
+        next_operation = 'prepare'
+        if pending:
+            state = pending.get('status')
+            next_operation = {'prepared': 'cancel_prepared', 'preparing_dispatch': 'recover_unsent',
+                              'attempted': 'verify', 'verified_pending_log': 'finalize'}.get(state, 'summary')
+            required = {'prepared': 'Cancel the proven-unsent proposal, then review and prepare the next action.',
+                'preparing_dispatch': 'Use recover_unsent for the durable pre-dispatch record; no input may be repeated.',
+                'attempted': 'Inspect a fresh result and verify or reconcile this exact pending action; never resend it.',
+                'verified_pending_log': 'Finalize the retained verified result; do not repeat the gameplay input.'}.get(state, required)
+        delivery = False
+        if pending and pending['status'] in {'attempted', 'verified_pending_log'}:
+            response = pending.get('response', {})
+            delivery = True if response.get('ok') is True else False if response.get('status') == 'not_sent' else None
+        return {'status': status, 'error': str(error), 'armed': self.armed,
+            'decision_policy': self.decision_policy, 'controller_input_sent': delivery, 'input_retried': False,
+            'pending': None if pending is None else {'action_id': pending['action_id'], 'status': pending['status']},
+            'must_not_repeat': bool(pending and pending['status'] != 'prepared'),
+            'next_operation': next_operation, 'required': required,
+            'cleanup': deepcopy(self.cleanup), 'timing': self.timing_summary()}
 
     def _handle(self, request):
         request = _copy(request)
@@ -970,5 +1192,6 @@ class ReviewedPlaySession(CombatInputAdapter):
                 return {"status": "stopped", "cleanup": deepcopy(self.cleanup)}
             raise ValueError("unknown reviewed play operation")
         except BaseException:
-            self.disarm()
+            if self.decision_policy == 'strict':
+                self.disarm()
             raise

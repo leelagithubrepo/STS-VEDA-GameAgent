@@ -1,5 +1,12 @@
 # Continue through event and upgrade menus
 
+Autonomous learning sessions use `decision_policy:"learning"` in compact menu
+drafts. Legacy drafts remain strict. Forecasts describe expected outcomes;
+learning can record a verified unexpected commit and its actual inventory or
+lifecycle changes. Unread inventory coverage stays explicit. An absent mapping
+calls for observation/recovery; the learning policy does not invent controls.
+
+
 For map inspection, route comparison, node focus/activation and room-entry
 results, use [the map workflow](veda-map-play.md). The same compact request and
 result CLI handles those scoped map families.
