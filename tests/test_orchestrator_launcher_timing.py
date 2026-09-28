@@ -36,6 +36,7 @@ class OrchestratorLauncherTimingTests(unittest.TestCase):
         if print_only:
             argv.append('--print-command')
         with (patch.object(self.module.sys, 'argv', argv),
+              patch.object(self.module, '_nested_launch_reason', return_value=None),
               patch.object(self.module.shutil, 'which', return_value='/synthetic/codex'),
               patch.object(self.module.os, 'execv') as execute,
               redirect_stdout(stdout), redirect_stderr(stderr)):

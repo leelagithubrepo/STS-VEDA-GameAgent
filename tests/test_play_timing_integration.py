@@ -284,6 +284,7 @@ class LauncherTimingIntegrationTests(unittest.TestCase):
                 timing = json.loads((root / "artifacts" / "reviewed-play" / run_id / "timing.json").read_text())
                 observed.append((executable, command, timing))
             with (patch.object(module.sys, "argv", ["orchestrator", "--run-id", run_id]),
+                  patch.object(module, "_nested_launch_reason", return_value=None),
                   patch.object(module.shutil, "which", return_value="/synthetic/codex"),
                   patch.object(module.os, "execv", side_effect=fake_exec), redirect_stdout(io.StringIO())):
                 module.main()

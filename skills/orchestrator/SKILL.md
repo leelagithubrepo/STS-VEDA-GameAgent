@@ -60,6 +60,12 @@ not task completion. Do not return a final response asking for “continue.”
    observed result linked. Recorded cases inform later choices; they do not
    automatically retrain the model or establish a universal rule.
 
+Describe the actual combat focus domain. A raised hand card with keyword help
+is still hand focus; do not dismiss it with Up. Status, relic and potion focus
+are separate locations. Use the combat guide's observed, single-step recovery
+and report its actual destination, including no progress. Never declare hand
+focus merely because the intended action was to return there.
+
 For screen-specific commands, use `docs/veda-combat-play.md`,
 `docs/veda-menu-controls.md` or `docs/veda-map-play.md`. Default PS5 profiles
 can supply known controls when a glyph is absent. Inspect actual upgrade cards

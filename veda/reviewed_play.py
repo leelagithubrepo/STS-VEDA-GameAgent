@@ -19,7 +19,8 @@ from uuid import UUID, uuid4
 
 from .choice_execution import (plan_choice_step, validate_choice_proposal, verify_choice_step,
                                _observation as validate_choice_observation)
-from .combat_input import CombatInputAdapter, RuntimeStop, _state_key
+from .combat_input import (CombatInputAdapter, RuntimeStop, _state_key, validate_combat_focus,
+                           focus_transition, record_focus_recovery_attempt)
 from .controller_state_machine import ControllerStateMachine
 from .execution import ARM_PHRASE, Reading
 from .routine_combat import routine_observation_reasons
@@ -35,6 +36,20 @@ SCHEMA = "veda.reviewed-play.v1"
 def verify_combat_observation(before, after, action, expected, checked, *, policy='strict'):
     """Separate proof of an observed action from its tactical forecast."""
     _require(policy in {'strict', 'learning'}, 'unknown decision policy')
+    if expected['kind'] == 'focus_probe' or expected['kind'] == 'clear' and policy == 'learning':
+        _require((after.floor_id, after.turn_id) == (before.floor_id, before.turn_id)
+                 and _state_key(before) == _state_key(after), 'focus navigation changed observed gameplay state or context')
+        transition = focus_transition(before.ui, after.ui, [card['id'] for card in after.context['state']['hand']])
+        if before.image_sha256 == after.image_sha256:
+            _require(not transition['returned_to_hand']
+                     and transition['after']['domain'] in {'player_status', 'relic', 'potion', 'enemy'}
+                     and transition['after']['subject_id'] is not None
+                     and (transition['effect'] == 'unchanged'
+                          or transition['effect'] == 'focus_observed' and transition['before']['domain'] == 'unknown'),
+                     'identical pixels cannot prove a changed focus or return to hand')
+        return {'logical_action_complete': False, 'focus_transition': transition,
+                'observed_mismatches': [] if transition['returned_to_hand'] else [{
+                    'field': 'focus_recovery', 'expected': 'hand', 'observed': transition['after']}]}
     if policy == 'strict' or expected['kind'] != 'advance':
         complete = CombatInputAdapter()._verify(before, after, action, expected, checked)
         return {'logical_action_complete': complete, 'observed_mismatches': []}
@@ -351,6 +366,8 @@ class ReviewedPlaySession(CombatInputAdapter):
             from .decision_policy import assess_observation
             assessment = assess_observation(reading.state, reading.context, policy=self.decision_policy)
             _require(assessment['allowed'], 'incomplete reviewed combat: ' + '; '.join(assessment['hard_reasons']))
+        validate_combat_focus(reading.ui, [card['id'] for card in reading.context['state']['hand']],
+                              require_explicit=self.decision_policy == 'learning')
         if check_plan_now:
             self._assess(request, reading)
         return reading
@@ -511,9 +528,9 @@ class ReviewedPlaySession(CombatInputAdapter):
         if request['kind'] == 'combat_inspection':
             from .combat_inspection import plan_tooltip_clear
             proposal = plan_tooltip_clear(before, control_profile=request['control_profile'],
-                now=self.clock(), action_id=action_id, progress=self.state.get('combat_inspection_progress'))
+                now=self.clock(), action_id=action_id, progress=self.state.get('combat_focus_progress'))
             command = proposal['command']
-            semantic = {'kind': 'navigation', 'inspection': 'clear_tooltip', 'step_kind': 'inspect'}
+            semantic = {'kind': 'navigation', 'inspection': proposal['step_kind'], 'step_kind': 'inspect'}
         elif request["kind"] == "choice":
             proposal = plan_choice_step(before, request["choice"], now=self.clock(),
                                         max_age_seconds=MAX_AGE, action_id=action_id)
@@ -527,9 +544,12 @@ class ReviewedPlaySession(CombatInputAdapter):
             self.machine.reset()
             action = request["plan"]["steps"][0]
             step, expected = self._input(before, action)
+            if expected['kind'] == 'focus_probe':
+                record_focus_recovery_attempt(self.state.get('combat_focus_progress'), request['context'],
+                                              expected['before_focus'], action_id, expected['direction'])
             command = {"action": "tap", "buttons": step["buttons"], "request_id": action_id}
             proposal = {"expected": expected, "checked": assessment['checked'], 'assessment': assessment}
-            semantic = {"kind": "navigation" if expected["kind"] in {"clear", "card_focus", "target_focus"}
+            semantic = {"kind": "navigation" if expected["kind"] in {"clear", "card_focus", "target_focus", "focus_probe"}
                         else action["kind"], "requested_action": action, "expected": expected,
                         'decision_policy': self.decision_policy, 'assessment': assessment}
         request["source"] = self._source(request["source"], retain=True)
@@ -581,8 +601,9 @@ class ReviewedPlaySession(CombatInputAdapter):
         before = self._before(request, check_plan_now=False)
         if request['kind'] == 'combat_inspection':
             from .combat_inspection import validate_inspection_proposal, record_inspection_attempt
-            validate_inspection_proposal(pending['proposal'], before, now=self.clock())
-            inspection_progress = record_inspection_attempt(self.state.get('combat_inspection_progress'), before, action_id)
+            validate_inspection_proposal(pending['proposal'], before, now=self.clock(),
+                                         progress=self.state.get('combat_focus_progress'))
+            inspection_progress = record_inspection_attempt(self.state.get('combat_focus_progress'), before, action_id)
         elif request["kind"] == "choice":
             validate_choice_proposal(pending["proposal"], before, now=self.clock())
             if pending["proposal"]["step_kind"] == "inspect":
@@ -594,6 +615,9 @@ class ReviewedPlaySession(CombatInputAdapter):
                      'reviewed atomic input changed since preparation')
             pending['proposal'].update(checked=assessment['checked'], assessment=assessment)
             pending['semantic'].update(decision_policy=self.decision_policy, assessment=assessment)
+            if expected['kind'] == 'focus_probe':
+                focus_progress = record_focus_recovery_attempt(self.state.get('combat_focus_progress'), request['context'],
+                    expected['before_focus'], action_id, expected['direction'])
         state = before.context["state"] if request["kind"] == "combat" else {
             "resources": before["resources"], "facts": before["facts"], "ui": before["ui"]}
         decision = {"schema": "veda.play-telemetry.v1", "operation_id": action_id,
@@ -618,7 +642,9 @@ class ReviewedPlaySession(CombatInputAdapter):
             pending.update(status="attempted", decision_id=receipt["decision_id"],
                            attempted_at=self.clock().isoformat())
             if request['kind'] == 'combat_inspection':
-                self.state['combat_inspection_progress'] = inspection_progress
+                self.state['combat_focus_progress'] = inspection_progress
+            elif request['kind'] == 'combat' and pending['proposal']['expected']['kind'] == 'focus_probe':
+                self.state['combat_focus_progress'] = focus_progress
             self._save()
             self._source(request["source"])
             entered_controller_call = True
@@ -652,17 +678,22 @@ class ReviewedPlaySession(CombatInputAdapter):
         after = _copy(request["after"])
         after["source"] = self._source(after["source"], retain=True)
         before = pending["request"]
-        inspection = before["kind"] == "choice" and pending["proposal"]["step_kind"] == "inspect"
+        inspection = (before["kind"] == "choice" and pending["proposal"]["step_kind"] == "inspect"
+                      or before['kind'] == 'combat_inspection'
+                      or before['kind'] == 'combat' and pending['proposal']['expected']['kind'] in {'clear', 'focus_probe'})
         _require((after["source"]["sha256"] != before["source"]["sha256"]
                   or inspection and after["source"]["path"] != before["source"]["path"])
                  and _time(after["source"]["captured_at"]) > _time(pending["attempted_at"]),
                  "outcome needs a distinct image captured after dispatch")
         observed = self._before(after, check_plan_now=False)
         observed_mismatches = []
+        focus_result = None
         if before['kind'] == 'combat_inspection':
             from .combat_inspection import verify_tooltip_clear
             _require(after['kind'] == 'combat_inspection', 'tooltip result requires the same inspection contract')
-            verify_tooltip_clear(pending['proposal'], before['observation'], observed, now=self.clock())
+            verified = verify_tooltip_clear(pending['proposal'], before['observation'], observed, now=self.clock())
+            focus_result = verified.get('focus_transition')
+            observed_mismatches = verified.get('observed_mismatches', [])
             complete = False
             state = {key: observed[key] for key in ('resources', 'facts', 'ui')}
         elif before["kind"] == "choice":
@@ -680,7 +711,8 @@ class ReviewedPlaySession(CombatInputAdapter):
             verified = verify_combat_observation(original, observed, before['plan']['steps'][0],
                 pending['proposal']['expected'], pending['proposal']['checked'], policy=self.decision_policy)
             complete = verified['logical_action_complete']; observed_mismatches = verified['observed_mismatches']
-            state = observed.context["state"]
+            focus_result = verified.get('focus_transition')
+            state = {**observed.context["state"], 'ui': deepcopy(observed.ui)}
         else:
             complete = self._combat_boundary(pending, after)
             observed_mismatches = deepcopy(getattr(self, '_boundary_mismatches', []))
@@ -714,6 +746,8 @@ class ReviewedPlaySession(CombatInputAdapter):
             "review": deepcopy(observed["review"] if before["kind"] == "choice" else after["review"]),
             'decision_policy': self.decision_policy, 'assessment': deepcopy(pending['proposal'].get('assessment', {})),
             'observed_mismatches': observed_mismatches}
+        if focus_result is not None:
+            verification['focus_transition'] = focus_result
         # Persist exact idempotent outcome before SQLite. If a crash follows its
         # commit, finalize() repeats the same write, never the controller input.
         pending.update(status="verified_pending_log", outcome_request=outcome, outcome_verification=verification,
@@ -970,6 +1004,17 @@ class ReviewedPlaySession(CombatInputAdapter):
                 kwargs["verified_evidence"] = pending["outcome_verification"]
             receipt = self.telemetry.record_outcome(pending["outcome_request"], **kwargs)
             complete = pending["logical_action_complete"]
+            focus_result = pending.get('outcome_verification', {}).get('focus_transition')
+            if focus_result is not None:
+                if pending['request']['kind'] == 'combat':
+                    for row in self.state.get('combat_focus_progress', {}).get('attempts', []):
+                        if row['action_id'] == pending['action_id']:
+                            row['result'] = deepcopy(focus_result)
+                elif (pending['request']['kind'] == 'combat_inspection'
+                      and pending['proposal']['step_kind'] != 'clear_tooltip'):
+                    from .combat_inspection import record_inspection_result
+                    self.state['combat_focus_progress'] = record_inspection_result(
+                        self.state.get('combat_focus_progress'), pending['action_id'], focus_result)
             if (pending["request"]["kind"] == "choice"
                     and pending["proposal"]["step_kind"] == "inspect"):
                 before = pending["request"]["observation"]
@@ -1029,7 +1074,8 @@ class ReviewedPlaySession(CombatInputAdapter):
         return {"status": "verified", "logical_action_complete": complete,
                 "next_context": receipt["next_context"], "requires_fresh_review": True,
                 'decision_policy': self.decision_policy, 'assessment': deepcopy(proof.get('assessment', {})),
-                'observed_mismatches': deepcopy(proof.get('observed_mismatches', []))}
+                'observed_mismatches': deepcopy(proof.get('observed_mismatches', [])),
+                'focus_transition': deepcopy(proof.get('focus_transition'))}
 
     def _map_inspection_budget(self, before, direction):
         """Bound nonprogressing map browsing across captures and adapter restarts."""

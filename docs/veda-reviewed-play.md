@@ -28,7 +28,9 @@ Synthetic tests and a highlighted option do not establish the mapping.
 
 ## Resume the saved run
 
-Use the project launcher for a fresh Luna High session:
+Use the project launcher at a normal Terminal shell prompt for a fresh Luna
+High session. The Codex `›` prompt is an existing task, not a shell; see
+[Terminal launch guidance](veda-orchestrator-launch.md).
 
 ```sh
 ./scripts/orchestrator

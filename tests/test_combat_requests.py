@@ -30,6 +30,8 @@ def draft(ids=None):
         'state': state, 'inventory': inventory, 'encounter': {'name': 'Cultist', 'type': 'enemy', 'confidence': 1.0},
         'perception': {'confidence': 1.0, 'end_turn_damage_confidence': 1.0}, 'unknowns': [],
         'ui': {'phase': 'hand', 'focused_card_id': 's', 'selected_card_id': None,
+               'focus_domain': 'hand', 'tooltip_kind': 'none', 'focused_subject_id': None,
+               'focus_evidence_note': 'Synthetic focused card declaration.',
                'focused_target_id': None, 'hand_order': ['s', 'd'], 'target_order': ['enemy']},
         'plan': {'steps': [{'kind': 'card', 'card_id': 'd'}]},
         'reasoning': 'Synthetic example only: focus and then play the observed Defend; not game evidence.'}
@@ -40,6 +42,8 @@ def result(action_id, *, focus='d', state='unchanged', phase='hand'):
         'inventory': 'unchanged', 'encounter': 'unchanged',
         'perception': {'confidence': 1.0, 'end_turn_damage_confidence': 1.0}, 'unknowns': [],
         'ui': {'phase': phase, 'focused_card_id': focus, 'selected_card_id': 'd' if phase == 'card_selected' else None,
+               'focus_domain': 'hand' if focus else 'none', 'tooltip_kind': 'none', 'focused_subject_id': None,
+               'focus_evidence_note': 'Synthetic actual focused card declaration.',
                'focused_target_id': None, 'hand_order': ['s', 'd'], 'target_order': ['enemy']},
         'observed_result': 'Synthetic inspected after-state and UI; no live game was controlled.'}
 
@@ -103,10 +107,10 @@ class CombatDraftTests(unittest.TestCase):
                   self.assertRaises((ValueError, RuntimeError))):
                 write_combat_request(value, capture='', reviewer='', evidence_note='', reviewed=False, output=self.output)
 
-    def test_tooltip_null_focus_is_reported_as_clear_if_ordinary_plan_passes(self):
+    def test_generic_tooltip_cannot_be_mistaken_for_a_clearable_hand_focus(self):
         self.value['ui'].update(phase='tooltip', focused_card_id=None)
-        checked = validate_combat_draft(self.value)
-        self.assertEqual({'buttons': ['up'], 'expected_kind': 'clear'}, checked['next_atomic_input_preview'])
+        with self.assertRaisesRegex(RuntimeError, 'focus domain'):
+            validate_combat_draft(self.value)
 
     def test_exact_image_review_original_age_and_exclusive_output_remain_required(self):
         for args in ({'reviewed':False}, {'now':self.now+timedelta(seconds=31)},
@@ -154,7 +158,7 @@ class CombatDraftTests(unittest.TestCase):
         with redirect_stdout(output):
             code = main(['--draft', str(path), '--validate'])
         self.assertEqual(2, code)
-        self.assertIn('focus/order', json.loads(output.getvalue())['reason'])
+        self.assertIn('focus', json.loads(output.getvalue())['reason'])
 
 
 class CombatResultTests(unittest.TestCase):
@@ -246,7 +250,7 @@ class CombatResultTests(unittest.TestCase):
     def test_combat_reward_boundary_closes_rows_without_inventing_next_floor(self):
         self.value['plan']['steps'][0] = {'kind':'card','card_id':'s','target':'enemy'}
         self.value['state']['enemies'][0]['hp'] = 6
-        self.value['ui'].update(phase='targeting', selected_card_id='s', focused_target_id='enemy')
+        self.value['ui'].update(phase='targeting', selected_card_id='s', focused_target_id='enemy', focus_domain='enemy')
         prepared = self.prepare_send(arm=True)
         observed = {'schema':'veda.combat-result.v1','action_id':prepared['action_id'], 'inventory':'unchanged',
             'observed_result':'Synthetic reward screen confirms this combat victory.',
@@ -265,7 +269,7 @@ class CombatResultTests(unittest.TestCase):
         self.value['state']['piles']['discard'] = ['Strike']
         self.value['inventory']['current']['card'] = ['Headbutt', 'Defend', 'Strike']
         self.value['plan']['steps'][0] = {'kind':'card','card_id':'s','target':'enemy','return_card':'Strike'}
-        self.value['ui'].update(phase='targeting', selected_card_id='s', focused_target_id='enemy')
+        self.value['ui'].update(phase='targeting', selected_card_id='s', focused_target_id='enemy', focus_domain='enemy')
         prepared = self.prepare_send(arm=True)
         observed = {'schema':'veda.combat-result.v1','action_id':prepared['action_id'], 'inventory':'unchanged',
             'observed_result':'Synthetic Headbutt selection prompt appeared with Strike selectable.',
@@ -309,6 +313,7 @@ class CombatResultTests(unittest.TestCase):
     def test_next_turn_derives_lifecycle_from_actual_state_and_retains_before_as_historical(self):
         self.value['state']['block'] = 6
         self.value['ui']['focused_card_id'] = None
+        self.value['ui']['focus_domain'] = 'none'
         self.value['plan']['steps'] = [{'kind':'end_turn'}]
         prepared = self.prepare_send(arm=True)
         state = deepcopy(self.value['state']); state.update(turn=2, energy=3, block=0)

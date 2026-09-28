@@ -28,7 +28,7 @@ def floor_two_draft():
     value['inventory']['current'].update(relic=['Burning Blood'], potion=['Energy Potion'])
     value['encounter'].update(name='Acid Slime (S) and Spike Slime (M)', confidence=.8)
     value['perception']['confidence'] = .85
-    value['ui'].update(focused_card_id=None, hand_order=['defend-0','defend-1'], target_order=['spike-medium'])
+    value['ui'].update(focused_card_id=None, focus_domain='none', hand_order=['defend-0','defend-1'], target_order=['spike-medium'])
     value['plan'] = {'steps':[{'kind':'end_turn'}]}
     return value
 
@@ -147,6 +147,7 @@ class CompactLearningFlowTests(unittest.TestCase):
         flow = self.flow
         flow.value['state']['unmodeled_effects'] = ['Uncatalogued enemy effect.']
         flow.value['ui']['focused_card_id'] = None
+        flow.value['ui']['focus_domain'] = 'none'
         flow.value['plan']['steps'] = [{'kind':'end_turn'}]
         prepared = flow.prepare_send(arm=True)
         self.assertIsNone(prepared['assessment']['forecast'])

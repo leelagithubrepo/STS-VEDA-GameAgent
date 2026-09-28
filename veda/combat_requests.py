@@ -15,7 +15,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from .decision_policy import POLICIES, assess_combat, assess_observation, plan_shape_reasons
 from .choice_execution import _checked, _context, _observation, _require
-from .combat_input import CombatInputAdapter
+from .combat_input import CombatInputAdapter, FOCUS_FIELDS, validate_combat_focus
 from .controller_state_machine import ControllerStateMachine
 from .execution import Reading
 from .menu_requests import _inventory, _json, _text, read_menu_draft
@@ -86,9 +86,9 @@ def _reading(value, checked):
              'unknowns must be explicit bounded descriptions')
     ui = deepcopy(value['ui'])
     _require(isinstance(ui, dict) and not set(ui) - {'screen_type', 'phase', 'focused_card_id',
-        'selected_card_id', 'focused_target_id', 'hand_order', 'target_order'}
+        'selected_card_id', 'focused_target_id', 'hand_order', 'target_order', 'control_profile', 'recovery_direction'} - FOCUS_FIELDS
         and ui.get('screen_type', 'combat') == 'combat'
-        and ui.get('phase') in {'hand', 'card_selected', 'targeting', 'tooltip'}
+        and ui.get('phase') in {'hand', 'card_selected', 'targeting', 'tooltip', 'inspect'}
         and {'phase', 'focused_card_id', 'selected_card_id', 'focused_target_id', 'hand_order'} <= set(ui),
         'combat UI needs explicit phase, focus, selection and hand order; no source or controls')
     ui['screen_type'] = 'combat'
@@ -96,6 +96,7 @@ def _reading(value, checked):
                                     'unknowns': value['unknowns']}, policy=policy)
     _require(shape['allowed'], 'invalid reviewed combat: ' + '; '.join(shape['hard_reasons']))
     cards = state['hand']; enemies = state['enemies']
+    validate_combat_focus(ui, [card['id'] for card in cards], require_explicit=policy == 'learning')
     visible = []
     for enemy in enemies:
         hits = enemy.get('intent_hits')

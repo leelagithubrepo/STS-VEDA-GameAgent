@@ -84,13 +84,18 @@
   },
   "ui": {
     "screen": "combat",
-    "phase": "tooltip",
+    "phase": "inspect",
     "tooltip_visible": true,
     "focused_card_id": null,
     "selected_card_id": null,
     "focused_target_id": null,
     "selected_target_id": null,
-    "tooltip_subject_id": "left"
+    "tooltip_subject_id": "left",
+    "focus_domain": "enemy",
+    "tooltip_kind": "enemy",
+    "focused_subject_id": "left",
+    "focus_evidence_note": "Synthetic example: the left enemy inspection tooltip is focused, with no raised or selected hand card."
   },
-  "reasoning": "Dismiss observed tooltip, then inspect the newly visible UI before selecting any card."
+  "reasoning": "Explore one navigation step from the observed enemy focus, inspect its actual destination, then choose the next input.",
+  "decision_policy": "learning"
 }

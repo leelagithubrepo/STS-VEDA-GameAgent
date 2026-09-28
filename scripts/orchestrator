@@ -6,6 +6,7 @@ from pathlib import Path
 import shlex
 import shutil
 import sqlite3
+import subprocess
 import sys
 from uuid import UUID
 
@@ -15,6 +16,52 @@ def run_identity(value):
         return str(UUID(value))
     except ValueError as error:
         raise argparse.ArgumentTypeError('run ID must be a UUID') from error
+
+
+def _parent_process(pid):
+    """Read names only, never command arguments or unrelated process details."""
+    result = subprocess.run(['/bin/ps', '-p', str(pid), '-o', 'ppid=', '-o', 'comm='],
+                            capture_output=True, text=True, timeout=.2, check=False)
+    fields = result.stdout.strip().split(None, 1)
+    if result.returncode or len(fields) != 2:
+        return None
+    return int(fields[0]), fields[1]
+
+
+def _nested_launch_reason():
+    # Thread IDs can leak into an ordinary terminal. They alone must never
+    # reject a launch. Prefer actual ancestry and stop at an interactive host.
+    execution_shell = (os.environ.get('CODEX_SHELL') == '1'
+                       and os.environ.get('CODEX_CI') == '1'
+                       and bool(os.environ.get('CODEX_THREAD_ID') or os.environ.get('CODEX_SESSION_ID')))
+    terminals = {'terminal', 'iterm', 'iterm2', 'alacritty', 'kitty', 'wezterm', 'wezterm-gui',
+                 'gnome-terminal-server', 'konsole', 'login', 'sshd', 'tmux', 'screen'}
+    pid, seen = os.getppid(), set()
+    for _ in range(6):
+        if pid <= 1 or pid in seen:
+            return None
+        seen.add(pid)
+        try:
+            process = _parent_process(pid)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            break
+        if process is None:
+            break
+        parent, executable = process
+        name = Path(executable).name.casefold()
+        if name in terminals or name.startswith('tmux:'):
+            return None
+        # The desktop app can host ordinary terminals too. Its main app
+        # executable is not proof of a tool-executed Codex shell.
+        if '/Contents/MacOS/' in executable and name in {'codex', 'chatgpt'}:
+            return None
+        if name in {'codex', 'codex.exe'}:
+            return 'codex_parent_process'
+        pid = parent
+    # The shell tool may deny process inspection. Its combined execution-only
+    # markers still identify this context; a lone inherited app/thread marker
+    # is deliberately insufficient.
+    return 'codex_execution_shell' if execution_shell else None
 
 
 def main():
@@ -72,6 +119,13 @@ def main():
     if args.print_command:
         print(shlex.join(command))
         return 0
+    if _nested_launch_reason():
+        print('This launcher is running inside an existing Codex task. No second session was started.\n'
+              'The › prompt is Codex; the % or $ prompt in a Terminal tab is the shell.\n'
+              'To continue this task, give it a play instruction instead of launching Orchestrator again.\n'
+              'For a fresh Luna High task, first ask the current play task to stop and release its controller, '
+              'then run this launcher from a new Terminal tab.', file=sys.stderr, flush=True)
+        return 2
     executable = shutil.which('codex')
     if executable is None:
         parser.exit(2, 'Codex CLI was not found on PATH.\n')

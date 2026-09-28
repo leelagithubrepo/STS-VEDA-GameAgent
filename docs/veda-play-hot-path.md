@@ -71,8 +71,8 @@ Finish strategy, rule retrieval and draft validation **before** the fresh action
 image. The action image starts the unchanged 30-second freshness window.
 
 - Combat: use [compact combat](veda-combat-play.md).
-- Visible enemy tooltip: clear it with [tooltip inspection](veda-combat-play.md#clear-an-enemy-tooltip),
-  then inspect newly revealed facts before planning a card. Never guess focus.
+- Combat focus outside the hand: use [focus recovery](veda-combat-play.md#combat-focus),
+  then inspect the actual destination. A raised card's keyword help is hand focus.
 - Menus: use [menu controls](veda-menu-controls.md).
 - Map: use [map survey and route planning](veda-map-play.md).
 

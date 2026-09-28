@@ -20,7 +20,11 @@
     ],
     "target_order": [
       "enemy"
-    ]
+    ],
+    "focus_domain": "hand",
+    "tooltip_kind": "none",
+    "focused_subject_id": null,
+    "focus_evidence_note": "Synthetic example: card d is visibly raised in the hand."
   },
   "observed_result": "Synthetic inspected after-state and UI; no live game was controlled."
 }

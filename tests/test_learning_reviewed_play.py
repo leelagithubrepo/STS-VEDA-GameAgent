@@ -56,6 +56,7 @@ class LearningRuntimeTests(unittest.TestCase):
         f = self.f
         f.before['plan'] = {'steps': [{'kind': 'end_turn'}]}
         f.before['reading']['ui']['focused_card_id'] = None
+        f.before['reading']['ui']['focus_domain'] = 'none'
         for state in (f.before['reading']['context']['state'], f.before['reading']['state']):
             enemy = state['enemies'][0]
             enemy.update(intent=None, intent_hits=None)

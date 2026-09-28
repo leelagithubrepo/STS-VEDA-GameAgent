@@ -494,7 +494,46 @@ class PlayTelemetry:
             receipt = self._receipt("resume", req, recorded, checkpoint_id=checkpoint, status="resumed")
             return self._finish(db, event, req, digest, receipt)
 
-    def _outcome_guard(self, db, req, captured, *, reviewed_inspection=False):
+    @staticmethod
+    def _unchanged_focus_review(original, req, proof):
+        """A later reviewed no-progress frame resolves navigation, never a card.
+
+        Identical pixels can be the truthful result of a focus probe. Keep this
+        exception narrower than the general verified-action path.
+        """
+        if not isinstance(proof, dict) or proof.get('basis') != 'fresh_verified_result':
+            return False
+        action = original.get('action', {})
+        expected = action.get('expected', {}).get('kind')
+        if (action.get('kind') != 'navigation'
+                or not (expected in {'clear', 'focus_probe'}
+                        or action.get('inspection') in {'clear_tooltip', 'inspect_focus'})):
+            return False
+        transition = proof.get('focus_transition')
+        if not isinstance(transition, dict) or transition.get('returned_to_hand') is not False:
+            return False
+        before, after = transition.get('before'), transition.get('after')
+        keys = {'domain', 'tooltip_kind', 'subject_id', 'focused_card_id', 'selected_card_id'}
+        if not isinstance(before, dict) or not isinstance(after, dict) or set(before) != keys or set(after) != keys:
+            return False
+        if (after['domain'] not in {'player_status', 'relic', 'potion', 'enemy'}
+                or after['tooltip_kind'] not in {after['domain'], 'none'}
+                or not isinstance(after['subject_id'], str) or not after['subject_id'].strip()
+                or after['focused_card_id'] is not None or after['selected_card_id'] is not None):
+            return False
+        same = transition.get('effect') == 'unchanged' and before == after
+        observed_legacy = (transition.get('effect') == 'focus_observed' and before['domain'] == 'unknown'
+                           and before['selected_card_id'] is None and before['focused_card_id'] is None)
+        if not (same or observed_legacy):
+            return False
+        def facts(state):
+            return {k: v for k, v in state.items() if k not in {'observed_at', 'ui'}}
+        return (facts(original.get('state', {})) == facts(req['state'])
+                and req['source']['path'] != original['source']['path']
+                and not any(req.get(k) for k in ('inventory_events', 'inventory_baseline', 'zone_events',
+                                                 'zone_baseline', 'transitions')))
+
+    def _outcome_guard(self, db, req, captured, *, reviewed_inspection=False, focus_review=None):
         row = db.execute("SELECT d.*,e.payload_json FROM decisions d JOIN evidence_events e ON e.id=d.event_id WHERE d.id=?",
                          (req["decision_id"],)).fetchone()
         if row is None or row["status"] != "recommended":
@@ -524,7 +563,7 @@ class PlayTelemetry:
                 and all(_json(after.get(k)) == _json(before.get(k)) for k in ("resources", "facts"))
                 and not any(req.get(k) for k in ("inventory_events", "inventory_baseline", "zone_events",
                                                "zone_baseline", "transitions")))
-            if not inspection_only:
+            if not inspection_only and not self._unchanged_focus_review(original, req, focus_review):
                 raise ValueError("unchanged source bytes do not establish a performed action")
         pause_reconciled = False
         if self._revision(db, req["context"]["run_id"]) != prior["revision"]:
@@ -571,7 +610,8 @@ class PlayTelemetry:
                 recorded = clock.isoformat()
             original, pause_reconciled = self._outcome_guard(db, req, captured,
                 reviewed_inspection=verified_evidence is not None
-                    and verified_evidence.get("basis") == "fresh_verified_result")
+                    and verified_evidence.get("basis") == "fresh_verified_result",
+                focus_review=verified_evidence)
             if verified_evidence is not None and original["operation_id"] != verified_evidence["action_id"]:
                 raise ValueError("durable review belongs to a different input")
             ids = {"inventory": [], "zones": [], "inventory_baseline": None, "zone_baseline": None}
@@ -598,7 +638,7 @@ class PlayTelemetry:
                 # turn a forecast into a game fact.
                 if verified_evidence is not None:
                     learning = {key: proof[key] for key in
-                                ("decision_policy", "assessment", "observed_mismatches") if key in proof}
+                                ("decision_policy", "assessment", "observed_mismatches", "focus_transition") if key in proof}
                     if learning:
                         actual["learning"] = learning
                 self.database.resolve_decision(decision_id=req["decision_id"], chosen_action=original["action"],

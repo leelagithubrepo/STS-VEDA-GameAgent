@@ -22,11 +22,11 @@ class ControllerStateMachineTests(unittest.TestCase):
         step = machine.plan_card_step(self.combat, card_name="Defend", focus_button="right")
         self.assertEqual(step["buttons"], ["right"])
 
-    def test_end_turn_clears_focus_before_triangle(self):
+    def test_end_turn_does_not_move_card_focus_up_to_statuses(self):
         machine = ControllerStateMachine()
         clear = machine.plan_end_turn({**self.combat, "selected_item": "Defend"})
         commit = machine.plan_end_turn(self.combat)
-        self.assertEqual(clear["buttons"], ["up"])
+        self.assertEqual(clear["buttons"], ["triangle"])
         self.assertEqual(commit["buttons"], ["triangle"])
 
     def test_noncombat_is_fail_closed(self):

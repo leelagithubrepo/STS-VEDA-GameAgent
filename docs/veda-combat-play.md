@@ -92,6 +92,13 @@ as a forecast mismatch in learning mode; it does not invalidate proven card
 resolution. Pending delivery/result uncertainty needs inspection, never replay. A `verified_pending_log` result needs
 `finalize`, not replay.
 
+For consecutive focus/selection steps, reuse the just-inspected stable result
+image for the next request if the original capture is still fresh, no input
+has intervened, and all next-draft facts match it. Finalize the pending outcome
+first, then bind and submit the next input. This saves a redundant capture; it
+does not renew the timestamp or permit a second input without observing the
+first. Keep distinct output filenames for each request and result.
+
 For a new turn, use the actual after-state and `next_turn:{turn_number:N}`;
 the helper derives the turn transition and provisional ID, then SQLite returns
 canonical IDs. Never invent draws or intents to complete a turn record.
@@ -103,37 +110,62 @@ actual `facts.combat_outcome` (`win` or `loss`); a card selection needs actual
 `facts.selection_cause_card_id`. The helper produces result-only UI and existing
 lifecycle records. Review the next menu separately before acting on it.
 
-## Clear an enemy tooltip
+## Combat focus
 
-Tooltip dismissal is an inspection, not a card or End Turn. It can preserve an
-unread enemy effect as unknown while exposing the hand. Use the
-[synthetic tooltip draft](examples/tooltip-draft.json), replacing its IDs and
-observations. Require an actually visible tooltip, its subject, no selected
-card or target, actual player resources and explicit unknowns. Do not claim
-card focus while the enemy tooltip is selected.
+Record `focus_domain`, `tooltip_kind`, `focused_subject_id` and
+`focus_evidence_note` from the actual image. A raised hand card showing its
+Block or other keyword explanation stays `phase:"hand"`,
+`focus_domain:"hand"`, `tooltip_kind:"card_keyword"`; use its real
+`focused_card_id` and ordinary horizontal navigation. The keyword explanation
+is not a modal to dismiss. End Turn from ordinary hand focus uses Triangle.
 
-The example declares deck coverage unknown; visible hand cards do not establish
-the full deck. Use actual confirmed inventory when available and preserve its
-coverage. Add `decision_policy:"learning"` to the inspection draft to retain
-unknown relic/potion coverage too; strict inspection keeps its earlier
-completeness requirement.
+Player status, relic, potion and enemy inspection use their actual domain and
+subject, with no selected card. A recovery input is one observed navigation
+attempt; its intended destination is not an established result. The default
+Down recovery is exploratory until that transition has been observed on this
+console. Do not repeatedly send Up to clear arbitrary help text: the retained
+live sequence moved from hand to player status, then relic, then potion.
 
-Use `veda_inspect.py` with the same draft/validate then exact-capture binding
-sequence above, adding `--control-profile ps5-default-cross-confirm-v1`.
-Its only command is the existing default-profile **Up** tooltip-clear rule;
-the profile is not proof of a successful live transition or remapped controls.
+In a compact combat draft, add `control_profile:"ps5-default-cross-confirm-v1"`
+to this nonhand `ui`. Down is the default. Only after its result is verified
+and logged unchanged at that same domain and subject may the next fresh draft
+set `recovery_direction:"circle"` for one exploratory cancel/back input.
+Stay with the same helper while resolving a recovery sequence so its saved
+attempt history supplies the next step.
+
+Result drafts describe the actual focus even when it stayed put or moved to a
+different inspection area. Such a result can finish logging a navigation
+attempt without completing a card or claiming return to the hand. Follow the
+returned recovery guidance; each next input needs its own fresh observation.
+Actual card completion still requires the observed card effect and hand change.
+
+## Inspect an enemy tooltip
+
+Focus recovery is an inspection, not a card or End Turn. The
+[synthetic inspection draft](examples/tooltip-draft.json) preserves an unread
+enemy effect while reviewing the actual focus. Replace all IDs and facts with
+observed values. Keep inventory coverage and unknowns explicit; an inspection
+does not establish a complete deck or identify an unread effect.
+
+Use `veda_inspect.py` with the same draft/validate and exact-capture binding
+sequence, adding `--control-profile ps5-default-cross-confirm-v1`.
+Declare `decision_policy:"learning"`. The helper proposes one exploratory Down.
+After its result is verified and logged unchanged at the same focus, submit a
+newly reviewed inspection draft; the adapter proposes one Circle fallback from
+its saved attempt history. Neither proposal asserts that the hand will be reached. The old generic
+Up rule is accepted only to reconcile an already attempted legacy input.
 
 The result is `veda.combat-inspection-result.v1` with the pending `action_id`,
-actual `ui` and `observed_result`. For a cleared tooltip, UI contains
-`screen:"combat"`, `phase:"hand"`, `tooltip_visible:false`, actual
-`focused_card_id` or null, and null `selected_card_id`, `focused_target_id`,
-`selected_target_id`, `tooltip_subject_id`. The helper preserves all prior
-facts, resources, inventory and unknowns; reviewing that invariant is part of
-the result declaration. Newly revealed facts belong in the **next** combat
-draft, not a claim that dismissal changed the enemy.
+actual `ui` and `observed_result`. Include the four focus fields above and the
+inspection fields `screen`, `phase`, `tooltip_visible`, `focused_card_id`,
+`selected_card_id`, `focused_target_id`, `selected_target_id` and
+`tooltip_subject_id`. Nonhand focus remains `phase:"inspect"` and names its
+actual subject. A return to hand names the raised card; its keyword help may
+still be visible. Do not call that help a blocking dialog.
 
-Use `--result ... --session ... --validate`, then a fresh inspected image and
-`--reviewed --output ...` as above. No result uses `--execute`. One attempted
-clear consumes the unchanged-state budget, including after restart. If it did
-not visibly clear, preserve the pending action and diagnose the actual result;
-never send Up repeatedly or substitute Cross/End Turn.
+Use `--result ... --session ... --validate`, then bind a fresh inspected image
+and submit its pointer. No result uses `--execute`. The result preserves prior
+resources, inventory, facts and unknowns; newly revealed game facts belong in
+the next combat draft. Attempts are remembered across captures and restarts,
+so repeated no-progress inputs cannot masquerade as successful clears. Record
+the actual result before choosing another navigation or gameplay action.

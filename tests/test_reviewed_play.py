@@ -118,6 +118,12 @@ class ReviewedPlayTests(unittest.TestCase):
         c["state"]["observed_at"] = source["captured_at"]
         ui = {"screen_type": "combat", "phase": "hand", "hand_order": [c["id"] for c in c["state"]["hand"]],
               "focused_card_id": focus, "selected_card_id": None, "focused_target_id": None, **(ui_override or {})}
+        ui.update(focus_domain=('enemy' if ui['phase'] == 'targeting' else 'hand'
+                                if ui.get('focused_card_id') or ui.get('selected_card_id') else 'none'),
+                  tooltip_kind='none', focused_subject_id=None,
+                  focus_evidence_note='Synthetic declared focus only; not recognition from pixels.')
+        ui.update({k: v for k, v in (ui_override or {}).items()
+                   if k in {'focus_domain', 'tooltip_kind', 'focused_subject_id', 'focus_evidence_note'}})
         data = reading(c, ui, turn=self.context_ids["turn_id"])
         data.update(run_id=self.context_ids["run_id"], floor_id=self.context_ids["floor_id"], frame_id=f"frame-{number}", image_sha256=source["sha256"])
         return {"operation": "prepare", "kind": "combat", "source": source, "context": dict(self.context_ids),

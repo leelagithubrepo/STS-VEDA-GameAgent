@@ -28,10 +28,12 @@ def draft():
                   'enemies': [{'id': 'left', 'name': 'Louse', 'hp': 9, 'max_hp': 15, 'block': 4, 'intent_hits': [8]},
                               {'id': 'right', 'name': None, 'hp': 17, 'max_hp': 17, 'block': None, 'intent_hits': [7]}],
                   'unknowns': ['Right enemy species and blue icon meaning are occluded.']},
-        'ui': {'screen': 'combat', 'phase': 'tooltip', 'tooltip_visible': True,
+        'ui': {'screen': 'combat', 'phase': 'inspect', 'tooltip_visible': True,
                'focused_card_id': None, 'selected_card_id': None, 'focused_target_id': None,
-               'selected_target_id': None, 'tooltip_subject_id': 'left'},
-        'reasoning': 'Dismiss observed tooltip, then inspect the newly visible UI before selecting any card.'}
+               'selected_target_id': None, 'tooltip_subject_id': 'left',
+               'focus_domain': 'enemy', 'tooltip_kind': 'enemy', 'focused_subject_id': 'left',
+               'focus_evidence_note': 'Enemy focus brackets and enemy tooltip; no raised hand card.'},
+        'reasoning': 'Explore Down once from observed enemy focus, then inspect the actual focus before selecting a card.'}
 
 
 class CombatInspectionTests(unittest.TestCase):
@@ -51,21 +53,23 @@ class CombatInspectionTests(unittest.TestCase):
                'context': value['context'], 'inventory_digest': inventory_digest(value['inventory']),
                'resources': value['resources'], 'facts': value['facts'], 'ui': value['ui']}
         if after:
-            obs['ui'].update(phase='hand', tooltip_visible=False, tooltip_subject_id=None, focused_card_id='c1')
+            obs['ui'].update(phase='hand', tooltip_visible=False, tooltip_subject_id=None, focused_card_id='c1',
+                             focus_domain='hand', tooltip_kind='none', focused_subject_id=None,
+                             focus_evidence_note='First Defend visibly raised; hand focus confirmed.')
             obs['review']['outcome'] = {'action_id': 'action', 'before_frame_id': 'before', 'before_sha256': 'a' * 64,
-                                       'inspection': 'clear_tooltip', 'observed_result': 'Tooltip visibly cleared.'}
+                                       'inspection': 'inspect_focus', 'observed_result': 'First Defend is visibly raised.'}
         return obs
 
     def plan(self, value=None, **kwargs):
         return inspection.plan_tooltip_clear(self.observation(value), control_profile=inspection.CONTROL_PROFILE,
                                             action_id='action', now=self.now, **kwargs)
 
-    def test_unknown_enemy_does_not_block_one_up_or_authorize_card_or_end_turn(self):
+    def test_unknown_enemy_does_not_block_one_down_or_authorize_card_or_end_turn(self):
         obs = self.observation()
         before = deepcopy(obs)
         plan = self.plan()
-        self.assertEqual({'action': 'tap', 'buttons': ['up'], 'request_id': 'action'}, plan['command'])
-        self.assertEqual('clear_tooltip', plan['step_kind'])
+        self.assertEqual({'action': 'tap', 'buttons': ['down'], 'request_id': 'action'}, plan['command'])
+        self.assertEqual('inspect_focus', plan['step_kind'])
         self.assertFalse(plan['controller_authorized']); self.assertFalse(plan['runtime_authorized'])
         result = inspection.verify_tooltip_clear(plan, obs, self.observation(after=True), now=self.now+timedelta(seconds=1))
         self.assertTrue(result['step_verified']); self.assertFalse(result['logical_action_complete'])
@@ -91,7 +95,7 @@ class CombatInspectionTests(unittest.TestCase):
             inspection.plan_tooltip_clear(self.observation(), control_profile=inspection.CONTROL_PROFILE,
                                          now=self.now+timedelta(seconds=31))
 
-    def test_fresh_capture_does_not_reset_consumed_one_attempt_budget(self):
+    def test_fresh_capture_does_not_reset_budget_and_circle_needs_verified_unchanged_down(self):
         before = self.observation()
         progress = inspection.record_inspection_attempt(None, before, 'action')
         replacement = deepcopy(before); replacement['frame'].update(frame_id='new', image_sha256='c'*64)
@@ -103,6 +107,105 @@ class CombatInspectionTests(unittest.TestCase):
         self.assertEqual(progress, inspection.record_inspection_attempt(progress, before, 'action'))
         with self.assertRaises(ValueError):
             inspection.record_inspection_attempt(progress, before, 'other-action')
+        after = self.observation(after=True); after['ui'] = deepcopy(before['ui'])
+        verified = inspection.verify_tooltip_clear(self.plan(), before, after, now=self.now+timedelta(seconds=1))
+        progress = inspection.record_inspection_result(progress, 'action', verified['focus_transition'])
+        circle = inspection.plan_tooltip_clear(replacement, control_profile=inspection.CONTROL_PROFILE,
+                                               now=self.now, progress=progress, action_id='circle')
+        self.assertEqual(['circle'], circle['command']['buttons'])
+        inspection.validate_inspection_proposal(circle, replacement, now=self.now, progress=progress)
+        with self.assertRaises(ValueError):
+            inspection.validate_inspection_proposal(circle, replacement, now=self.now)
+        progress = inspection.record_inspection_attempt(progress, replacement, 'circle')
+        with self.assertRaisesRegex(ValueError, 'already attempted'):
+            inspection.plan_tooltip_clear(replacement, control_profile=inspection.CONTROL_PROFILE,
+                                           now=self.now, progress=progress)
+
+    def test_shared_generic_budget_and_same_turn_resources_cannot_reset_inspection(self):
+        from veda.combat_input import record_focus_recovery_attempt, validate_combat_focus
+        before = self.observation()
+        focus = validate_combat_focus(before['ui'], ['c1', 'c2', 'c3', 'c4'])
+        progress = record_focus_recovery_attempt(None, before['context'], focus, 'other-path', 'down')
+        before['resources']['block'] += 1
+        with self.assertRaisesRegex(ValueError, 'already attempted'):
+            inspection.plan_tooltip_clear(before, control_profile=inspection.CONTROL_PROFILE, now=self.now, progress=progress)
+
+    def test_inspection_budget_is_consumed_by_generic_combat_path_and_retains_alternative(self):
+        from veda.combat_input import RuntimeStop, record_focus_recovery_attempt, validate_combat_focus
+        before = self.observation()
+        focus = validate_combat_focus(before['ui'], ['c1', 'c2', 'c3', 'c4'])
+        progress = inspection.record_inspection_attempt(None, before, 'inspection-down')
+        with self.assertRaises(RuntimeStop):
+            record_focus_recovery_attempt(progress, before['context'], focus, 'generic-down', 'down')
+        with self.assertRaises(RuntimeStop):
+            record_focus_recovery_attempt(progress, before['context'], focus, 'generic-circle', 'circle')
+        after = self.observation(after=True); after['ui'] = deepcopy(before['ui'])
+        plan = inspection.plan_tooltip_clear(before, control_profile=inspection.CONTROL_PROFILE,
+                                             action_id='inspection-down', now=self.now)
+        after['review']['outcome']['action_id'] = 'inspection-down'
+        verified = inspection.verify_tooltip_clear(plan, before, after, now=self.now+timedelta(seconds=1))
+        progress = inspection.record_inspection_result(progress, 'inspection-down', verified['focus_transition'])
+        progress = record_focus_recovery_attempt(progress, before['context'], focus, 'generic-circle', 'circle')
+        self.assertEqual(['down', 'circle'], [a['button'] for a in progress['attempts']])
+        with self.assertRaisesRegex(ValueError, 'already attempted'):
+            inspection.plan_tooltip_clear(before, control_profile=inspection.CONTROL_PROFILE, now=self.now, progress=progress)
+
+    def test_raised_hand_keyword_tooltip_is_not_a_focus_recovery_request(self):
+        value = deepcopy(self.value)
+        value['ui'].update(phase='hand', focus_domain='hand', tooltip_kind='card_keyword',
+                           focused_card_id='c1', focused_subject_id=None, tooltip_subject_id='c1')
+        with self.assertRaisesRegex(ValueError, 'already in hand'):
+            self.plan(value)
+
+    def test_distinct_later_identical_image_confirms_unchanged_focus_only(self):
+        before, plan = self.observation(), self.plan()
+        after = self.observation(after=True); after['ui'] = deepcopy(before['ui'])
+        after['frame']['image_sha256'] = after['review']['image_sha256'] = 'a'*64
+        result = inspection.verify_tooltip_clear(plan, before, after, now=self.now+timedelta(seconds=1))
+        self.assertEqual('unchanged', result['focus_transition']['effect'])
+        self.assertFalse(result['returned_to_hand'])
+        after['frame']['frame_id'] = after['review']['frame_id'] = 'before'
+        with self.assertRaises(ValueError):
+            inspection.verify_tooltip_clear(plan, before, after, now=self.now+timedelta(seconds=1))
+
+    def test_legacy_up_can_only_reconcile_actual_away_focus_never_dispatch(self):
+        before = self.observation()
+        for key in inspection._FOCUS_KEYS: before['ui'].pop(key)
+        before['ui']['phase'] = 'tooltip'
+        plan = {'schema': inspection.PLAN_SCHEMA, 'action_id': 'action', 'step_kind': 'clear_tooltip',
+            'control_profile': inspection.CONTROL_PROFILE, 'before_digest': inspection._digest(before),
+            'scope': inspection._digest(inspection._core(before)), 'before_frame': deepcopy(before['frame']),
+            'max_age_seconds': 30, 'command': {'action': 'tap', 'buttons': ['up'], 'request_id': 'action'},
+            'runtime_authorized': False, 'controller_authorized': False}
+        plan['proposal_digest'] = inspection._digest(plan)
+        after = self.observation(after=True); after['ui'] = deepcopy(self.value['ui'])
+        after['ui'].update(focus_domain='potion', tooltip_kind='potion', focused_subject_id='energy-potion',
+                           tooltip_subject_id='energy-potion', focus_evidence_note='Energy Potion toolbar slot highlighted.')
+        after['review']['outcome']['inspection'] = 'clear_tooltip'
+        result = inspection.verify_tooltip_clear(plan, before, after, now=self.now+timedelta(seconds=1))
+        self.assertEqual('focus_observed', result['focus_transition']['effect'])
+        self.assertFalse(result['returned_to_hand']); self.assertFalse(result['logical_action_complete'])
+        self.assertTrue(result['observed_mismatches'])
+        # The old metadata did not identify focus. A later separate capture with
+        # identical pixels may truthfully identify the non-hand domain now;
+        # it does not establish a transition or permit a card.
+        after['frame']['image_sha256'] = after['review']['image_sha256'] = 'a'*64
+        result = inspection.verify_tooltip_clear(plan, before, after, now=self.now+timedelta(seconds=1))
+        self.assertEqual('focus_observed', result['focus_transition']['effect'])
+        after['ui'] = self.observation(after=True)['ui']
+        with self.assertRaisesRegex(ValueError, 'cannot prove changed focus or hand return'):
+            inspection.verify_tooltip_clear(plan, before, after, now=self.now+timedelta(seconds=1))
+        with self.assertRaisesRegex(ValueError, 'reconciliation-only'):
+            inspection.validate_inspection_proposal(plan, before, now=self.now)
+
+    def test_total_budget_does_not_reset_when_focus_subject_changes(self):
+        before = self.observation(); progress = None
+        for index in range(8):
+            before['ui'].update(focused_subject_id=str(index), tooltip_subject_id=str(index))
+            progress = inspection.record_inspection_attempt(progress, before, f'a{index}')
+        before['ui'].update(focused_subject_id='other', tooltip_subject_id='other')
+        with self.assertRaisesRegex(ValueError, 'budget reached'):
+            inspection.plan_tooltip_clear(before, control_profile=inspection.CONTROL_PROFILE, now=self.now, progress=progress)
 
     def test_result_must_leave_tooltip_and_preserve_every_known_fact(self):
         plan, before = self.plan(), self.observation()
@@ -157,6 +260,8 @@ class CombatInspectionTests(unittest.TestCase):
         self.assertFalse(set(result)&{'source','command','request_file','operation'})
         bad = deepcopy(self.value); bad['source'] = {}
         with self.assertRaises(ValueError): inspection.validate_inspection_draft(bad)
+        bad = deepcopy(self.value); bad['reasoning'] = 'x'*257
+        with self.assertRaisesRegex(ValueError, '256 characters'): inspection.validate_inspection_draft(bad)
 
     def test_request_receipt_binding_is_exclusive_and_declares_execute_without_sending(self):
         packet, image = self.request()

@@ -1,0 +1,12 @@
+{
+  "evidence_kind": "manually_reviewed_retained_screens_not_automatic_recognition",
+  "run_id": "498dd5a7-02cb-46af-9e3a-7179e8d58ccb",
+  "note": "The old result packets described Frail/Burning Blood/Energy Potion tooltips but labeled each phase hand. These annotations preserve the actual visible focus instead.",
+  "hand_ids": ["defend-2", "defend-3", "strike-3", "strike-4", "uppercut-0"],
+  "frames": [
+    {"captured_at": "2026-09-28T04:59:14.670116Z", "sha256": "e982436cc442500f65f44e5cdfd3fa3f9f906ff2d6f7e52f7f6fb9d907ae7519", "phase": "hand", "focus_domain": "hand", "tooltip_kind": "card_keyword", "focused_subject_id": null, "focused_card_id": "defend-2", "focus_evidence_note": "Leftmost Defend is raised and outlined; Block keyword help is beside that card."},
+    {"captured_at": "2026-09-28T05:00:46.901166Z", "sha256": "d34a8984003c4d9ea91dfacfc889e748e037b3197ebd1d56dbc14f1cc3dffddf", "phase": "inspect", "focus_domain": "player_status", "tooltip_kind": "player_status", "focused_subject_id": "player:frail", "focused_card_id": null, "focus_evidence_note": "Player has four yellow focus brackets and a Frail description; no hand card is raised."},
+    {"captured_at": "2026-09-28T05:03:37.957807Z", "sha256": "6cf8985a1ccbf14b9b98ee7e51cf7a6b6f467724b364e9270b834cef157275cb", "phase": "inspect", "focus_domain": "relic", "tooltip_kind": "relic", "focused_subject_id": "relic:burning-blood", "focused_card_id": null, "focus_evidence_note": "Burning Blood icon has the yellow outline and its description; hand cards are not raised."},
+    {"captured_at": "2026-09-28T05:08:09.221113Z", "sha256": "854d5bbd4e1d3d6bc637946b72839337e292f51be90fcea656cb690b9c057297", "phase": "inspect", "focus_domain": "potion", "tooltip_kind": "potion", "focused_subject_id": "potion:slot-1", "focused_card_id": null, "focus_evidence_note": "Potion tray has the yellow focus outline and Energy Potion description; hand remains unraised."}
+  ]
+}

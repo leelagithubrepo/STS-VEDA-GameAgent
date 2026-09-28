@@ -66,22 +66,25 @@ class CombatInspectionFlowTests(unittest.TestCase):
         packet=self.packet();self.arm(packet)
         return self.session.handle(packet)
 
-    def result(self, action_id):
-        ui=deepcopy(self.value['ui']);ui.update(phase='hand',tooltip_visible=False,tooltip_subject_id=None,
-                                               focused_card_id='c1')
+    def result(self, action_id, unchanged=False):
+        ui=deepcopy(self.value['ui'])
+        if not unchanged:
+            ui.update(phase='hand',tooltip_visible=False,tooltip_subject_id=None,focused_card_id='c1',
+                      focus_domain='hand',tooltip_kind='none',focused_subject_id=None,
+                      focus_evidence_note='First Defend visibly raised; hand focus confirmed.')
         result={'schema':RESULT_SCHEMA,'action_id':action_id,'ui':ui,
-                'observed_result':'Tooltip visibly cleared; known game state unchanged.'}
+                'observed_result':'Actual focus inspected; known game state unchanged.'}
         source=self.capture();output=self.root/f'result-{self.serial}.json'
         write_inspection_result(result,session=self.session.path,action_id=action_id,capture=source,
             reviewer='Fixture',evidence_note='Synthetic actual hand UI reviewed.',reviewed=True,output=output,now=self.now)
         return json.loads(output.read_text())
 
-    def test_execute_one_up_then_verify_retains_unknowns_inventory_and_known_zones(self):
+    def test_execute_one_down_then_verify_retains_unknowns_inventory_and_known_zones(self):
         inventory=self.db.inventory_ledger(run_id=self.run)
         zones=self.db.combat_zone_state(combat_id=self.context['combat_id'])
         sent=self.send()
         self.assertEqual('awaiting_fresh_review',sent['status'])
-        self.assertEqual([['up']],[r['buttons'] for r in self.controller.inputs])
+        self.assertEqual([['down']],[r['buttons'] for r in self.controller.inputs])
         action=sent['action_id'];packet=self.result(action)
         verified=self.session.handle(packet)
         self.assertEqual('verified',verified['status']);self.assertFalse(verified['logical_action_complete'])
@@ -94,12 +97,16 @@ class CombatInspectionFlowTests(unittest.TestCase):
 
     def test_attempt_budget_survives_restart_and_fresh_source_without_sending_again(self):
         sent=self.send()
-        self.session.handle(self.result(sent['action_id']))
+        self.session.handle(self.result(sent['action_id'], unchanged=True))
         self.session.close();self.controller=FakeController();self.session=self.new_session()
         replacement=self.packet();self.arm(replacement)
+        sent=self.session.handle(replacement)
+        self.assertEqual([['circle']],[r['buttons'] for r in self.controller.inputs])
+        self.session.handle(self.result(sent['action_id'], unchanged=True))
+        replacement=self.packet()
         with self.assertRaisesRegex(ValueError,'already attempted'):
             self.session.handle(replacement)
-        self.assertEqual([],self.controller.inputs)
+        self.assertEqual([['circle']],[r['buttons'] for r in self.controller.inputs])
         self.assertIsNone(self.session.state['pending'])
 
     def test_attempted_pending_blocks_rearm_replay_and_survives_reopen(self):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package one inspected combat tooltip dismissal. Never captures or sends input."""
+"""Package reviewed combat focus navigation and its actual result. Never captures or sends input."""
 import argparse
 import json
 from pathlib import Path
@@ -13,8 +13,8 @@ from veda.combat_inspection import (CONTROL_PROFILE, read_inspection_json, valid
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     inputs = parser.add_mutually_exclusive_group(required=True)
-    inputs.add_argument('--draft', type=Path, help='Source-free tooltip-clear review; validate before action capture.')
-    inputs.add_argument('--result', type=Path, help='Actual tooltip-clear result; no inferred card or enemy facts.')
+    inputs.add_argument('--draft', type=Path, help='Source-free focus-navigation review; validate before action capture.')
+    inputs.add_argument('--result', type=Path, help='Actual inspected focus, including unchanged or away from hand; no inferred game-state changes.')
     parser.add_argument('--session', type=Path, help='Existing state.json read-only; required for results.')
     parser.add_argument('--validate', action='store_true', help='Validate structure only; produces no dispatchable request.')
     parser.add_argument('--execute', action='store_true', help='Package prepare-and-send for the already armed adapter; this helper sends nothing.')

@@ -1,4 +1,4 @@
-"""Reviewed tooltip dismissal only; no tactical waiver, capture, input or ledger writes.
+"""Reviewed focus navigation; no tactical waiver, capture, input or ledger writes.
 
 Unknown facts stay unknown through this navigation result. Newly revealed facts
 belong to the next combat review, never to a claim that navigation changed them.
@@ -11,8 +11,7 @@ import os
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from .choice_execution import _checked, _context, _json, _require, _review, _same_json, _text, _time
-from .controller_state_machine import ControllerStateMachine
+from .choice_execution import ChoiceError, _checked, _context, _json, _require, _review, _same_json, _text, _time
 from .menu_controls import CONTROL_PROFILE
 
 OBSERVATION_SCHEMA = 'veda.combat-inspection-observation.v1'
@@ -23,6 +22,7 @@ MAX_BYTES = 1_000_000
 MAX_AGE = 30
 _UI_KEYS = {'screen', 'phase', 'tooltip_visible', 'focused_card_id', 'selected_card_id',
             'focused_target_id', 'selected_target_id', 'tooltip_subject_id'}
+_FOCUS_KEYS = {'focus_domain', 'tooltip_kind', 'focused_subject_id', 'focus_evidence_note'}
 
 
 def _digest(value):
@@ -35,7 +35,7 @@ def _core(value):
 
 def inspection_scope(observation):
     """Stable retry scope; new frame identities and timestamps cannot reset it."""
-    return _digest(_core(observation))
+    return hashlib.sha256(json.dumps(observation['context'], sort_keys=True).encode()).hexdigest()
 
 
 @_checked
@@ -80,18 +80,32 @@ def validate_inspection_observation(observation, *, now=None, max_age_seconds=MA
              and isinstance(facts['unknowns'], list) and all(_text(s) for s in facts['unknowns']),
              'inspection needs explicit player/hand/enemy facts and declared unknowns')
     ui = value['ui']
-    _require(isinstance(ui, dict) and set(ui) == _UI_KEYS and ui['screen'] == 'combat'
-             and ui['phase'] in {'tooltip', 'hand'} and type(ui['tooltip_visible']) is bool
-             and ui['tooltip_visible'] == (ui['phase'] == 'tooltip')
+    explicit = isinstance(ui, dict) and _FOCUS_KEYS <= set(ui)
+    _require(isinstance(ui, dict) and set(ui) in (_UI_KEYS, _UI_KEYS | _FOCUS_KEYS) and ui['screen'] == 'combat'
+             and ui['phase'] in {'tooltip', 'inspect', 'hand'} and type(ui['tooltip_visible']) is bool
              and ui['selected_card_id'] is None and ui['focused_target_id'] is None
              and ui['selected_target_id'] is None
              and (ui['focused_card_id'] is None or _text(ui['focused_card_id']))
              and (ui['tooltip_subject_id'] is None or _text(ui['tooltip_subject_id'])),
-             'inspection requires an explicit tooltip/hand phase without card or target selection')
-    if ui['phase'] == 'tooltip':
+             'inspection requires explicit focus without card or target selection')
+    if explicit:
+        from .combat_input import RuntimeStop, validate_combat_focus
+        try:
+            focus = validate_combat_focus(ui, [c.get('id') for c in facts['hand'] if isinstance(c, dict)], require_explicit=True)
+        except RuntimeStop as error:
+            raise ChoiceError(str(error)) from error
+        _require(ui['tooltip_visible'] == (focus['tooltip_kind'] != 'none'),
+                 'tooltip visibility must match the inspected tooltip kind')
+        subject = focus['focused_card_id'] if focus['tooltip_kind'] == 'card_keyword' else focus['subject_id']
+        _require(ui['tooltip_subject_id'] == (subject if ui['tooltip_visible'] else None),
+                 'tooltip subject must match the actual focused domain')
+    elif ui['phase'] == 'tooltip':
+        # Retained pre-correction packets may be read only for reconciliation.
+        _require(ui['tooltip_visible'], 'legacy tooltip phase needs visible tooltip')
         _require(ui['focused_card_id'] is None and ui['tooltip_subject_id'] is not None,
                  'visible tooltip subject required; do not infer a hand focus')
     else:
+        _require(ui['phase'] == 'hand' and not ui['tooltip_visible'], 'legacy hand phase must have no tooltip')
         _require(ui['tooltip_subject_id'] is None, 'cleared hand phase cannot retain tooltip subject')
         _require(ui['focused_card_id'] is None or any(isinstance(card, dict)
                  and card.get('id') == ui['focused_card_id'] for card in facts['hand']),
@@ -100,28 +114,94 @@ def validate_inspection_observation(observation, *, now=None, max_age_seconds=MA
 
 
 def _progress(progress, scope):
+    empty = {'schema': 'veda.combat-focus-progress.v1', 'scope': scope, 'attempts': []}
     if progress is None:
-        return {'schema': 'veda.combat-inspection-progress.v1', 'scope': scope, 'attempted_action_ids': []}
-    _require(isinstance(progress, dict) and set(progress) == {'schema', 'scope', 'attempted_action_ids'}
-             and progress['schema'] == 'veda.combat-inspection-progress.v1'
-             and isinstance(progress['scope'], str) and len(progress['scope']) == 64
-             and isinstance(progress['attempted_action_ids'], list) and len(progress['attempted_action_ids']) <= 1
-             and all(_text(i) for i in progress['attempted_action_ids']), 'invalid persisted inspection budget')
-    if progress['scope'] != scope:
-        return {'schema': progress['schema'], 'scope': scope, 'attempted_action_ids': []}
-    return deepcopy(progress)
+        return empty
+    _require(isinstance(progress, dict) and isinstance(progress.get('scope'), str)
+             and len(progress['scope']) == 64, 'invalid persisted inspection budget')
+    if progress.get('schema') == 'veda.combat-inspection-progress.v1':
+        _require(set(progress) == {'schema', 'scope', 'attempted_action_ids'}
+                 and isinstance(progress['attempted_action_ids'], list)
+                 and len(progress['attempted_action_ids']) <= 1
+                 and all(_text(i) for i in progress['attempted_action_ids']), 'invalid legacy inspection budget')
+        if progress['scope'] == scope:
+            empty['attempts'] = [{'action_id': i, 'focus': {'domain': 'unknown', 'subject_id': 'legacy-up'}, 'button': 'up'}
+                                 for i in progress['attempted_action_ids']]
+        return empty
+    _require(set(progress) == {'schema', 'scope', 'attempts'} and progress['schema'] == empty['schema']
+             and isinstance(progress['attempts'], list) and len(progress['attempts']) <= 8
+             and all(isinstance(a, dict) and set(a) - {'result'} == {'action_id', 'focus', 'button'}
+                     and _text(a['action_id']) and isinstance(a['focus'], dict)
+                     and set(a['focus']) == {'domain', 'subject_id'}
+                     and a['button'] in {'down', 'circle', 'up'}
+                     and ('result' not in a or isinstance(a['result'], dict) and
+                          a['result'].get('effect') in {'unchanged', 'focus_changed', 'focus_observed'})
+                     for a in progress['attempts'])
+             and len({a['action_id'] for a in progress['attempts']}) == len(progress['attempts']),
+             'invalid persisted focus inspection budget')
+    return deepcopy(progress) if progress['scope'] == scope else empty
+
+
+def _focus_key(observation):
+    ui = observation['ui']
+    _require(_FOCUS_KEYS <= set(ui), 'review the actual focus domain; generic tooltip Up is no longer a navigation plan')
+    _require(ui['focus_domain'] in {'player_status', 'relic', 'potion', 'enemy', 'none', 'unknown'},
+             'a raised hand card is already in hand; navigate cards without dismissing its keyword tooltip')
+    return {'domain': ui['focus_domain'], 'subject_id': ui['focused_subject_id']}
+
+
+def _next_navigation(budget, focus_key):
+    _require(len(budget['attempts']) < 8,
+             'focus inspection budget reached; choose a different reviewed navigation strategy')
+    attempts = [a for a in budget['attempts'] if a['focus'] == focus_key]
+    if not attempts:
+        return 'down', 1
+    _require(len(attempts) == 1 and attempts[0]['button'] == 'down'
+             and attempts[0].get('result', {}).get('effect') == 'unchanged',
+             'this focus was already attempted; first verify the result, then choose a different reviewed navigation strategy')
+    return 'circle', 2
 
 
 @_checked
 def record_inspection_attempt(progress, observation, action_id):
     """Return the budget to persist before dispatch; never dispatch from here."""
     value = validate_inspection_observation(observation, max_age_seconds=None)
-    _require(value['ui']['phase'] == 'tooltip' and _text(action_id), 'tooltip action identity required')
+    _require(_text(action_id), 'focus navigation action identity required')
+    focus_key = _focus_key(value)
     result = _progress(progress, inspection_scope(value))
-    previous = result['attempted_action_ids']
-    _require(not previous or previous == [action_id], 'tooltip clear was already attempted; inspect pending outcome, do not retry')
-    result['attempted_action_ids'] = [action_id]
+    existing = next((a for a in result['attempts'] if a['action_id'] == action_id), None)
+    if existing:
+        _require(existing['focus'] == focus_key, 'inspection action identity already used for another focus')
+        return result
+    button, _ = _next_navigation(result, focus_key)
+    result['attempts'].append({'action_id': action_id, 'focus': focus_key, 'button': button})
     return result
+
+
+@_checked
+def record_inspection_result(progress, action_id, focus_result):
+    """Persist only the adapter's already verified focus transition; no input."""
+    _require(isinstance(progress, dict), 'inspection result needs its persisted attempt')
+    result = _progress(progress, progress.get('scope'))
+    _require(isinstance(focus_result, dict) and focus_result.get('effect') in
+             {'unchanged', 'focus_changed', 'focus_observed'}, 'verified focus transition required')
+    attempt = next((a for a in result['attempts'] if a['action_id'] == action_id), None)
+    _require(attempt is not None, 'inspection result has no matching attempted action')
+    _require('result' not in attempt or _same_json(attempt['result'], focus_result),
+             'inspection result conflicts with retained evidence')
+    attempt['result'] = deepcopy(focus_result)
+    return result
+
+
+def _proposal(before, control_profile, max_age_seconds, action_id, button, ordinal):
+    proposal = {'schema': PLAN_SCHEMA, 'action_id': action_id, 'step_kind': 'inspect_focus',
+        'control_profile': control_profile, 'before_digest': _digest(before), 'scope': inspection_scope(before),
+        'before_frame': deepcopy(before['frame']), 'max_age_seconds': max_age_seconds,
+        'command': {'action': 'tap', 'buttons': [button], 'request_id': action_id},
+        'navigation_basis': 'bounded_exploration', 'navigation_attempt': ordinal, 'expected_hand_return': False,
+        'runtime_authorized': False, 'controller_authorized': False}
+    proposal['proposal_digest'] = _digest(proposal)
+    return proposal
 
 
 @_checked
@@ -130,29 +210,42 @@ def plan_tooltip_clear(observation, *, control_profile, now=None, max_age_second
     _require(type(max_age_seconds) in (int, float) and 0 < max_age_seconds <= MAX_AGE,
              'inspection freshness must remain bounded to 30 seconds')
     before = validate_inspection_observation(observation, now=now, max_age_seconds=max_age_seconds)
-    _require(before['ui']['phase'] == 'tooltip', 'tooltip clear requires a currently visible tooltip')
+    focus_key = _focus_key(before)
     budget = _progress(progress, inspection_scope(before))
-    _require(not budget['attempted_action_ids'], 'tooltip clear was already attempted; inspect pending outcome, do not retry')
+    button, ordinal = _next_navigation(budget, focus_key)
     action_id = action_id or uuid4().hex
     _require(_text(action_id), 'inspection action identity required')
-    step = ControllerStateMachine().plan_end_turn({'screen_type': 'combat', 'tooltip': True, 'selected_item': None})
-    _require(step['buttons'] == ['up'], 'unexpected tooltip-clearing control')
-    proposal = {'schema': PLAN_SCHEMA, 'action_id': action_id, 'step_kind': 'clear_tooltip',
-        'control_profile': control_profile, 'before_digest': _digest(before), 'scope': inspection_scope(before),
-        'before_frame': deepcopy(before['frame']), 'max_age_seconds': max_age_seconds,
-        'command': {'action': 'tap', 'buttons': ['up'], 'request_id': action_id},
-        'runtime_authorized': False, 'controller_authorized': False}
-    proposal['proposal_digest'] = _digest(proposal)
-    return proposal
+    _require(not any(a['action_id'] == action_id for a in budget['attempts']), 'inspection action identity already attempted')
+    return _proposal(before, control_profile, max_age_seconds, action_id, button, ordinal)
 
 
 @_checked
-def validate_inspection_proposal(proposal, before, *, now=None):
+def validate_inspection_proposal(proposal, before, *, now=None, allow_legacy=False, progress=None, for_result=False):
     value = _json(proposal)
     seal = value.pop('proposal_digest', None)
     _require(_digest(value) == seal, 'inspection proposal changed')
-    expected = plan_tooltip_clear(before, control_profile=value['control_profile'], now=now,
-        max_age_seconds=value['max_age_seconds'], action_id=value['action_id'])
+    if value.get('step_kind') == 'clear_tooltip':
+        _require(allow_legacy is True, 'legacy Up proposal is reconciliation-only; do not dispatch it again')
+        before = validate_inspection_observation(before, now=now, max_age_seconds=value['max_age_seconds'])
+        _require(value['control_profile'] == CONTROL_PROFILE and before['ui']['phase'] == 'tooltip'
+                 and _text(value['action_id']), 'invalid retained legacy tooltip proposal')
+        expected = {'schema': PLAN_SCHEMA, 'action_id': value['action_id'], 'step_kind': 'clear_tooltip',
+            'control_profile': CONTROL_PROFILE, 'before_digest': _digest(before), 'scope': _digest(_core(before)),
+            'before_frame': deepcopy(before['frame']), 'max_age_seconds': value['max_age_seconds'],
+            'command': {'action': 'tap', 'buttons': ['up'], 'request_id': value['action_id']},
+            'runtime_authorized': False, 'controller_authorized': False}
+        expected['proposal_digest'] = _digest(expected)
+    elif for_result:
+        before = validate_inspection_observation(before, now=now, max_age_seconds=value['max_age_seconds'])
+        _focus_key(before)
+        ordinal = value.get('navigation_attempt')
+        _require(value['control_profile'] == CONTROL_PROFILE and type(ordinal) is int and ordinal in {1, 2}
+                 and _text(value['action_id']), 'invalid retained focus navigation proposal')
+        expected = _proposal(before, CONTROL_PROFILE, value['max_age_seconds'], value['action_id'],
+                             'down' if ordinal == 1 else 'circle', ordinal)
+    else:
+        expected = plan_tooltip_clear(before, control_profile=value['control_profile'], now=now,
+            max_age_seconds=value['max_age_seconds'], action_id=value['action_id'], progress=progress)
     _require(expected['proposal_digest'] == seal, 'inspection proposal differs from reviewed source')
     return expected
 
@@ -160,23 +253,38 @@ def validate_inspection_proposal(proposal, before, *, now=None):
 @_checked
 def verify_tooltip_clear(proposal, before, after, *, now=None):
     before = validate_inspection_observation(before, max_age_seconds=None)
-    proposal = validate_inspection_proposal(proposal, before, now=_time(before['frame']['observed_at']))
+    proposal = validate_inspection_proposal(proposal, before, now=_time(before['frame']['observed_at']),
+                                            allow_legacy=True, for_result=True)
     after = validate_inspection_observation(after, now=now, max_age_seconds=proposal['max_age_seconds'])
     _require(before['frame']['frame_id'] != after['frame']['frame_id']
-             and before['frame']['image_sha256'] != after['frame']['image_sha256']
              and _time(after['frame']['observed_at']) > _time(before['frame']['observed_at']),
-             'tooltip result requires a later distinct image')
+             'focus result requires a distinct later capture')
     _require(_same_json(_core(before), _core(after)),
              'tooltip inspection cannot change context, resources, inventory or known facts')
-    _require(after['ui']['phase'] == 'hand', 'tooltip clear not verified; retain pending input without retry')
+    _require(_FOCUS_KEYS <= set(after['ui']), 'actual navigation result needs an explicit inspected focus domain')
     outcome = after['review'].get('outcome', {})
     _require(outcome.get('action_id') == proposal['action_id']
              and outcome.get('before_frame_id') == before['frame']['frame_id']
              and outcome.get('before_sha256') == before['frame']['image_sha256']
-             and outcome.get('inspection') == 'clear_tooltip' and _text(outcome.get('observed_result')),
+             and outcome.get('inspection') == proposal['step_kind'] and _text(outcome.get('observed_result')),
              'source-bound tooltip result review required')
+    from .combat_input import focus_transition
+    transition = focus_transition(before['ui'], after['ui'], [c['id'] for c in after['facts']['hand']])
+    legacy_observed = (proposal['step_kind'] == 'clear_tooltip' and transition['effect'] == 'focus_observed'
+                       and transition['before']['domain'] == 'unknown' and not transition['returned_to_hand']
+                       and transition['after']['domain'] in {'player_status', 'relic', 'potion', 'enemy'})
+    _require(before['frame']['image_sha256'] != after['frame']['image_sha256']
+             or transition['effect'] == 'unchanged' or legacy_observed,
+             'identical image bytes cannot prove changed focus or hand return')
+    returned = transition['returned_to_hand']
     return {'schema': 'veda.combat-inspection-verification.v1', 'action_id': proposal['action_id'],
         'step_verified': True, 'logical_action_complete': False, 'requires_new_combat_review': True,
+        'returned_to_hand': returned, 'navigation_effect': 'returned_to_hand' if returned else
+            'unchanged_focus' if transition['effect'] == 'unchanged' else 'observed_other_focus',
+        'focus_transition': transition, 'observed_focus': transition['after'],
+        'observed_mismatches': ([{'field': 'focus_domain', 'predicted': 'hand', 'observed': transition['after']['domain']}]
+                               if proposal['step_kind'] == 'clear_tooltip' and not returned else []),
+        'navigation_basis': proposal.get('navigation_basis', 'legacy_up_observation'),
         'controller_authorized': False, 'runtime_authorized': False}
 
 
@@ -192,7 +300,8 @@ def _inventory_digest(value):
 
 def _packet(draft, checked, control_profile, clock, execute):
     _require(isinstance(draft, dict) and set(draft) - {'decision_policy'} == {'schema', 'context', 'inventory', 'resources', 'facts', 'ui', 'reasoning'}
-             and draft['schema'] == DRAFT_SCHEMA and _text(draft['reasoning']), 'exact source-free inspection draft required')
+             and draft['schema'] == DRAFT_SCHEMA, 'exact source-free inspection draft required')
+    _require(_text(draft['reasoning']), 'inspection reasoning must be nonempty text of at most 256 characters')
     policy = draft.get('decision_policy', 'strict')
     inventory = _inventory(draft['inventory'], policy)
     observation = {'schema': OBSERVATION_SCHEMA, 'context': deepcopy(draft['context']),
@@ -302,7 +411,7 @@ def _result_packet(draft, pending, checked, clock):
                     'observed_at': checked['source']['captured_at']}
     obs['review'] = dict(checked['review'], kind='reviewed_choice_ui', outcome={
         'action_id': pending['action_id'], 'before_frame_id': before['observation']['frame']['frame_id'],
-        'before_sha256': before['source']['sha256'], 'inspection': 'clear_tooltip',
+        'before_sha256': before['source']['sha256'], 'inspection': pending['proposal']['step_kind'],
         'observed_result': draft['observed_result']})
     after['review'] = deepcopy(obs['review'])
     obs['ui'] = deepcopy(draft['ui'])
