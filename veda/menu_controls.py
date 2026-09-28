@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from .choice_execution import (_checked, _observation, _proof, _require,
                                _same_json, _text)
+from . import shop_controls
 
 CONTROL_PROFILE = "ps5-default-cross-confirm-v1"
 RULE_KIND = "documented_control_profile"
@@ -279,13 +280,15 @@ def validate_menu_control_binding(binding, observation, meaning, *, navigation=F
     if proof.get("rule_id") == CONTROL_RULE:
         return validate_neow_control_binding(binding, observation, meaning, navigation=navigation)
     rule = proof.get("rule_id")
-    _require(rule in _RULES and proof.get("control_profile") == CONTROL_PROFILE
+    _require(rule in _RULES | shop_controls.RULES and proof.get("control_profile") == CONTROL_PROFILE
              and proof.get("frame_id") == frame["frame_id"]
              and proof.get("image_sha256") == frame["image_sha256"],
              "known scoped control rule, selected default profile and current source required")
     _require(not any(k in proof for k in ("hint_text", "reference_id", "before_sha256", "after_sha256")),
              "control rule must not claim observed hints or hardware transitions")
-    if rule in {LOOT_SELECT_RULE, LOOT_FOCUS_RULE}:
+    if rule in shop_controls.RULES:
+        shop_controls.validate_binding(binding, observation, meaning, navigation)
+    elif rule in {LOOT_SELECT_RULE, LOOT_FOCUS_RULE}:
         ui = _loot(observation)
         if rule == LOOT_SELECT_RULE:
             _require(not navigation and binding['button'] == 'cross'
@@ -353,7 +356,9 @@ def _adjacent_binding(binding, ui, meaning, navigation):
 def validate_menu_choice(choice, observation):
     """Menu semantics augment, and never replace, ordinary outcome/cost checks."""
     family = observation["ui"].get("menu_family")
-    if family == "event_options":
+    if family in shop_controls.FAMILIES:
+        shop_controls.checked_ui(observation)
+    elif family == "event_options":
         _event(observation)
     elif family == "map_nodes":
         ui = _map_nodes(observation)
@@ -487,7 +492,9 @@ def bind_reviewed_menu_controls(observation, *, control_profile, now=None, max_a
     clock = now or datetime.now(timezone.utc)
     obs = _observation(observation, clock, max_age_seconds)
     ui = obs["ui"]
-    if ui.get('menu_family') in {'loot_rewards', 'loot_cards'}:
+    if ui.get('menu_family') in shop_controls.FAMILIES:
+        shop_controls.bind(obs)
+    elif ui.get('menu_family') in {'loot_rewards', 'loot_cards'}:
         _loot(obs)
         for option in ui['options']:
             hint = option.pop('activate_hint', None)

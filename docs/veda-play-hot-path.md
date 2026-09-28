@@ -76,6 +76,8 @@ require another image. Inspect again after an input or an outside state change.
 - Combat focus outside the hand: use [focus recovery](veda-combat-play.md#combat-focus),
   then inspect the actual destination. A raised card's keyword help is hand focus.
 - Combat loot: use [quick loot](veda-loot-play.md); gold needs no strategic analysis.
+- Merchant: use [merchant flow](veda-shop-play.md); use session-derived context and
+  reuse the selected purchase through observed focus movements.
 - Other menus: use [menu controls](veda-menu-controls.md).
 - Map: use [quick map travel](veda-map-travel.md); retain the destination across
   focus taps and reuse inspected routes instead of surveying every floor.

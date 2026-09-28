@@ -95,6 +95,14 @@ def verify_choice_observation(proposal, before, after, *, policy='strict', now=N
     try:
         return {**verify_choice_step(proposal, before, after, now=now, historical=historical), 'observed_mismatches': []}
     except ValueError:
+        if policy == 'learning' and proposal.get('step_kind') == 'focus' and before.get('ui', {}).get('menu_family') in {'shop_stock', 'shop_remove'}:
+            from .shop_controls import verify_focus
+            validate_choice_proposal(proposal, before, now=_time(before['frame']['observed_at']))
+            after = validate_choice_observation(after, now or datetime.now(timezone.utc), None if historical else proposal['max_age_seconds'])
+            _require(after['frame']['frame_id'] != before['frame']['frame_id']
+                     and _time(after['frame']['observed_at']) > _time(before['frame']['observed_at']),
+                     'shop focus needs a distinct later inspected frame')
+            return verify_focus(proposal, before, after)
         if policy != 'learning' or proposal.get('step_kind') != 'commit':
             raise
     before = validate_choice_observation(before, None, None)
@@ -729,6 +737,9 @@ class ReviewedPlaySession(CombatInputAdapter):
         after["source"] = self._source(after["source"], fresh=False, retain=True)
         before = pending["request"]
         inspection = (before["kind"] == "choice" and pending["proposal"]["step_kind"] == "inspect"
+                      or before['kind'] == 'choice' and self.decision_policy == 'learning'
+                      and pending['proposal']['step_kind'] == 'focus'
+                      and before['observation']['ui'].get('menu_family') in {'shop_stock', 'shop_remove'}
                       or before['kind'] == 'combat_inspection'
                       or before['kind'] == 'combat' and pending['proposal']['expected']['kind'] in {'clear', 'focus_probe'})
         _require((after["source"]["sha256"] != before["source"]["sha256"]
@@ -738,6 +749,7 @@ class ReviewedPlaySession(CombatInputAdapter):
         observed = self._before(after, check_plan_now=False, historical=True)
         observed_mismatches = []
         focus_result = None
+        shop_focus_result = None
         if before['kind'] == 'combat_inspection':
             from .combat_inspection import verify_tooltip_clear
             _require(after['kind'] == 'combat_inspection', 'tooltip result requires the same inspection contract')
@@ -751,6 +763,7 @@ class ReviewedPlaySession(CombatInputAdapter):
             verified = verify_choice_observation(pending['proposal'], before['observation'], observed,
                                                  policy=self.decision_policy, now=self.clock(), historical=True)
             observed_mismatches = verified['observed_mismatches']
+            shop_focus_result = verified.get('shop_focus_transition')
             complete = verified["choice_complete"]
             state = {"resources": observed["resources"], "facts": observed["facts"], "ui": observed["ui"]}
             if verified.get("matched_outcome_id") is not None:
@@ -799,9 +812,13 @@ class ReviewedPlaySession(CombatInputAdapter):
             'observed_mismatches': observed_mismatches}
         if focus_result is not None:
             verification['focus_transition'] = focus_result
+        if shop_focus_result is not None:
+            verification['shop_focus_transition'] = shop_focus_result
         # Persist exact idempotent outcome before SQLite. If a crash follows its
         # commit, finalize() repeats the same write, never the controller input.
+        from .evidence_continuity import verified_result_digest
         pending.update(status="verified_pending_log", outcome_request=outcome, outcome_verification=verification,
+                       verified_after_digest=verified_result_digest(after),
                        after_context=after["context"], logical_action_complete=complete)
         self._save()
         return self.finalize()
@@ -1080,7 +1097,8 @@ class ReviewedPlaySession(CombatInputAdapter):
                 self.state["map_inspection_progress"] = {"scope": scope,
                     "total": progress.get("total", 0) + 1, "without_viewport_progress": failures}
             self.state["last_verified"] = {"action_id": pending["action_id"],
-                "source": pending["outcome_request"]["source"], "receipt": receipt}
+                "source": pending["outcome_request"]["source"], "receipt": receipt,
+                "verified_after_digest": pending.get('verified_after_digest')}
             step_kind = pending['semantic']['kind']
             self._timing_event('verified_input', action_id=pending['action_id'],
                                step_kind=step_kind, move_complete=bool(complete))

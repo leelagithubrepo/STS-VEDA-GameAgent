@@ -509,6 +509,26 @@ class PlayTelemetry:
         if not isinstance(proof, dict) or proof.get('basis') not in {'fresh_verified_result', 'action_bound_result'}:
             return False
         action = original.get('action', {})
+        shop = proof.get('shop_focus_transition')
+        if isinstance(shop, dict) and set(shop) == {'from', 'button', 'to'}:
+            before_state, after_state = original.get('state', {}), req['state']
+            before_ui, after_ui = before_state.get('ui', {}), after_state.get('ui', {})
+            def strip_ui(value):
+                if isinstance(value, dict):
+                    return {k: strip_ui(v) for k, v in value.items() if k not in {'navigation', 'shop_navigation', 'evidence'}}
+                if isinstance(value, list):
+                    return [strip_ui(v) for v in value]
+                return value
+            return (proof.get('decision_policy') == 'learning' and action.get('kind') == 'navigation'
+                    and action.get('step_kind') == 'focus'
+                    and before_ui.get('menu_family') in {'shop_stock', 'shop_remove'}
+                    and shop['button'] in {'up', 'down', 'left', 'right'}
+                    and shop['from'] == shop['to'] == before_ui.get('focused_id') == after_ui.get('focused_id')
+                    and shop in after_ui.get('shop_navigation', [])
+                    and strip_ui(before_ui) == strip_ui(after_ui)
+                    and all(before_state.get(k) == after_state.get(k) for k in ('resources', 'facts'))
+                    and req['source']['path'] != original['source']['path']
+                    and not any(req.get(k) for k in ('inventory_events', 'inventory_baseline', 'zone_events', 'zone_baseline', 'transitions')))
         expected = action.get('expected', {}).get('kind')
         if (action.get('kind') != 'navigation'
                 or not (expected in {'clear', 'focus_probe'}

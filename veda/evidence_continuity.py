@@ -6,8 +6,16 @@ that pixels were automatically recognized or that external input is detectable.
 """
 from copy import deepcopy
 from datetime import datetime
+import hashlib
 import json
 from pathlib import Path
+
+
+def verified_result_digest(after):
+    """Seal the reviewed result, ignoring only relocation of its source image."""
+    value = deepcopy(after)
+    value['source'].pop('path', None)
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
 
 
 def check_binding(binding, current, context, source):

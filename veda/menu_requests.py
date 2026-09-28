@@ -107,17 +107,17 @@ def _ui(value):
     allowed = {"menu_family", "choice_id", "layout_id", "phase", "focused_id", "options", "grid",
                "selected_ids", "pending_ids", "upgrade_preview", "confirm_hint", "screen", "order",
                "control_layout", "selection_mode", "required_count", "navigation", "selection_purpose",
-               "map_siblings", "map_inspection"}
+               "map_siblings", "map_inspection", "shop_positions", "shop_navigation"}
     _require(not set(value) - allowed, "source fields and control proofs do not belong in a menu draft")
     ui = deepcopy(value)
     family = ui.get("menu_family")
-    _require(family in {"event_options", "event_leave", "card_upgrade", "map_nodes", "map_inspect", "loot_rewards", "loot_cards"},
+    _require(family in {"event_options", "event_leave", "card_upgrade", "map_nodes", "map_inspect", "loot_rewards", "loot_cards", "shop_entry", "shop_stock", "shop_exit", "shop_remove"},
              "unsupported draft menu family")
     _require(isinstance(ui.get("options"), list), "complete visible draft options required")
     for option in ui["options"]:
-        _require(isinstance(option, dict) and not set(option) - {"id", "label", "enabled", "costs", "card", "role", "node", "reward", "activate_hint"},
+        _require(isinstance(option, dict) and not set(option) - {"id", "label", "enabled", "costs", "card", "role", "node", "reward", "activate_hint", "shortcut_hint", "offer"},
                  "draft options need visible semantics, not prebound controls")
-    derived = {"screen": "selection" if family == "card_upgrade" else "map" if family.startswith("map_") else "reward" if family == "loot_rewards" else "card_reward" if family == "loot_cards" else "event",
+    derived = {"screen": "selection" if family in {"card_upgrade", "shop_remove"} else "shop" if family.startswith('shop_') else "map" if family.startswith("map_") else "reward" if family == "loot_rewards" else "card_reward" if family == "loot_cards" else "event",
         "order": [option["id"] for option in ui["options"]], "control_layout": "ps5_default",
         "selection_mode": "toggle" if family == "card_upgrade" else "immediate",
         "required_count": 1, "navigation": []}
@@ -163,6 +163,16 @@ def _request(draft, checked, control_profile, clock, max_age_seconds=30):
             "layout_id": ui["layout_id"], "frame_id": frame["frame_id"], "image_sha256": frame["image_sha256"],
             "hint_text": hint["hint_text"]}}
     for option in ui['options']:
+        shortcut_hint = option.pop('shortcut_hint', None)
+        if shortcut_hint is not None:
+            _require(ui['menu_family'] in {'shop_entry', 'shop_stock', 'shop_exit'}
+                     and option.get('role') in {'open', 'skip', 'leave', 'proceed'}
+                     and isinstance(shortcut_hint, dict) and set(shortcut_hint) == {'button', 'hint_text'},
+                     'merchant boundary shortcut needs the actual visible hint')
+            option['shortcut'] = {'button': shortcut_hint['button'], 'evidence': {
+                'kind': 'visible_hint', 'reviewer': review['reviewer'], 'meaning': 'activate:' + option['id'],
+                'layout_id': ui['layout_id'], 'frame_id': frame['frame_id'], 'image_sha256': frame['image_sha256'],
+                'hint_text': shortcut_hint['hint_text']}}
         activate_hint = option.pop('activate_hint', None)
         if activate_hint is not None:
             _require(ui['menu_family'] in {'loot_rewards', 'loot_cards'}

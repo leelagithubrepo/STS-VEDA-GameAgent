@@ -77,7 +77,11 @@ def _unbound_ui(value):
             proof = activate.get('evidence', {})
             if proof.get('kind') == 'visible_hint':
                 option['activate_hint'] = {'button': activate['button'], 'hint_text': proof['hint_text']}
-        option.pop('shortcut', None)
+        shortcut = option.pop('shortcut', None)
+        if ui.get('menu_family', '').startswith('shop_') and shortcut:
+            proof = shortcut.get('evidence', {})
+            if proof.get('kind') == 'visible_hint':
+                option['shortcut_hint'] = {'button': shortcut['button'], 'hint_text': proof['hint_text']}
     return ui
 
 
@@ -103,6 +107,9 @@ def _observed_ui(draft, pending, checked):
         _require(set(result) == {'kind', 'focused_id'} and pending['proposal']['step_kind'] == 'focus',
                  'focus review requires the pending focus step')
         ui = _unbound_ui(before_ui)
+        if before_ui.get('menu_family') in {'shop_stock', 'shop_remove'}:
+            from .shop_controls import record_focus
+            ui = record_focus(ui, pending['command']['buttons'][0], result['focused_id'])
         ui['focused_id'] = result['focused_id']
         ui = _ui(ui)
     elif kind == 'upgrade_preview':
@@ -142,6 +149,14 @@ def _observed_ui(draft, pending, checked):
             'meaning': 'confirm:' + ui['choice_id'], 'layout_id': ui['layout_id'],
             'frame_id': checked['frame_id'], 'image_sha256': checked['source']['sha256'],
             'hint_text': hint['hint_text']}}
+    for option in ui['options']:
+        hint = option.pop('shortcut_hint', None)
+        if hint is not None:
+            option['shortcut'] = {'button': hint['button'], 'evidence': {
+                'kind': 'visible_hint', 'reviewer': checked['review']['reviewer'],
+                'meaning': 'activate:' + option['id'], 'layout_id': ui['layout_id'],
+                'frame_id': checked['frame_id'], 'image_sha256': checked['source']['sha256'],
+                'hint_text': hint['hint_text']}}
     return ui
 
 
@@ -273,8 +288,8 @@ def _request(draft, pending, checked, control_profile, clock):
                  'related_item': target['card']['upgrade_name'], 'evidence_note': draft['observed_result']}
         _require(not changes, 'upgrade telemetry is derived from the reviewed selected-card result')
         changes = {'inventory_events': [event]}
-    if old['ui'].get('menu_family') in {'loot_rewards', 'loot_cards'} and pending['proposal']['step_kind'] == 'commit':
-        _require(not changes, 'loot inventory events are derived from the actual reviewed inventory')
+    if old['ui'].get('menu_family') in {'loot_rewards', 'loot_cards', 'shop_stock', 'shop_remove'} and pending['proposal']['step_kind'] == 'commit':
+        _require(not changes, 'inventory events are derived from the actual reviewed inventory')
         events = []
         for kind in ('card', 'relic', 'potion'):
             prior = Counter(before['inventory']['current'][kind])

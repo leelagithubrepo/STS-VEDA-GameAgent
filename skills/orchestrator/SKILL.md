@@ -78,6 +78,13 @@ gold with the fixed routine reason, collect potions into confirmed empty slots,
 and open card offers. Choose the card or skip once, then reuse that decision
 while navigating. Do not repeat strategy or boss research for routine loot.
 
+For merchants use `docs/veda-shop-play.md` and `veda_shop.py`, with canonical
+session context and actual verified result reuse. Inspect stock/prices once,
+choose a purchase, removal or strategic Leave/save-gold, and keep the choice through focus movements.
+Learn actual directional focus outcomes. Do not leave just because a navigation
+example is missing, or write new Python request builders while playing.
+Verify Circle Leave and a separate Proceed prompt as separate observed steps.
+
 For screen-specific commands, use `docs/veda-combat-play.md`,
 `docs/veda-menu-controls.md` or `docs/veda-map-play.md`. Default PS5 profiles
 can supply known controls when a glyph is absent. Inspect actual upgrade cards
