@@ -1,0 +1,153 @@
+{
+  "basis": "Manual review of archived pixels; annotations exercise packaging and semantics, not automated image recognition.",
+  "frames": [
+    {
+      "kind": "opened",
+      "file": "ps5_observation_20260928T134359.301438Z_a631dfacbe8144f99461244639fce478.png",
+      "sha256": "c3e2c5692502b115a15ef560928216515ef4f0306ad11ac0a17326353dde29c2"
+    },
+    {
+      "kind": "focused",
+      "file": "ps5_observation_20260928T134825.960425Z_f222e9421e23482e94aa17d51ff7942f.png",
+      "sha256": "b1c5112f42c153c62f3d54455c21c60414b6e814b84bfedd5aef24759c0d6e5b"
+    },
+    {
+      "kind": "confirmation",
+      "file": "ps5_observation_20260928T135203.054603Z_2dc75202916f486d880a4838e1bbeec9.png",
+      "sha256": "b8c7307c00dd2e41ba2dce386be07774891ebb23c8a519e11b8dd8197a695ddd"
+    },
+    {
+      "kind": "purchased",
+      "file": "ps5_observation_20260928T135504.619018Z_080e805927864ecd9cf2e1e172e1e806.png",
+      "sha256": "af29b9f58f45509d5cf1f05be9a2fd709a477436a4650b1b9f2c671f8c2538bd"
+    }
+  ],
+  "stock": {
+    "focused_id": "wild-strike",
+    "items": [
+      {
+        "id": "wild-strike",
+        "name": "Wild Strike",
+        "role": "card",
+        "price": 50,
+        "x": 360,
+        "y": 235
+      },
+      {
+        "id": "heavy-blade",
+        "name": "Heavy Blade",
+        "role": "card",
+        "price": 27,
+        "x": 610,
+        "y": 235
+      },
+      {
+        "id": "flex",
+        "name": "Flex",
+        "role": "card",
+        "price": 48,
+        "x": 865,
+        "y": 235
+      },
+      {
+        "id": "disarm",
+        "name": "Disarm",
+        "role": "card",
+        "price": 74,
+        "x": 1110,
+        "y": 235
+      },
+      {
+        "id": "metallicize",
+        "name": "Metallicize",
+        "role": "card",
+        "price": 75,
+        "x": 1360,
+        "y": 235
+      },
+      {
+        "id": "flash-of-steel",
+        "name": "Flash of Steel",
+        "role": "card",
+        "price": 92,
+        "x": 365,
+        "y": 650
+      },
+      {
+        "id": "chrysalis",
+        "name": "Chrysalis",
+        "role": "card",
+        "price": 177,
+        "x": 615,
+        "y": 650
+      },
+      {
+        "id": "relic-1",
+        "name": null,
+        "role": "relic",
+        "price": 298,
+        "x": 925,
+        "y": 620
+      },
+      {
+        "id": "relic-2",
+        "name": null,
+        "role": "relic",
+        "price": 154,
+        "x": 1050,
+        "y": 620
+      },
+      {
+        "id": "relic-3",
+        "name": null,
+        "role": "relic",
+        "price": 151,
+        "x": 1180,
+        "y": 620
+      },
+      {
+        "id": "removal",
+        "name": "Card Removal",
+        "role": "remove_service",
+        "price": 75,
+        "x": 1390,
+        "y": 650
+      },
+      {
+        "id": "potion-1",
+        "name": null,
+        "role": "potion",
+        "price": 48,
+        "x": 900,
+        "y": 800
+      },
+      {
+        "id": "potion-2",
+        "name": null,
+        "role": "potion",
+        "price": 71,
+        "x": 1050,
+        "y": 800
+      },
+      {
+        "id": "potion-3",
+        "name": "Energy Potion",
+        "role": "potion",
+        "price": 49,
+        "x": 1180,
+        "y": 800
+      }
+    ],
+    "leave_hint": {
+      "button": "circle",
+      "hint_text": "Circle Leave"
+    },
+    "previews": [
+      {
+        "name": "Wound",
+        "parent": "wild-strike",
+        "own_price": false
+      }
+    ]
+  }
+}

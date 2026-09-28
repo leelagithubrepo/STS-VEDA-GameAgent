@@ -80,7 +80,8 @@ require another image. Inspect again after an input or an outside state change.
   reuse the selected purchase through observed focus movements.
 - Other menus: use [menu controls](veda-menu-controls.md).
 - Map: use [quick map travel](veda-map-travel.md); retain the destination across
-  focus taps and reuse inspected routes instead of surveying every floor.
+  focus taps and reuse inspected routes instead of surveying every floor. A complete
+  single reachable option is a forced move: select and verify, with no route analysis.
 
 Once the source-free draft validates: capture if needed after an input/change →
 inspect that exact image → bind

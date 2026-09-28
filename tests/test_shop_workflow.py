@@ -104,6 +104,13 @@ class ShopTests(unittest.TestCase):
         packet, _, _ = self.verify(prepared, focus='Disarm')
         value = snapshot_from_result(packet, f.session.path)
         prepared = f.prepare(plan_shop(value, saved)['draft'])
+        confirmation = deepcopy(value['ui'])
+        confirmation.update(phase='confirm', selected_ids=['Disarm'], pending_ids=['Disarm'],
+                            confirm_hint={'button': 'cross', 'hint_text': 'Cross Confirm'})
+        packet, _, _ = self.verify(prepared, confirmation)
+        self.assertFalse(packet['telemetry'])
+        value = snapshot_from_result(packet, f.session.path)
+        prepared = f.prepare(plan_shop(value, saved)['draft'])
         actual_inventory = deepcopy(value['inventory']); actual_inventory['current']['card'].append('Disarm')
         resources = dict(value['resources'], gold=39, deck_size=value['resources']['deck_size']+1)
         stock = ui(); stock['options'] = [o for o in stock['options'] if o['id'] != 'Disarm']
@@ -120,7 +127,7 @@ class ShopTests(unittest.TestCase):
         after_map = {'screen': 'map', 'phase': 'result', 'choice_id': 'after-shop',
                      'layout_id': 'map-result', 'options': [], 'focused_id': None}
         self.verify(prepared, after_map)
-        self.assertEqual(['cross', 'right', 'right', 'cross', 'circle', 'triangle'], [x['buttons'][0] for x in f.controller.inputs])
+        self.assertEqual(['cross', 'right', 'right', 'cross', 'cross', 'circle', 'triangle'], [x['buttons'][0] for x in f.controller.inputs])
         self.assertIsNone(f.session.state['pending'])
         self.assertIn('Disarm', f.db.inventory_ledger(run_id=f.run)['current']['card'])
 

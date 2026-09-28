@@ -10,6 +10,22 @@ focus and verification. This is an engineering target, not measured PS5
 performance or a reason to skip observing outcomes. New route decisions can
 take longer.
 
+## Only one reachable next node
+
+When `map_siblings` confirms the complete reachable set and it contains exactly
+one enabled, identified node, call `veda_map_step.py --snapshot MAP_SNAPSHOT.json`
+with the normal binding flags and `--execute`. Omit `--decision`; no route file
+or boss survey is needed. The helper returns `forced_move:true`, records
+"Only available path", and skips archived-map replay and strategic comparison.
+Verify the actual room entry normally. One visible node in a cropped map is
+not proof that it is the only reachable node; inspect its current connections.
+
+Keep any saved route/cache. The forced step preserves its strategic baseline,
+so health/inventory changes are reconsidered at the next fork, not while there
+is no choice. Optional new archived views are deferred on this shortcut; keep
+their files for when planning could matter. Decisions inside the next room
+still receive the usual strategy.
+
 ## Save one choice, then navigate
 
 Keep a private cache under the session, named by run and act. Write a new cache

@@ -179,6 +179,27 @@ def plan_map(snapshot, cache=None, decision=None, views=()):
     snapshot = _snapshot(snapshot)
     cache = _read_cache(cache, snapshot)
     current = snapshot['facts']['current_node_id']
+    if len(snapshot['ui']['options']) == 1 and decision is None:
+        # _snapshot has already checked complete current siblings/reachability.
+        # A forced step cannot benefit from archive replay or route analysis.
+        wanted = snapshot['ui']['options'][0]['id']
+        draft = _draft(snapshot, wanted, 'Only available path: the complete reviewed reachable set has one node.')
+        route = cache['route']
+        reused = False
+        if route is not None:
+            path = route['decision']['node_ids']
+            if current in path[route['cursor']:] and path.index(current) + 1 < len(path):
+                index = path.index(current)
+                if path[index + 1] == wanted:
+                    route.update(cursor=index, last_node=current, last_context=deepcopy(snapshot['context']),
+                                 options_key=_options_key(snapshot))
+                    reused = True
+        # Keep the strategic baseline unchanged: changed HP/inventory must
+        # still trigger reconsideration at the next actual fork.
+        return {'status': 'planned', 'destination': wanted, 'forced_move': True,
+                'reused_route': reused, 'draft': draft, 'cache': cache,
+                'controller_input_sent': False, 'survey_required': False,
+                'expected_boss': None, 'deferred_views': len(views)}
     _, survey = _merge_views(cache, current, views)
     topology = _topology(survey)
     route = cache['route']

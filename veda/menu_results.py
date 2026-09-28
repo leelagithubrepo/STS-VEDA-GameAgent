@@ -112,6 +112,17 @@ def _observed_ui(draft, pending, checked):
             ui = record_focus(ui, pending['command']['buttons'][0], result['focused_id'])
         ui['focused_id'] = result['focused_id']
         ui = _ui(ui)
+    elif kind == 'shop_confirmation':
+        _require(set(result) == {'kind', 'selected_id', 'confirm_hint'}
+                 and pending['proposal']['step_kind'] == 'select'
+                 and before_ui.get('menu_family') == 'shop_stock'
+                 and pending['request']['choice']['option_ids'] == [result['selected_id']],
+                 'observe the exact pending merchant selection and confirmation hint')
+        ui = _unbound_ui(before_ui)
+        ui.update(phase='confirm', focused_id=result['selected_id'],
+                  selected_ids=[result['selected_id']], pending_ids=[result['selected_id']],
+                  confirm_hint=deepcopy(result['confirm_hint']))
+        ui = _ui(ui)
     elif kind == 'upgrade_preview':
         _require(set(result) == {'kind', 'selected_id', 'observed_upgrade_text', 'confirm_hint'}
                  and pending['proposal']['step_kind'] == 'select'

@@ -9,6 +9,7 @@ from .menu_requests import _inventory, _require, _text, _ui, validate_menu_draft
 from .menu_controls import CONTROL_PROFILE
 from .menu_results import _unbound_ui
 from .shop_controls import FAMILIES
+from .shop_observation import validate_stock, shopping_notes
 
 SCHEMA = 'veda.shop-snapshot.v1'
 
@@ -61,7 +62,11 @@ def snapshot_from_result(packet, session):
 def decision_key(snapshot):
     ui = snapshot['ui']
     data = {k: snapshot[k] for k in ('context', 'inventory', 'resources', 'facts')}
-    data['ui'] = {k: ui.get(k) for k in ('menu_family', 'choice_id', 'options', 'phase', 'selected_ids', 'pending_ids')}
+    fields = ('menu_family', 'choice_id', 'options', 'phase', 'selected_ids', 'pending_ids')
+    if ui.get('menu_family') == 'shop_stock':
+        # The same purchase decision covers focus, select and confirmation.
+        fields = ('menu_family', 'choice_id', 'options')
+    data['ui'] = {k: ui.get(k) for k in fields}
     # Focus and learned directional transitions do not change buying strategy.
     return hashlib.sha256(json.dumps(data, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
@@ -73,6 +78,7 @@ def plan_shop(snapshot, decision=None):
     inventory = _inventory(value['inventory'], 'learning')
     ui = _ui(value['ui'])
     _require(ui['menu_family'] in FAMILIES, 'merchant screen family required')
+    validate_stock(ui)
     # Normalize optional choose-phase fields so reconstructed results keep a key.
     value['ui'] = ui
     key = decision_key(value)
@@ -92,7 +98,8 @@ def plan_shop(snapshot, decision=None):
         selected = next((o for o in options if o.get('role') == 'proceed'), None)
         reason = 'Merchant closed; use the visible Proceed control to return to the map.'
     if selected is None:
-        return {'status': 'strategy_required', 'decision_key': key, 'options': options, 'controller_input_sent': False,
+        return {'status': 'strategy_required', 'decision_key': key, 'options': options,
+                'notes': shopping_notes(value), 'controller_input_sent': False,
                 'instruction': 'Compare affordable stock and removal against the deck, potions and route. Choose once and retain the decision through focus taps; leaving is a strategic choice, not a workaround for navigation.'}
     resources, after_inventory = deepcopy(value['resources']), deepcopy(inventory)
     role = selected.get('role')
@@ -108,7 +115,7 @@ def plan_shop(snapshot, decision=None):
             screen, phase = 'map', 'result'
     elif role in {'card', 'relic', 'potion'}:
         name = selected.get('offer', {}).get('name')
-        _require(_text(name, 256), 'observed item identity required')
+        _require(_text(name, 256) and 'unidentified' not in name.casefold(), 'observed item identity required')
         if role == 'potion':
             capacity = value['facts'].get('potion_capacity')
             if (inventory['coverage']['potion'] != 'complete' or type(capacity) is not int

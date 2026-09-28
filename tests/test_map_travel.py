@@ -149,7 +149,9 @@ class MapTravelTests(SurveyFixture):
 
     def test_exhausted_or_unavailable_route_invites_next_choice(self):
         cache = plan_map(self.value, decision=decision())['cache']
-        self.assertIn('saved_route_complete', plan_map(self.after_arrival(), cache)['reasons'])
+        forced = plan_map(self.after_arrival(), cache)
+        self.assertTrue(forced['forced_move'])
+        self.assertEqual('rest', forced['destination'])
         self.value['ui']['options'] = self.value['ui']['options'][:2]
         self.value['ui']['map_siblings']['selectable_count'] = 2
         self.assertIn('saved_destination_unavailable', plan_map(self.value, cache)['reasons'])

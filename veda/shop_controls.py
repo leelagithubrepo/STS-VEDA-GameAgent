@@ -11,6 +11,8 @@ RULES = {SELECT_RULE, FOCUS_RULE}
 
 def checked_ui(obs):
     ui = obs['ui']
+    from .shop_observation import validate_stock
+    validate_stock(ui)
     _require(ui.get('menu_family') in FAMILIES and ui.get('control_layout') == 'ps5_default'
              and obs['context']['combat_id'] is None and obs['context']['turn_id'] is None,
              'merchant controls require an inspected noncombat merchant menu')
@@ -19,9 +21,16 @@ def checked_ui(obs):
              'merchant controls need one actionable choice, not a recorded result phase')
     _require(obs['facts'].get('node_type') == 'merchant', 'merchant identity must be reviewed')
     if ui['phase'] == 'confirm':
-        _require(ui['menu_family'] == 'shop_remove' and ui.get('confirm') is not None
-                 and len(ui['selected_ids']) == 1 and ui['pending_ids'] == ui['selected_ids'],
-                 'card removal confirmation needs the actual selected card and visible confirm hint')
+        _require(ui['menu_family'] in {'shop_stock', 'shop_remove'} and ui.get('confirm') is not None
+                 and len(ui['selected_ids']) == 1 and ui['pending_ids'] == ui['selected_ids']
+                 and ui['focused_id'] == ui['selected_ids'][0],
+                 'merchant confirmation needs the actual selected item and visible confirm hint')
+        selected = next(o for o in ui['options'] if o['id'] == ui['selected_ids'][0])
+        _require(selected.get('role') in {'card', 'relic', 'potion', 'remove_card'},
+                 'only the selected purchase or removal can be confirmed')
+        _require(ui['confirm'].get('button') in {'cross', 'triangle'}
+                 and ui['confirm'].get('evidence', {}).get('kind') == 'visible_hint',
+                 'merchant confirmation requires the inspected Cross/Triangle hint')
     else:
         _require(not ui['selected_ids'] and not ui['pending_ids'], 'unresolved merchant selection')
     return ui
@@ -70,8 +79,6 @@ def directions(ui):
 def bind(obs):
     from .menu_controls import _binding
     ui = checked_ui(obs)
-    if ui['phase'] == 'confirm':
-        return
     for option in ui['options']:
         if option.get('role') in {'open', 'skip', 'leave', 'proceed'}:
             _require(option.get('shortcut') is not None, 'merchant boundary uses its actual visible button hint')

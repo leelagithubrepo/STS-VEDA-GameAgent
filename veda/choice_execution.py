@@ -313,7 +313,9 @@ def plan_choice_step(observation, choice, *, now=None, max_age_seconds=5, action
             button, kind, expectation = edge["button"], "focus", {"focused_id": edge["to"]}
         else:
             button = _proof(option.get("activate"), obs, "activate:" + target)
-            if ui["selection_mode"] == "immediate":
+            if ui.get('menu_family') == 'shop_stock' and option.get('role') in {'card', 'relic', 'potion'}:
+                kind, expectation = 'select', {'selected_ids': [target]}
+            elif ui["selection_mode"] == "immediate":
                 _require(len(wanted) == 1 and not ui["selected_ids"], "immediate choices cannot imply multiple selections")
                 kind = "inspect" if ui.get("menu_family") == "map_inspect" else "commit"
             else:

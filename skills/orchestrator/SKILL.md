@@ -78,19 +78,24 @@ gold with the fixed routine reason, collect potions into confirmed empty slots,
 and open card offers. Choose the card or skip once, then reuse that decision
 while navigating. Do not repeat strategy or boss research for routine loot.
 
-For merchants use `docs/veda-shop-play.md` and `veda_shop.py`, with canonical
-session context and actual verified result reuse. Inspect stock/prices once,
-choose a purchase, removal or strategic Leave/save-gold, and keep the choice through focus movements.
-Learn actual directional focus outcomes. Do not leave just because a navigation
-example is missing, or write new Python request builders while playing.
-Verify Circle Leave and a separate Proceed prompt as separate observed steps.
+For merchants use `docs/veda-shop-play.md` and `veda_shop.py`. Compact result
+commands, session-derived IDs, generated packet paths and `--last-result`
+avoid rewriting snapshots. Inspect priced slots separately from tooltips:
+Wound beside Wild Strike is a preview; SALE does not mean upgraded. Compare
+affordable goods, removal and saving gold once, retaining unknowns honestly.
+Keep the buying decision through focus, selection and actual confirmation.
+Learn focus from actual slot identities. Verify purchase, Leave and Proceed
+separately. Do not leave for lack of navigation examples or write request
+builders during play.
 
 For screen-specific commands, use `docs/veda-combat-play.md`,
 `docs/veda-menu-controls.md` or `docs/veda-map-play.md`. Default PS5 profiles
 can supply known controls when a glyph is absent. Inspect actual upgrade cards
 after opening the picker. On maps, use `docs/veda-map-travel.md` and
 `veda_map_step.py`: save a route per run/act, retain its destination through
-focus taps and reuse inspected topology. Reassess material changes; inspect
+focus changes. Exactly one confirmed reachable node uses the automatic forced
+move: omit the decision file and skip route/boss analysis, then verify entry.
+At actual forks retain the chosen destination through focus taps and reuse inspected topology. Reassess material changes; inspect
 future branches/boss only when useful. `strategy_required` means choose once
 and continue, not ask permission or stop. Incomplete future coverage should
 not prevent choosing a visible reachable node. Strategy guidance such as
