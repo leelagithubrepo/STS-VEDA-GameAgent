@@ -9,13 +9,32 @@ import json
 from .menu_requests import _inventory, _ui, _text, validate_menu_draft
 from .menu_controls import CONTROL_PROFILE
 
+SCHEMA = 'veda.loot-snapshot.v1'
+
+
+def resolve_snapshot(snapshot, session):
+    from .shop import resolve_snapshot as resolve
+    return resolve(snapshot, session)
+
+
+def snapshot_from_result(packet, session):
+    from .shop import snapshot_from_result as reuse
+    value = reuse(packet, session)
+    if value['ui'].get('menu_family') not in {'loot_rewards', 'loot_cards'}:
+        raise ValueError('verified result is no longer a loot screen; use the observed next room')
+    value['schema'] = SCHEMA
+    return value
+
 
 def decision_key(snapshot):
     # Focus moves do not change the choice. Resources, inventory, available
     # rewards or run/floor changes do, so a strategic choice cannot leak across them.
-    ui = snapshot['ui']
+    ui = _ui(snapshot['ui'])
     value = {k: snapshot[k] for k in ('context', 'inventory', 'resources', 'facts')}
-    value['ui'] = {k: ui[k] for k in ('menu_family', 'choice_id', 'options')}
+    value['ui'] = {k: ui[k] for k in ('menu_family', 'choice_id')}
+    # Control hints rebind to each image; strategy depends on the actual offers.
+    value['ui']['options'] = [{k: o[k] for k in ('id', 'label', 'enabled', 'costs', 'role', 'reward') if k in o}
+                              for o in ui['options']]
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
@@ -39,6 +58,10 @@ def plan_loot(snapshot, decision=None):
         if selected is None:
             raise ValueError('chosen loot is no longer available')
         reason, routine = decision['reason'], False
+    elif ui['menu_family'] == 'loot_cards' and ui['phase'] == 'confirm':
+        selected = next((o for o in options if ui['selected_ids'] == ui['pending_ids'] == [o['id']]
+                         and o.get('role') == 'card'), None)
+        reason = 'Confirm the already selected card; retain the reward decision.'
     elif ui['menu_family'] == 'loot_rewards':
         free = [o for o in options if o['costs'] == {}]
         selected = next((o for o in free if o.get('role') == 'gold'), None)
@@ -92,6 +115,8 @@ def plan_loot(snapshot, decision=None):
         post_inventory['current'][role].append(reward['name'])
         if role == 'card':
             screen = 'reward'
+            if 'deck_size' in resources:
+                resources['deck_size'] += 1
     elif role == 'card_reward' and ui['menu_family'] == 'loot_rewards':
         screen = 'card_reward'
     elif role == 'skip' and ui['menu_family'] == 'loot_cards':
@@ -100,7 +125,7 @@ def plan_loot(snapshot, decision=None):
         screen = 'map'
     else:
         raise ValueError('reward semantics need strategic review')
-    post = {'screen': screen, 'phase': 'choose', 'resources': resources,
+    post = {'screen': screen, 'phase': 'result' if screen == 'map' else 'choose', 'resources': resources,
             'inventory': 'unchanged' if post_inventory == inventory else post_inventory,
             'facts': deepcopy(value['facts']), 'allow_changed_facts': []}
     draft = {'schema': 'veda.menu-draft.v1', 'decision_policy': 'learning',

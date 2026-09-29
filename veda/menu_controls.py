@@ -50,9 +50,20 @@ def _loot(obs):
     ui = _base(obs, family)
     _require(family in {'loot_rewards', 'loot_cards'}
              and ui['screen'] == ('reward' if family == 'loot_rewards' else 'card_reward')
-             and ui['phase'] == 'choose' and ui['selection_mode'] == 'immediate'
-             and not ui['selected_ids'] and not ui['pending_ids'] and ui.get('confirm') is None,
-             'loot controls require a reviewed immediate reward screen')
+             and ui['phase'] in {'choose', 'confirm'} and ui['selection_mode'] == 'immediate',
+             'loot controls require a reviewed reward or card confirmation screen')
+    if ui['phase'] == 'choose':
+        _require(not ui['selected_ids'] and not ui['pending_ids'] and ui.get('confirm') is None,
+                 'reward choices cannot assume a selection or confirmation')
+    else:
+        selected = ui['selected_ids']
+        _require(family == 'loot_cards' and len(selected) == 1 and ui['pending_ids'] == selected
+                 and ui['focused_id'] == selected[0]
+                 and next(o for o in ui['options'] if o['id'] == selected[0]).get('role') == 'card',
+                 'card confirmation requires the actual selected card')
+        _require(ui.get('confirm', {}).get('evidence', {}).get('kind') == 'visible_hint',
+                 'card confirmation requires its visible confirmation hint')
+        _proof(ui['confirm'], obs, 'confirm:' + ui['choice_id'])
     _require(obs['facts'].get('reward_source') == 'combat', 'routine loot is scoped to combat rewards')
     _grid(ui)
     return ui

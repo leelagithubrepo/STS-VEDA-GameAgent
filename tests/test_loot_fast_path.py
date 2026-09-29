@@ -118,6 +118,8 @@ class LootTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root=Path(directory);now=datetime.now(timezone.utc)-timedelta(seconds=6)
             source=snapshot(True)
+            source['ui'].update(phase='confirm', selected_ids=['strike'], pending_ids=['strike'],
+                                confirm_hint={'button':'cross','hint_text':'Cross Confirm'})
             decision={'option_id':'strike','reason':'Synthetic explicit card choice.', 'decision_key':decision_key(source)}
             planned=plan_loot(source,decision)
             before_image=make_capture(root,now)

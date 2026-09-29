@@ -18,6 +18,25 @@ from veda.reviewed_play import MAX_BYTES, ReviewedPlaySession
 from veda.telemetry_database import TelemetryDatabase
 
 
+def terminal_response(result, *, full_timing=False):
+    """Keep action/recovery fields intact; do not repeat timing history per tap."""
+    if full_timing:
+        return result
+    result = deepcopy(result)
+    for container in (result, result.get('summary', {})):
+        timing = container.get('timing')
+        if not isinstance(timing, dict) or timing.get('schema') != 'veda.play-timing-summary.v1':
+            continue
+        compact = {k: timing[k] for k in ('phase', 'measurement_complete', 'verified_input_count', 'new_alerts') if k in timing}
+        for name in ('move', 'floor'):
+            scope = timing.get(name)
+            compact[name] = None if scope is None else {k: scope[k] for k in
+                ('id', 'kind', 'active_seconds', 'target_seconds', 'over_target', 'measurement_basis') if k in scope}
+        compact.update(compact=True, detail='operation summary or --verbose-timing; full history remains in timing.json')
+        container['timing'] = compact
+    return result
+
+
 @contextmanager
 def jsonl_terminal(stream):
     """Remove the PTY's short canonical-line limit, restoring it on every exit.
@@ -118,6 +137,7 @@ def main(argv=None):
     parser.add_argument('--decision-policy', choices=('strict', 'learning'),
                         help='Defaults to learning in codex mode and strict in shadow mode. Learning continues after '
                              'recoverable review errors; control and pending-input checks remain enforced.')
+    parser.add_argument('--verbose-timing', action='store_true', help='Include full timing history in every response.')
     args = parser.parse_args(argv)
     if not args.database.is_file():
         parser.error("an existing run database is required")
@@ -126,10 +146,11 @@ def main(argv=None):
         with jsonl_terminal(sys.stdin), ReviewedPlaySession(args.directory, run_id=args.run_id, telemetry=telemetry,
                 mode=args.mode, controller_factory=lambda: BridgeClient(args.socket),
                 decision_policy=args.decision_policy or ('learning' if args.mode == 'codex' else 'strict')) as session:
-            print(json.dumps({"status": "ready_unarmed", "summary": session.summary(),
+            print(json.dumps(terminal_response({"status": "ready_unarmed", "summary": session.summary(),
                 "next_operation": "bridge_preflight" if args.mode == "codex" else "summary",
-                "request_format": "newline-terminated JSONL; request_file preferred"}), flush=True)
+                "request_format": "newline-terminated JSONL; request_file preferred"}, full_timing=args.verbose_timing)), flush=True)
             for line in timed_requests(sys.stdin, session):
+                full_timing = args.verbose_timing
                 try:
                     if isinstance(line, Exception):
                         raise line
@@ -137,10 +158,11 @@ def main(argv=None):
                         raise ValueError("request exceeds byte limit")
                     from veda.request_envelope import load_request
                     value = load_request(line)
+                    full_timing = full_timing or isinstance(value, dict) and value.get('operation') in {'summary', 'timing'}
                     result = session.handle(value)
                 except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
                     result = session.recoverable_error(error)
-                print(json.dumps(result, allow_nan=False), flush=True)
+                print(json.dumps(terminal_response(result, full_timing=full_timing), allow_nan=False), flush=True)
     except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
         parser.error(str(error))
     except KeyboardInterrupt:

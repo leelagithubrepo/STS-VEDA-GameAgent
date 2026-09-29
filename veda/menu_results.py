@@ -56,10 +56,14 @@ def _draft(value, pending):
     draft = _json(value)
     required = {'schema', 'action_id', 'resources', 'inventory', 'facts', 'result', 'observed_result'}
     _require(isinstance(draft, dict) and required <= set(draft)
-             and not set(draft) - required - {'context', 'telemetry'} and draft['schema'] == SCHEMA,
+             and not set(draft) - required - {'context', 'telemetry', 'decision_policy'} and draft['schema'] == SCHEMA,
              'compact veda.menu-result.v1 required; no source, hashes, reviews or frame IDs')
-    _require(draft['action_id'] == pending['action_id'] and _text(draft['observed_result'], 256),
-             'matching action ID and bounded observed-result description required')
+    _require('decision_policy' not in draft
+             or draft['decision_policy'] == pending['request'].get('decision_policy', 'strict'),
+             'result cannot change the pending action decision policy')
+    _require(draft['action_id'] == pending['action_id'], 'result action ID must match the pending action')
+    _require(_text(draft['observed_result'], 2048),
+             'observed_result must be nonempty text of at most 2048 UTF-8 bytes')
     _require(isinstance(draft['result'], dict), 'explicit observed result required')
     return draft
 
@@ -112,12 +116,12 @@ def _observed_ui(draft, pending, checked):
             ui = record_focus(ui, pending['command']['buttons'][0], result['focused_id'])
         ui['focused_id'] = result['focused_id']
         ui = _ui(ui)
-    elif kind == 'shop_confirmation':
+    elif kind in {'shop_confirmation', 'loot_confirmation'}:
         _require(set(result) == {'kind', 'selected_id', 'confirm_hint'}
                  and pending['proposal']['step_kind'] == 'select'
-                 and before_ui.get('menu_family') == 'shop_stock'
+                 and before_ui.get('menu_family') == ('shop_stock' if kind == 'shop_confirmation' else 'loot_cards')
                  and pending['request']['choice']['option_ids'] == [result['selected_id']],
-                 'observe the exact pending merchant selection and confirmation hint')
+                 'observe the exact pending selection and confirmation hint')
         ui = _unbound_ui(before_ui)
         ui.update(phase='confirm', focused_id=result['selected_id'],
                   selected_ids=[result['selected_id']], pending_ids=[result['selected_id']],

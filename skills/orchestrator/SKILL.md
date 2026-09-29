@@ -82,8 +82,15 @@ is also accepted. Never resend gameplay input to repair a result envelope.
 
 For combat loot use `docs/veda-loot-play.md` and `veda_loot.py`. Collect free
 gold with the fixed routine reason, collect potions into confirmed empty slots,
-and open card offers. Choose the card or skip once, then reuse that decision
-while navigating. Do not repeat strategy or boss research for routine loot.
+and open card offers. Use its compact `--result` commands, generated packet
+paths and `--last-result` instead of rewriting snapshots/inventory. After gold
+verification, immediately prepare the next routine reward action from that
+same inspected state. The adapter already logs the outcome; defer optional
+reports and separate SQL work until rewards are handled. Choose the card or
+skip once, retain it through focus/select/visible confirmation, and record the
+card only after actual acquisition. Do not repeat strategy or boss research
+for routine loot. Timing history is available on request, not a task to
+reanalyze between taps.
 
 For merchants use `docs/veda-shop-play.md` and `veda_shop.py`. Compact result
 commands, session-derived IDs, generated packet paths and `--last-result`
@@ -99,8 +106,11 @@ For screen-specific commands, use `docs/veda-combat-play.md`,
 `docs/veda-menu-controls.md` or `docs/veda-map-play.md`. Default PS5 profiles
 can supply known controls when a glyph is absent. Inspect actual upgrade cards
 after opening the picker. On maps, use `docs/veda-map-travel.md` and
-`veda_map_step.py`: save a route per run/act, retain its destination through
-focus changes. Exactly one confirmed reachable node uses the automatic forced
+`veda_map_step.py`: identify the current floor's circled node from the HUD and
+canonical current-node record (earlier visited nodes may also be circled),
+then trace its outgoing edges and inspect the immediate reachable set. Future forks and the legend do not
+require scrolling when those current edges are readable. Save a route per
+run/act, retaining its destination through focus changes. Exactly one confirmed reachable node uses the automatic forced
 move: omit the decision file and skip route/boss analysis, then verify entry.
 At actual forks retain the chosen destination through focus taps and reuse inspected topology.
 After verifying focus, use `--last-result` to carry the actual state forward;

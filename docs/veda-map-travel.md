@@ -12,6 +12,15 @@ take longer.
 
 ## Only one reachable next node
 
+First identify the current floor's circled node using the HUD floor and the
+canonical current-node record; earlier visited nodes can also be circled.
+Trace its outgoing edges to the next row.
+Count that reachable set before deciding whether to survey farther. A future
+three-way fork does not make the current single edge a choice. The legend or
+an uninspected upper map is no reason to scroll if the immediate connections
+are already readable. Inspect farther only if those connections are obscured
+or when a real route choice would benefit from it.
+
 When `map_siblings` confirms the complete reachable set and it contains exactly
 one enabled, identified node, call `veda_map_step.py --snapshot MAP_SNAPSHOT.json`
 with the normal binding flags and `--execute`. Omit `--decision`; no route file
