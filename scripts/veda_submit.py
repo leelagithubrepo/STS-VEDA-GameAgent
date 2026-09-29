@@ -9,6 +9,74 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from veda.adapter_channel import submit, ReplyUnknown
 
 
+def _pending_recovery(session, result):
+    """Reconcile a durable attempted action before bridge preflight.
+
+    Only an exact verify packet already written for the pending action may be
+    submitted.  Verification/finalization do not send controller input.
+    """
+    if not isinstance(result, dict) or result.get('status') not in {'recoverable_review', 'bridge_access_blocked'}:
+        return result
+    pending = result.get('pending')
+    if not isinstance(pending, dict) or pending.get('status') not in {'attempted', 'verified_pending_log'}:
+        return result
+    original_delivery = result.get('controller_input_sent')
+    if pending.get('status') == 'verified_pending_log':
+        finalized = submit(session, {'operation': 'finalize'})
+        if finalized.get('status') in {'verified', 'finalized', 'run_complete'}:
+            return {'status': 'pending_recovered', 'ready': False, 'armed': bool(result.get('armed')),
+                    'controller_input_sent': False,
+                    'next_operation': 'resume_play' if result.get('armed') else 'bridge_preflight',
+                    'recovery': {'automatic': True, 'packet_found': False, 'input_replayed': False,
+                                 'finalized': True, 'original_controller_input_sent': original_delivery}}
+        return {**finalized, 'status': 'pending_reconciliation_required',
+                'controller_input_sent': False, 'next_operation': 'finalize',
+                'required': finalized.get('required') or 'Finalize the retained verified result before arming. Never resend.',
+                'recovery': {'automatic': True, 'packet_found': False, 'input_replayed': False,
+                             'original_controller_input_sent': original_delivery}}
+    from veda.pending_recovery import find_matching_verify_request
+    packet = find_matching_verify_request(session, pending.get('action_id'))
+    if packet is None:
+        result = dict(result)
+        result.update(status='pending_reconciliation_required', ready=False,
+                      controller_input_sent=False, next_operation='verify',
+                      required=('Capture and inspect a fresh settled after-image, then submit an exact '
+                                 'verify packet for this action_id. Never resend the attempted input.'),
+                      recovery={'automatic': True, 'packet_found': False, 'input_replayed': False,
+                                'original_controller_input_sent': original_delivery})
+        return result
+    verified = submit(session, {'request_file': str(packet)})
+    if verified.get('status') == 'run_complete':
+        return {**verified, 'controller_input_sent': False,
+                'recovery': {'automatic': True, 'packet_found': True, 'packet': str(packet),
+                             'input_replayed': False, 'original_controller_input_sent': original_delivery}}
+    if verified.get('status') not in {'verified', 'finalized'}:
+        return {**verified, 'status': 'pending_reconciliation_required',
+                'controller_input_sent': False,
+                'next_operation': verified.get('next_operation', 'verify'),
+                'required': verified.get('required') or 'Correct only the verify packet; never resend the attempted input.',
+                'recovery': {'automatic': True, 'packet_found': True, 'packet': str(packet), 'input_replayed': False,
+                             'original_controller_input_sent': original_delivery}}
+    # ReviewedPlaySession.verify normally finalizes atomically and returns
+    # ``verified``. Only legacy/repair replies explicitly requesting a second
+    # finalize need that follow-up operation.
+    if verified.get('requires_finalize'):
+        finalized = submit(session, {'operation': 'finalize'})
+    else:
+        finalized = verified
+    if finalized.get('status') not in {'finalized', 'verified', 'run_complete'}:
+        return {**finalized, 'status': 'pending_reconciliation_required',
+                'controller_input_sent': False,
+                'required': 'Result verified but not finalized; submit finalize before arming. Never resend.',
+                'recovery': {'automatic': True, 'packet_found': True, 'packet': str(packet), 'input_replayed': False}}
+    return {'status': 'pending_recovered', 'ready': False, 'armed': bool(result.get('armed')),
+            'controller_input_sent': False,
+            'next_operation': 'resume_play' if result.get('armed') else 'bridge_preflight',
+            'recovery': {'automatic': True, 'packet_found': True, 'packet': str(packet),
+                         'input_replayed': False, 'finalized': True,
+                         'original_controller_input_sent': original_delivery}}
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--session', required=not bool(os.environ.get('VEDA_PLAY_SESSION')), type=Path,
@@ -21,6 +89,8 @@ def main(argv=None):
     request = {'request_file': str(args.request.resolve())} if args.request else {'operation': args.operation}
     try:
         result = submit(args.session, request)
+        if args.operation == 'bridge_preflight':
+            result = _pending_recovery(args.session, result)
     except ReplyUnknown as error:
         print(json.dumps({'status': 'reply_unknown', 'reason': str(error), 'must_not_repeat': True,
                           'controller_input_sent': None}))
