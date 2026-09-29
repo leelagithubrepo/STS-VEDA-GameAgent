@@ -690,7 +690,7 @@ class ReviewedPlaySession(CombatInputAdapter):
         assessment = pending['proposal'].get('assessment', {})
         decision['prediction'] = {'decision_policy': self.decision_policy,
             'assessment': {k: deepcopy(assessment.get(k)) for k in
-                ('warnings', 'hard_reasons', 'forecast_status', 'decision_under_uncertainty')},
+                ('warnings', 'hard_reasons', 'forecast_status', 'decision_under_uncertainty', 'candidate_actions')},
             'forecast': deepcopy(assessment.get('forecast')), 'chosen_action': deepcopy(pending['semantic']),
             'chosen_reason': request['reasoning'], 'retrieved_case_ids': deepcopy(request.get('retrieved_case_ids', []))}
         # Mark ambiguity before the database call too: if the write commits but
