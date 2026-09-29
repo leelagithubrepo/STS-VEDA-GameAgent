@@ -1147,6 +1147,7 @@ class ReviewedPlaySession(CombatInputAdapter):
                                        (next_card is not None and next_card.get('playable') is True
                                         and type(next_cost) is int and type(after_state.get('energy')) is int
                                         and next_cost >= 0 and next_cost <= after_state.get('energy'))))
+                queue_record = None
                 if queue_eligible:
                     next_plan = deepcopy(pending['request']['plan'])
                     next_plan['steps'] = [deepcopy(queued[0])]
@@ -1154,10 +1155,21 @@ class ReviewedPlaySession(CombatInputAdapter):
                     self.state['last_verified']['combat_continuation'] = {
                         'plan': next_plan,
                         'reasoning': pending['request']['reasoning']}
+                    queue_record = {'status': 'promoted', 'action_id': pending['action_id'],
+                                    'remaining_steps': len(next_plan.get('queue', [])) + 1,
+                                    'reason': 'next step remained visible, playable, and state-valid'}
                 elif not complete:
                     self.state['last_verified']['combat_continuation'] = {
                         'plan': deepcopy(pending['request']['plan']),
                         'reasoning': pending['request']['reasoning']}
+                elif queued:
+                    queue_record = {'status': 'invalidated', 'action_id': pending['action_id'],
+                                    'remaining_steps': len(queued),
+                                    'reason': 'turn, hand, tooltip, target, or energy guard changed'}
+                if queue_record is not None:
+                    outcomes = self.state.setdefault('queue_outcomes', [])
+                    outcomes.append(queue_record)
+                    self.state['queue_outcomes'] = outcomes[-128:]
             step_kind = pending['semantic']['kind']
             self._timing_event('verified_input', action_id=pending['action_id'],
                                step_kind=step_kind, move_complete=bool(complete))
