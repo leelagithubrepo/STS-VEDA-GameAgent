@@ -35,11 +35,38 @@ is no choice. Optional new archived views are deferred on this shortcut; keep
 their files for when planning could matter. Decisions inside the next room
 still receive the usual strategy.
 
+## Derive immediate choices from observed connections
+
+When several rows are visible, use `--connections CONNECTIONS.json` with the
+snapshot. It contains `current_node_id`, `outgoing_complete:true`, `nodes`
+(the same observed option objects as `ui.options`, including future rows),
+`edges` as `[from_id,to_id]` pairs, actual `focused_id` and `evidence_note`.
+The helper includes only edges **from the actual current node** and checks
+that each destination is on the next floor. A later three-way fork therefore
+cannot turn today's single path into three choices. This projects the
+advisor's reviewed edges; it does not identify connections from pixels.
+
+If a pending focus input exposed a wrong selectable-set declaration, inspect
+the actual complete map and use:
+
+```sh
+python3 scripts/veda_map_step.py --reobserve-result ACTUAL_MAP_SNAPSHOT.json \
+  --connections ACTUAL_CONNECTIONS.json --unchanged \
+  --observed-result 'Describe the corrected immediate edges and actual focus.' \
+  --session SESSION_DIRECTORY --capture EXACT_AFTER.png \
+  --reviewer 'Codex Orchestrator' --evidence-note 'Actual map inspected after the pending focus press.' --reviewed
+```
+
+`--connections` is optional when the snapshot already contains the corrected
+immediate set. Resources, inventory, current floor/node and other game facts
+must be observed unchanged. This learning-mode result records the mistaken
+reading and actual options, resolves only navigation, and never claims arrival
+or teaches an edge from the incorrect before-state. Submit the generated result,
+then use `--last-result` for the next choice. Do not replay the pending direction.
+
 ## Save one choice, then navigate
 
-Keep a private cache under the session, named by run and act. Write a new cache
-version when saving a decision, adding views or advancing to a new map node.
-It is planning memory: it never arms the controller or proves arrival.
+With `--session`, binding automatically saves a content-addressed cache version and loads the latest cache for that act on the next call. Omit `--cache-output` and `--cache` normally. Identical explicit cache output is idempotent. Automatic paths give different content a new version; an explicit existing path with different content is rejected. Planning previews are compact; `--verbose` includes full draft/cache. The cache is planning memory, never proof of arrival.
 
 Make one `veda.map-travel-snapshot.v1` per map arrival. It uses the same
 `context`, `inventory`, `resources`, `facts` and `ui` as the compact map-node
@@ -74,7 +101,7 @@ Prepare one checked step and save the choice:
 
 ```sh
 python3 scripts/veda_map_step.py --snapshot MAP_SNAPSHOT.json \
-  --decision ROUTE_DECISION.json --cache-output NEW_ACT_CACHE.json \
+  --decision ROUTE_DECISION.json \
   --session SESSION_DIRECTORY/state.json --capture EXACT_INSPECTED.png \
   --reviewer 'Codex Orchestrator' --evidence-note 'Actual selectable nodes, focus and HUD inspected.' \
   --reviewed --execute --output NEW_REQUEST.json
@@ -115,7 +142,7 @@ icon recognition.
 Reuse the verified actual map state and saved destination:
 
 ```sh
-python3 scripts/veda_map_step.py --last-result --cache ACT_CACHE.json \
+python3 scripts/veda_map_step.py --last-result \
   --session SESSION_DIRECTORY/state.json --capture EXACT_AFTER.png \
   --reviewer 'Codex Orchestrator' --evidence-note 'Same inspected verified map state.' \
   --reviewed --execute
@@ -176,8 +203,7 @@ health margin or shopping budget, use explicit crossing thresholds:
 A new run/act needs its own cache. Correct contradictory views from their images;
 retain old evidence rather than repeatedly scrolling. The advisor can still
 choose from currently inspected reachable nodes while correcting archival data.
-For that fallback, keep the conflicting archive unchanged, omit `--cache` and
-`--view`, choose a newly reviewed one-step route and write a distinct cache file.
+For that fallback use `--fresh-cache`, omit `--cache` and `--view`, and choose a newly reviewed one-step route. Old immutable versions remain available.
 Do not submit the conflicting cache again or erase it to make validation pass.
 
 Inspect more map only when it could change the route or useful boss preparation.

@@ -223,7 +223,7 @@ class MapTravelTests(SurveyFixture):
         self.assertFalse(json.loads(again.stdout)['controller_input_sent'])
         before = cache.read_bytes()
         overwrite = subprocess.run(command + ['--decision', str(choice), '--cache-output', str(cache)], capture_output=True, text=True)
-        self.assertEqual(2, overwrite.returncode)
+        self.assertEqual(0, overwrite.returncode)  # Same-content cache is idempotent.
         self.assertEqual(before, cache.read_bytes())
 
 
@@ -240,6 +240,23 @@ class MapTravelAdapterTests(unittest.TestCase):
             controller_factory=lambda: self.flow.controller, clock=lambda: self.flow.now)
         draft = self.flow.draft(wanted='right', room='merchant')
         self.snapshot = {'schema': SNAPSHOT_SCHEMA, **{k: draft[k] for k in ('context', 'inventory', 'resources', 'facts', 'ui')}}
+
+    def test_correct_future_fork_misread_resolves_pending_focus_then_forced_move(self):
+        f = self.flow
+        prepared = f.prepare(plan_map(self.snapshot, decision=decision('start', 'left'))['draft'])
+        ui = deepcopy(self.snapshot['ui'])
+        ui['options'] = [deepcopy(ui['options'][1])]
+        ui['options'][0]['node'].update(kind='event', classification_evidence='Question mark directly connected to current circle.')
+        ui['options'][0]['label'] = 'Question mark'
+        ui['map_siblings']['selectable_count'] = 1
+        with self.assertRaisesRegex(ValueError, 'gameplay state'):
+            f.verify(prepared, {'kind':'map_reobservation','ui':ui}, resources=dict(f.resources,hp=79))
+        response, _ = f.verify(prepared, {'kind':'map_reobservation','ui':ui})
+        self.assertFalse(response['logical_action_complete'])
+        current = last_snapshot(f.session.path)
+        planned = plan_map(current)
+        self.assertTrue(planned['forced_move']); self.assertEqual('center',planned['destination'])
+        self.assertEqual(1,len(f.controller.inputs)); self.assertIsNone(f.session.state['pending'])
 
     def test_focus_then_entry_uses_saved_decision_and_real_verification(self):
         f = self.flow

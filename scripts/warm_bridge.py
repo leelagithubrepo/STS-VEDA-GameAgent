@@ -13,8 +13,10 @@ Input examples::
     {"action": "close"}
 
 Card and End Turn sequencing is deliberately kept in
-``veda.controller_state_machine``.  Callers must re-observe after each tap;
-the bridge remains a transport and never guesses whether a card resolved.
+``veda.controller_state_machine``. Callers re-observe after each reviewed
+operation; the adapter can group up to four known hand-direction taps before
+verifying final focus. The bridge remains a transport and never guesses
+whether a card resolved.
 
 This program deliberately accepts only a small allowlist of controller
 operations.  It never prints the PSN user, host, pairing data, or API token.

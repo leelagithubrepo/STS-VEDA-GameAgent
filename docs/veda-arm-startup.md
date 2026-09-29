@@ -57,8 +57,7 @@ python3 scripts/veda_arm.py confirm \
   --note 'Map visible; Ironclad A2, HP and gold match the current run.'
 ```
 
-Immediately send the returned `request_file` pointer to the already running
-adapter, followed by a newline. Only the adapter can arm. Do not submit the
+Immediately submit the returned packet path with `veda_submit.py --session SESSION_DIRECTORY --request NEW_ARM_REQUEST.json` to the already running adapter with `--request-server`. Only the adapter can arm. Do not submit the
 stage file or repeat `arm` after successful arming. Continue to the checked next
 action in the same turn unless the user asked only to arm.
 

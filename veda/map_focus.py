@@ -12,6 +12,25 @@ def verify_focus(proposal, before, after):
              'map focus reconciliation requires the same node menu')
     for key in ('context', 'resources', 'inventory_digest', 'facts'):
         _require(_same_json(before[key], after[key]), 'map focus changed gameplay state')
+    outcome = after['review'].get('outcome', {})
+    _require(outcome.get('action_id') == proposal['action_id']
+             and outcome.get('before_frame_id') == before['frame']['frame_id']
+             and outcome.get('before_sha256') == before['frame']['image_sha256']
+             and outcome.get('choice_id') == proposal['choice']['choice_id']
+             and outcome.get('option_ids') == proposal['choice']['option_ids']
+             and _text(outcome.get('observed_result')), 'exact observed map focus outcome required')
+    if outcome.get('map_reobservation') is True:
+        from .menu_controls import _map_nodes
+        _map_nodes(after)
+        _require(before['frame']['image_sha256'] != after['frame']['image_sha256']
+                 and after['ui']['choice_id'] == before['ui']['choice_id'],
+                 'map correction needs a distinct inspected result of the same choice')
+        # Correct a perception error without claiming entry or learning a
+        # navigation edge from an incorrect before-declaration.
+        return {'step_verified': True, 'choice_complete': False, 'observed_mismatches': [{
+            'field': 'map_selectable_set', 'declared_before': deepcopy(before['ui']['options']),
+            'observed': deepcopy(after['ui']['options']),
+            'observed_focus': after['ui']['focused_id']}]}
     target = after['ui']['focused_id']
     _require(target in {o['id'] for o in before['ui']['options'] if o['enabled']},
              'actual map focus must be a current selectable sibling')

@@ -86,11 +86,12 @@ def _reading(value, checked):
              'unknowns must be explicit bounded descriptions')
     ui = deepcopy(value['ui'])
     _require(isinstance(ui, dict) and not set(ui) - {'screen_type', 'phase', 'focused_card_id',
-        'selected_card_id', 'focused_target_id', 'hand_order', 'target_order', 'control_profile', 'recovery_direction'} - FOCUS_FIELDS
+        'selected_card_id', 'focused_target_id', 'hand_order', 'target_order', 'control_profile', 'recovery_direction', 'navigation_mode'} - FOCUS_FIELDS
         and ui.get('screen_type', 'combat') == 'combat'
         and ui.get('phase') in {'hand', 'card_selected', 'targeting', 'tooltip', 'inspect'}
         and {'phase', 'focused_card_id', 'selected_card_id', 'focused_target_id', 'hand_order'} <= set(ui),
         'combat UI needs explicit phase, focus, selection and hand order; no source or controls')
+    _require(ui.get('navigation_mode', 'single') in {'single', 'bounded_hand'}, 'unsupported hand navigation mode')
     ui['screen_type'] = 'combat'
     shape = assess_observation(None, {'state': state, 'inventory': inventory, 'fresh': True,
                                     'unknowns': value['unknowns']}, policy=policy)

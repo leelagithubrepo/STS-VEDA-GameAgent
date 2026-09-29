@@ -32,12 +32,20 @@ helper; a finished run's ledger does not become a new run's identity.
 Start one owned bridge with `./scripts/warm_bridge --idle-timeout 0 --socket
 /tmp/veda-ps5-bridge.sock`. Require its `command_channel:"unix_socket"` and the
 adapter's own ready preflight. Use `veda_reviewed_play.py --mode codex
---decision-policy learning`. This is a gameplay policy, not automatic arming.
+--decision-policy learning --request-server`. This is a gameplay policy, not automatic arming.
 Follow `docs/veda-arm-startup.md` to stage, inspect and submit the arm review.
 
 After arming, take the first action and keep working in the same turn. An
 armed response, timing overrun, rejected draft or verified floor boundary is
 not task completion. Do not return a final response asking for “continue.”
+
+Use `veda_submit.py --session SESSION_DIRECTORY --request PACKET.json` for
+request/reply submission. It returns on acknowledgement; avoid fixed 10/30-second
+Terminal waits. Add `--capture-after` for action packets and display the returned
+image in the same tool call. Inspect before verification; no helper recognizes
+pixels. Binding already validates drafts, so ordinary steps need no separate
+validation call. On a lost reply, inspect the existing pending action; never
+resend it. See the hot-path guide for transport/recovery details.
 
 ## Decide, act, observe, remember
 
@@ -51,7 +59,7 @@ not task completion. Do not return a final response asking for “continue.”
 3. Use the compact combat/menu helper with `decision_policy:"learning"` and
    bind with `--session SESSION_DIRECTORY/state.json`. An inspected settled
    state does not expire just because time passed. Capture, inspect, bind and submit
-   `--execute` for one input through the armed adapter. A warning is information
+   `--execute` for one reviewed operation through the armed adapter. A warning is information
    for the decision; it is not a request for player approval.
 4. Observe the result and verify what actually happened. Focus or selection
    is not card play. An unexpected HP, energy, status, draw or reward can be a
@@ -60,6 +68,13 @@ not task completion. Do not return a final response asking for “continue.”
    Keep the chosen action, reason, uncertainties, available prediction and
    observed result linked. Recorded cases inform later choices; they do not
    automatically retrain the model or establish a universal rule.
+
+For combat use the guide's `--last-result`, compact observed results and generated
+paths. Retain the card decision through navigation/selection; choose again after
+its effect resolves. With actual hand focus, known order and default PS5 controls,
+`--bounded-hand` groups up to four identical direction taps; verify final actual
+focus before selecting. Other operations remain separate. A partially delivered
+batch remains one pending action to reconcile, never replay.
 
 Describe the actual combat focus domain. A raised hand card with keyword help
 is still hand focus; do not dismiss it with Up. Status, relic and potion focus
@@ -112,7 +127,7 @@ then trace its outgoing edges and inspect the immediate reachable set. Future fo
 require scrolling when those current edges are readable. Save a route per
 run/act, retaining its destination through focus changes. Exactly one confirmed reachable node uses the automatic forced
 move: omit the decision file and skip route/boss analysis, then verify entry.
-At actual forks retain the chosen destination through focus taps and reuse inspected topology.
+At actual forks retain the chosen destination through focus taps and reuse inspected topology. The helper automatically versions/reuses the per-act cache. Use `--connections` to derive immediate choices from reviewed edges, and `--reobserve-result` to correct a misread selectable set after pending focus while preserving unchanged gameplay facts.
 After verifying focus, use `--last-result` to carry the actual state forward;
 never reuse the original focus declaration. Record unexpected actual focus with
 `--focus-result` and continue after verification, without resending the tap.

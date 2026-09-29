@@ -299,3 +299,41 @@ def reuse_verified_focus(snapshot, session, capture):
     value = deepcopy(snapshot)
     value['ui']['focused_id'] = verified['ui']['focused_id']
     return value
+
+
+def load_session_cache(session, snapshot):
+    from .map_survey import read_json
+    from .shop_results import session_directory
+    path = session_directory(session)/'map-packets'/('cache-act-' + str(snapshot['facts']['act']) + '.json')
+    return _read_cache(read_json(path), snapshot) if path.exists() else None
+
+
+def save_cache(cache, *, output=None, session=None):
+    """Content-address immutable versions; atomically maintain private latest cache."""
+    import json
+    import os
+    from uuid import uuid4
+    from .map_survey import read_json
+    from .shop_results import session_directory
+    data = (json.dumps(cache, sort_keys=True, indent=2, allow_nan=False) + '\n').encode()
+    if output is None:
+        _require(session is not None, 'cache output or session required')
+        directory = session_directory(session)/'map-packets'; directory.mkdir(exist_ok=True)
+        output = directory/('cache-' + hashlib.sha256(data).hexdigest() + '.json')
+    output = Path(output)
+    try:
+        with output.open('xb') as stream:
+            stream.write(data); stream.flush(); os.fsync(stream.fileno())
+    except FileExistsError:
+        _require(read_json(output) == cache, 'cache path contains another version; omit cache-output for generated paths')
+    if session is not None:
+        directory = session_directory(session)/'map-packets'; directory.mkdir(exist_ok=True)
+        latest = directory/('cache-act-' + str(cache['act']) + '.json')
+        temp = directory/('cache-latest-' + uuid4().hex + '.tmp')
+        try:
+            with temp.open('xb') as stream:
+                stream.write(data); stream.flush(); os.fsync(stream.fileno())
+            os.replace(temp, latest)
+        finally:
+            temp.unlink(missing_ok=True)
+    return str(output.resolve())

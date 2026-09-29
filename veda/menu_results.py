@@ -107,6 +107,13 @@ def _observed_ui(draft, pending, checked):
               'layout_id': before_ui['layout_id'], 'options': [], 'order': [], 'focused_id': None,
               'selection_mode': 'immediate', 'required_count': 0, 'selected_ids': [],
               'pending_ids': [], 'navigation': [], 'map_view': deepcopy(result['view'])}
+    elif kind == 'map_reobservation':
+        _require(set(result) == {'kind', 'ui'} and pending['proposal']['step_kind'] == 'focus'
+                 and pending['request'].get('decision_policy') == 'learning'
+                 and before_ui.get('menu_family') == 'map_nodes'
+                 and result['ui'].get('menu_family') == 'map_nodes',
+                 'map reobservation requires pending learning-mode map focus and actual node UI')
+        ui = _ui(result['ui'])
     elif kind == 'focus':
         _require(set(result) == {'kind', 'focused_id'} and pending['proposal']['step_kind'] == 'focus',
                  'focus review requires the pending focus step')
@@ -276,6 +283,8 @@ def _request(draft, pending, checked, control_profile, clock):
         'action_id': pending['action_id'], 'before_frame_id': old['frame']['frame_id'],
         'before_sha256': before['source']['sha256'], 'choice_id': before['choice']['choice_id'],
         'option_ids': before['choice']['option_ids'], 'observed_result': draft['observed_result']})
+    if draft['result'].get('kind') == 'map_reobservation':
+        review['outcome']['map_reobservation'] = True
     resources = observed('resources', old['resources'])
     facts = observed('facts', old['facts'])
     context = deepcopy(draft.get('context', before['context']))

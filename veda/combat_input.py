@@ -178,7 +178,14 @@ class CombatInputAdapter:
             observation["selected_item"] = focused
             step = self.machine.plan_card_step(observation, card_name=card["id"],
                                                focus_button="right" if delta > 0 else "left")
-            return step, {"kind": "card_focus", "expected": ids[index + delta]}
+            count = 1
+            if ui.get('navigation_mode') == 'bounded_hand':
+                if (ui.get('control_profile') != FOCUS_CONTROL_PROFILE
+                        or not FOCUS_FIELDS <= set(ui) or focus['domain'] != 'hand'):
+                    raise RuntimeStop('bounded hand navigation needs explicit hand focus and default PS5 controls')
+                count = min(4, abs(ids.index(card['id']) - index))
+                step = dict(step, buttons=step['buttons'] * count)
+            return step, {"kind": "card_focus", "expected": ids[index + delta * count]}
         observation["selected_item"] = card["name"]
         self.machine.reset()
         return self.machine.plan_card_step(observation, card_name=card["name"]), {"kind": "advance", "card": card}

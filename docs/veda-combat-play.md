@@ -4,7 +4,66 @@ Use these commands instead of reading adapter source or constructing full
 Reading/source/review objects during play. Every value still comes from actual
 inspection and confirmed ledger context. [Timing and startup](veda-play-hot-path.md).
 
-## Prepare before capture
+## Keep one decision through navigation
+
+Create the first draft from the observed combat once. Use canonical
+`context:"session"` when available. Add
+`ui.control_profile:"ps5-default-cross-confirm-v1"` and bind with
+`--bounded-hand`. If focus is actually in the hand and its complete order is
+known, the adapter sends up to four identical Left or Right taps toward the
+chosen card in one operation. The computed path does not wrap past the known
+hand order. It never mixes buttons, selects a card, or batches target/tooltip recovery. Inspect and verify the final
+actual focus before selection. If delivery is uncertain, preserve the entire
+pending operation and inspect where it stopped; never repeat the batch.
+`--single-step` restores one direction tap at a time.
+
+After an unchanged focus result, use this compact review:
+
+```sh
+python3 scripts/veda_combat.py --focus-result ACTUAL_CARD_ID --unchanged \
+  --observed-result 'Actual raised card and unchanged gameplay inspected.' \
+  --session SESSION_DIRECTORY --capture EXACT_AFTER.png \
+  --reviewer 'Codex Orchestrator' --evidence-note 'Actual focus inspected.' --reviewed
+```
+
+For actual selection use `--selection-result CARD_ID` and, if targeting,
+`--target ENEMY_ID`. For unexpected player/enemy/relic/potion inspection use
+`--ui-result ACTUAL_UI.json --unchanged` with the complete actual focus fields.
+Add `--tooltip-kind card_keyword` for ordinary raised-card keyword help.
+`--unchanged` attests to inspected state, inventory, encounter, powers/rules,
+confidence and unknowns; use a full result when any of these changed.
+
+Submit the generated result packet using `veda_submit.py`. On `verified`,
+reuse the sealed actual state and retained card choice:
+
+```sh
+python3 scripts/veda_combat.py --last-result --session SESSION_DIRECTORY \
+  --capture EXACT_AFTER.png --reviewer 'Codex Orchestrator' \
+  --evidence-note 'Same inspected state; continue the chosen card.' --reviewed --execute
+```
+
+The incomplete card decision survives navigation/selection only. After its
+effect resolves, choose the next card with `--card ID --target ID --reason ...`,
+or provide `--plan PLAN.json --reason ...` for End Turn or additional reviews.
+This reuse does not assume an input succeeded. `--after-result RESULT_PACKET`
+supports an exact sealed result from an older session. An older session may lack a retained decision even after navigation; supply the already intended card/plan and reason once. A missing retained decision does not prove card completion. If a new capture shows
+changed facts or a different chosen move is needed, supply a new actual draft.
+
+Use `--actual-result ACTUAL.json` after a card or new turn: it contains actual
+`state`, complete `ui`, `others_unchanged:true`, and any changed `inventory`,
+`encounter`, `perception`, `unknowns`, `rules` or `boss_manifest`. Optional
+`next_turn`, `card_destination` and `telemetry` retain ordinary meanings below.
+`others_unchanged` is an inspected declaration about fields you omitted, never
+permission to fill values from the prediction. Use `--boundary-result
+BOUNDARY.json --unchanged` for an actual victory/defeat/selection boundary;
+there `--unchanged` refers only to inventory. Both take `--observed-result` and
+the same binding flags. Packet names and pending IDs are generated automatically.
+
+Normal binding validates internally. Separate `--validate` is for debugging a
+new structure, not a mandatory extra round trip per arrow. Retain the small
+synchronous outcome log; do optional reports after the floor.
+
+## First draft
 
 The source-free `veda.combat-draft.v1` has one `state`, the four context IDs,
 inventory, encounter name/type/confidence, perception confidence, explicit UI,
@@ -34,7 +93,7 @@ Learning mode does not require resolving every unknown before acting.
 python3 scripts/veda_combat.py --draft /absolute/combat-draft.json --validate
 ```
 
-Require `draft_valid:true`. The preview names the next atomic input; it is not
+If using the optional preview, require `draft_valid:true`. The preview names the next atomic input; it is not
 controller authority. An unread hand focus requires inspection, not assigning
 the first card as focused. Fix validation errors now, before the action image.
 
@@ -51,8 +110,7 @@ python3 scripts/veda_combat.py --draft /absolute/combat-draft.json \
 ```
 
 Submit the returned `request_file` pointer to the armed adapter. It performs
-one ordinary prepare/send cycle. Do not send again. Re-observe after focus,
-selection and target confirmation; never batch across them.
+one ordinary prepare/send cycle. Do not send again. Re-observe after each operation. Only verified hand navigation may use the bounded-direction exception above; selection and confirmation remain separate.
 
 ## Verify the actual result
 

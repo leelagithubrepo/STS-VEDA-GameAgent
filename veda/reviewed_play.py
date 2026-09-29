@@ -837,6 +837,8 @@ class ReviewedPlaySession(CombatInputAdapter):
                        after_context=after["context"], logical_action_complete=complete)
         if after.get('observation', {}).get('ui', {}).get('menu_family') == 'map_nodes':
             pending['verified_map_after'] = deepcopy(after)
+        if after.get('kind') == 'combat':
+            pending['verified_combat_after'] = deepcopy(after)
         self._save()
         return self.finalize()
 
@@ -1118,6 +1120,12 @@ class ReviewedPlaySession(CombatInputAdapter):
                 "verified_after_digest": pending.get('verified_after_digest')}
             if pending.get('verified_map_after') is not None:
                 self.state['last_verified']['map_after'] = deepcopy(pending['verified_map_after'])
+            if pending.get('verified_combat_after') is not None:
+                self.state['last_verified']['combat_after'] = deepcopy(pending['verified_combat_after'])
+                if not complete:
+                    self.state['last_verified']['combat_continuation'] = {
+                        'plan': deepcopy(pending['request']['plan']),
+                        'reasoning': pending['request']['reasoning']}
             step_kind = pending['semantic']['kind']
             self._timing_event('verified_input', action_id=pending['action_id'],
                                step_kind=step_kind, move_complete=bool(complete))

@@ -179,7 +179,7 @@ class CombatResultTests(unittest.TestCase):
         self.number += 1
         # Fixtures always precede the injected adapter clock, including receipt completion.
         self.fx.now = self.fx.base_time + timedelta(seconds=3 * self.number)
-        image = make_capture(self.root, self.fx.now-timedelta(seconds=1), index=str(self.number),
+        image = make_capture(self.root, self.fx.now-timedelta(seconds=1), index=format(self.number % 16, 'x'),
                              color=(30+self.number, 40, 50))
         output = self.root / f'packet-{self.number}.json'
         kwargs = dict(capture=image, reviewer='Synthetic reviewer', evidence_note='Synthetic exact-image result reviewed.',
@@ -340,6 +340,10 @@ class CombatResultTests(unittest.TestCase):
         response = self.session.handle(packet)
         self.assertTrue(response['logical_action_complete']); self.assertIsNone(self.session.state['pending'])
         self.assertNotEqual(packet['after']['context']['turn_id'], response['next_context']['turn_id'])
+        from veda.combat_flow import last_snapshot
+        reused = last_snapshot(self.session.path)
+        self.assertEqual(response['next_context'], reused['context'])
+        self.assertNotIn('plan', reused)
         with self.fx.db._connection() as con:
             self.assertEqual(2, con.execute('SELECT MAX(turn_number) FROM combat_turns').fetchone()[0])
 

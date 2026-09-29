@@ -31,14 +31,19 @@ python3 scripts/veda_play_clock.py start --session SESSION_DIRECTORY --run-id RU
 
 1. Read `veda_play_context.py --run-id RUN_ID` once for IDs, inventory and pending
    recovery. Treat it as historical. Do not query every previous request.
+   Reconcile an existing attempted input from its actual post-input image before
+   preparing another action. A stopped map-focus input with mistaken siblings
+   can use `veda_map_step.py --reobserve-result` from the map-travel guide;
+   correct the observation without resending the old direction. Do not arm
+   around pending input or clear its journal to make startup look ready.
 2. Check exclusive process ownership and `./scripts/bridge status`. Use
    command-scoped approval if the sandbox prevents process/socket checks.
    Inspect a planning screenshot to establish the actual game, attempt and HUD
    floor. A floor-1 fight cannot use a floor-0 Neow record. Reconcile mismatches
    with the observed lifecycle before committing gameplay telemetry.
 3. Start one `./scripts/warm_bridge --idle-timeout 0 --socket /tmp/veda-ps5-bridge.sock` and one adapter:
-   `python3 scripts/veda_reviewed_play.py SESSION_DIRECTORY --run-id RUN_ID --mode codex --decision-policy learning`.
-   Send `{"operation":"bridge_preflight"}` followed by a newline. Require ready.
+   `python3 scripts/veda_reviewed_play.py SESSION_DIRECTORY --run-id RUN_ID --mode codex --decision-policy learning --request-server`.
+   Use `veda_submit.py --session SESSION_DIRECTORY --operation bridge_preflight`. Require ready.
    The bridge's ready event must report `command_channel:"unix_socket"` and the same
    endpoint. `connect_socket_missing` means a missing path, not denied permission.
 4. Use [staged arming](veda-arm-startup.md): validate the arm draft before capture,
@@ -47,6 +52,47 @@ python3 scripts/veda_play_clock.py start --session SESSION_DIRECTORY --run-id RU
    `request_file` pointer. Route planning is separate from this identity review.
 5. Require `armed_codex_reviewed` and immediately continue below. Do not return
    a final response or wait for another "continue" unless asked to arm only.
+
+## Receive replies without fixed Terminal waits
+
+Start the persistent adapter once with `--request-server`. Send its packets
+using the short-lived client, which exits as soon as the matching reply arrives:
+
+```sh
+python3 scripts/veda_submit.py --session SESSION_DIRECTORY --request ACTION_PACKET.json --capture-after
+```
+
+`--request` names the packet path returned by a helper's `request_file`, not a
+file containing another pointer. Use the same client for arm and verify packets;
+omit `--capture-after` for those. For a delivered input, `--capture-after` returns
+`observation_path` with `observation_reviewed:false`. Display it in the same tool
+call, then inspect the actual result. An animating image needs another capture.
+This does not recognize or automatically approve a result.
+
+```javascript
+let sent = await tools.exec_command({cmd: "python3 scripts/veda_submit.py --session SESSION_DIRECTORY --request ACTION_PACKET.json --capture-after", yield_time_ms: 1000});
+let output = sent.output;
+for (let polls = 0; sent.session_id && polls < 3; polls++) {
+  sent = await tools.write_stdin({session_id: sent.session_id, chars: "", yield_time_ms: 10000});
+  output += sent.output;
+}
+text({...sent, output});
+// This short-lived process exits on reply/capture; waits end when it exits.
+// If still running, collect this same process later. Never resubmit the packet.
+if (sent.exit_code === 0) {
+  const reply = JSON.parse(output);
+  if (reply.observation_path) image((await tools.view_image({path: reply.observation_path})).image_url);
+}
+```
+
+Wait for the short-lived client to exit on its reply; the 8-second reply
+timeout is an error bound, not a normal delay. Optional capture follows the
+reply and may take longer; collect the same process until it finishes. Do not use 10/30-second `write_stdin` waits on the persistent
+adapter. Legacy JSONL remains compatible; if it must be used, set a short
+250 ms yield and wait only when the reply is actually missing. Never replay an
+input because its reply was lost. `reply_unknown` means inspect pending state,
+then reconcile or finalize the existing action. An absent endpoint requires
+re-establishing the owned adapter before submitting; it does not prove gameplay.
 
 ## One decision
 
@@ -83,14 +129,13 @@ require another image. Inspect again after an input or an outside state change.
   focus taps and reuse inspected routes instead of surveying every floor. A complete
   single reachable option is a forced move: select and verify, with no route analysis.
 
-Once the source-free draft validates: capture if needed after an input/change →
+Binding already validates each draft internally; a separate `--validate` call is optional for a new/uncertain structure. For ordinary moves: capture if needed after an input/change →
 inspect that exact image → bind
 with the helper, `--session SESSION_DIRECTORY/state.json` and `--execute` → submit its short `request_file` pointer. The
-armed adapter prepares and sends **one** input in that call. Do not send another
+armed adapter prepares and sends one reviewed operation in that call (a single button, or the bounded hand-navigation exception in the combat guide). Do not send another
 `send` command. It still performs the ordinary checks and durable writes.
 
-After the input, inspect its result, fill the compact result draft and validate
-it. Bind the inspected after-image even if thinking or result preparation took
+After the input, inspect its result and use the compact observed-result helper. Bind the inspected after-image even if thinking or result preparation took
 longer than 30 seconds. Preserve its original time and pending action identity;
 do not take a redundant image just because time passed. Submit its pointer; there is no `--execute` or `send` for verification.
 Use the canonical `next_context` returned, then continue with the next decision.

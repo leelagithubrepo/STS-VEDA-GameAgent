@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the persistent Codex-reviewed input adapter; startup sends no input."""
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 import json
 import os
@@ -60,7 +60,7 @@ def jsonl_terminal(stream):
         termios.tcsetattr(descriptor, termios.TCSANOW, original)
 
 
-def timed_requests(stream, session):
+def timed_requests(stream, session, server=None):
     """Read bounded JSONL while reporting deadlines even during model silence.
 
     Use raw reads so an extra buffered line never waits on an empty OS pipe.
@@ -103,7 +103,8 @@ def timed_requests(stream, session):
                 raise ValueError('request exceeds byte limit')
             pending = b''; discarding = True
             yield ValueError('request exceeds byte limit; discarding through the next newline')
-        ready, _, _ = select.select([descriptor], [], [], 5)
+        sources = ([] if descriptor is None else [descriptor]) + ([server.listener] if server else [])
+        ready, _, _ = select.select(sources, [], [], 5)
         if not ready:
             timing = session.timing_summary(poll=True)
             if timing.get('new_alerts'):
@@ -111,10 +112,18 @@ def timed_requests(stream, session):
                     'phase': timing.get('phase'), 'controller_input_sent': False,
                     'required': 'Resolve the named delay; preserve any pending input and ordinary checks.'}), flush=True)
             continue
+        if server and server.listener in ready:
+            submission = server.accept()
+            if submission is not None:
+                yield submission
+            continue
         chunk = os.read(descriptor, min(65536, MAX_BYTES + 1 - len(pending)))
         if not chunk:
             if pending.strip():
                 raise ValueError('incomplete JSONL request at EOF; newline required')
+            if server:
+                descriptor = None
+                continue
             return
         if discarding:
             if b'\n' not in chunk:
@@ -138,6 +147,7 @@ def main(argv=None):
                         help='Defaults to learning in codex mode and strict in shadow mode. Learning continues after '
                              'recoverable review errors; control and pending-input checks remain enforced.')
     parser.add_argument('--verbose-timing', action='store_true', help='Include full timing history in every response.')
+    parser.add_argument('--request-server', action='store_true', help='Enable response-driven veda_submit.py on a private local socket.')
     args = parser.parse_args(argv)
     if not args.database.is_file():
         parser.error("an existing run database is required")
@@ -146,29 +156,44 @@ def main(argv=None):
         with jsonl_terminal(sys.stdin), ReviewedPlaySession(args.directory, run_id=args.run_id, telemetry=telemetry,
                 mode=args.mode, controller_factory=lambda: BridgeClient(args.socket),
                 decision_policy=args.decision_policy or ('learning' if args.mode == 'codex' else 'strict')) as session:
-            print(json.dumps(terminal_response({"status": "ready_unarmed", "summary": session.summary(),
-                "next_operation": "bridge_preflight" if args.mode == "codex" else "summary",
-                "request_format": "newline-terminated JSONL; request_file preferred"}, full_timing=args.verbose_timing)), flush=True)
-            for line in timed_requests(sys.stdin, session):
-                full_timing = args.verbose_timing
-                try:
-                    if isinstance(line, Exception):
-                        raise line
-                    if len(line) > MAX_BYTES:
-                        raise ValueError("request exceeds byte limit")
-                    from veda.request_envelope import load_request
-                    value = load_request(line)
-                    full_timing = full_timing or isinstance(value, dict) and value.get('operation') in {'summary', 'timing'}
-                    result = session.handle(value)
-                except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
-                    result = session.recoverable_error(error)
-                print(json.dumps(terminal_response(result, full_timing=full_timing), allow_nan=False), flush=True)
+            from veda.adapter_channel import RequestServer
+            with RequestServer(args.directory) if args.request_server else nullcontext() as server:
+                return serve(session, server, args)
     except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
         parser.error(str(error))
     except KeyboardInterrupt:
         print(json.dumps({"status": "interrupted", "armed": False,
                           "required": "Inspect pending state and owned bridge cleanup before resuming."}), flush=True)
         return 130
+    return 0
+
+
+def serve(session, server, args):
+    from veda.adapter_channel import Submission
+    print(json.dumps(terminal_response({"status": "ready_unarmed", "summary": session.summary(),
+                "next_operation": "bridge_preflight" if args.mode == "codex" else "summary",
+                "request_socket": str(server.path) if server else None,
+                "request_format": "newline-terminated JSONL; request_file preferred"}, full_timing=args.verbose_timing)), flush=True)
+    for incoming in timed_requests(sys.stdin, session, server):
+        submission = incoming if isinstance(incoming, Submission) else None
+        line = submission.raw if submission else incoming
+        full_timing = args.verbose_timing
+        try:
+            if isinstance(line, Exception):
+                raise line
+            if len(line) > MAX_BYTES:
+                raise ValueError("request exceeds byte limit")
+            from veda.request_envelope import load_request
+            value = load_request(line)
+            full_timing = full_timing or isinstance(value, dict) and value.get('operation') in {'summary', 'timing'}
+            result = session.handle(value)
+        except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
+            result = session.recoverable_error(error)
+        response = terminal_response(result, full_timing=full_timing)
+        if submission:
+            submission.reply(response)
+        else:
+            print(json.dumps(response, allow_nan=False), flush=True)
     return 0
 
 

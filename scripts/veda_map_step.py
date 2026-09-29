@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from veda.map_survey import read_json
 from veda.map_travel import (focus_result, focus_snapshot, plan_map, last_snapshot,
-                             snapshot_from_result, reuse_verified_focus)
+                             snapshot_from_result, reuse_verified_focus, load_session_cache, save_cache)
 from veda.menu_controls import CONTROL_PROFILE
 from veda.menu_requests import write_menu_request
 from veda.menu_results import write_menu_result
@@ -21,6 +21,10 @@ def main(argv=None):
     mode.add_argument('--last-result', action='store_true', help='Reuse the sealed verified actual map state from this session.')
     mode.add_argument('--after-result', type=Path, help='Reuse an exact sealed verified map result when it is not retained in the session.')
     mode.add_argument('--focus-result', metavar='NODE_ID', help='Actual observed focus after the exact pending map tap.')
+    mode.add_argument('--reobserve-result', type=Path, help='Actual corrected map snapshot after pending focus; never claims room entry.')
+    p.add_argument('--connections', type=Path, help='Reviewed current outgoing edges; excludes future forks.')
+    p.add_argument('--fresh-cache', action='store_true', help='Retain old cache files but start new planning memory.')
+    p.add_argument('--verbose', action='store_true', help='Include full draft/cache in a planning preview.')
     p.add_argument('--cache', type=Path, help='Private route/map cache for this run and act.')
     p.add_argument('--cache-output', type=Path, help='New cache version; no file is overwritten.')
     p.add_argument('--decision', type=Path, help='Choose node_ids and reason once; reuse the cache thereafter.')
@@ -48,9 +52,33 @@ def main(argv=None):
             root = args.session if args.session.is_dir() else args.session.parent
             directory = root/'map-packets'
             directory.mkdir(exist_ok=True)
-            args.output = directory/('result-' if args.focus_result else 'action-')
+            args.output = directory/('result-' if args.focus_result or args.reobserve_result else 'action-')
             args.output = args.output.with_name(args.output.name + uuid4().hex + '.json')
-        if args.focus_result is not None:
+        if args.reobserve_result:
+            if not binding or not args.unchanged or not args.observed_result or args.execute:
+                raise ValueError('map reobservation needs exact result review, observed-result and unchanged resources/facts/inventory')
+            from veda.menu_results import read_pending
+            root = args.session if args.session.is_dir() else args.session.parent
+            action_id = (read_json(root/'state.json').get('pending') or {}).get('action_id')
+            pending, _ = read_pending(args.session, action_id)
+            snapshot = read_json(args.reobserve_result)
+            if snapshot.get('context') == 'session':
+                snapshot['context'] = pending['request']['context']
+            if args.connections:
+                from veda.map_edges import immediate_snapshot
+                snapshot = immediate_snapshot(snapshot, read_json(args.connections))
+            before = pending['request']; obs = before['observation']
+            if snapshot['context'] not in ('session', before['context']) or any(
+                snapshot[k] != before['inventory'] if k == 'inventory' else snapshot[k] != obs[k]
+                for k in ('resources', 'facts', 'inventory')):
+                raise ValueError('map focus correction cannot change gameplay facts/resources/inventory/context')
+            draft = {'schema':'veda.menu-result.v1','action_id':action_id,'resources':'unchanged',
+                'facts':'unchanged','inventory':'unchanged','result':{'kind':'map_reobservation','ui':snapshot['ui']},
+                'observed_result':args.observed_result}
+            result = write_menu_result(draft, session=args.session, action_id=action_id,
+                capture=args.capture, reviewer=args.reviewer, evidence_note=args.evidence_note,
+                reviewed=args.reviewed, control_profile=CONTROL_PROFILE, output=args.output)
+        elif args.focus_result is not None:
             if (not binding or not args.observed_result or args.execute
                     or any((args.cache, args.cache_output, args.decision, args.view, args.focus))):
                 raise ValueError('focus result needs observed-result, review/binding fields; no execute or planning flags')
@@ -67,23 +95,28 @@ def main(argv=None):
                 raise ValueError('action-id/observed-result are result-only; unchanged requires focus')
             snapshot = (read_json(args.snapshot) if args.snapshot else last_snapshot(args.session)
                         if args.last_result else snapshot_from_result(read_json(args.after_result), args.session))
+            if args.session:
+                from veda.shop import resolve_snapshot
+                snapshot = resolve_snapshot(snapshot, args.session)
+            if args.connections:
+                from veda.map_edges import immediate_snapshot
+                snapshot = immediate_snapshot(snapshot, read_json(args.connections))
             if args.focus is not None:
                 snapshot = focus_snapshot(snapshot, args.focus, unchanged=args.unchanged)
             elif binding and args.snapshot:
                 snapshot = reuse_verified_focus(snapshot, args.session, args.capture)
-            result = plan_map(snapshot, read_json(args.cache) if args.cache else None,
+            result = plan_map(snapshot, read_json(args.cache) if args.cache else load_session_cache(args.session, snapshot) if args.session and not args.fresh_cache else None,
                               read_json(args.decision) if args.decision else None,
                               [read_json(view) for view in args.view])
-            if args.cache_output:
-                # Private immutable versions cannot overwrite a session or source.
-                with args.cache_output.open('x') as stream:
-                    json.dump(result['cache'], stream, indent=2, sort_keys=True, allow_nan=False)
-                    stream.write('\n')
-                result['cache_file'] = str(args.cache_output.resolve())
+            if args.cache_output or binding and args.session:
+                result['cache_file'] = save_cache(result['cache'], output=args.cache_output,
+                                                  session=args.session if binding else None)
             if binding and result['status'] == 'planned':
                 result = write_menu_request(result['draft'], capture=args.capture, session=args.session,
                     reviewer=args.reviewer, evidence_note=args.evidence_note, reviewed=args.reviewed,
                     control_profile=CONTROL_PROFILE, output=args.output, execute=args.execute)
+        if not args.verbose:
+            result = {k:v for k,v in result.items() if k not in {'cache','draft'}}
         print(json.dumps(result, sort_keys=True, allow_nan=False))
         return 0
     except (ValueError, OSError, KeyError, TypeError, AttributeError, RecursionError) as error:
