@@ -83,7 +83,7 @@ def main():
         'pending actions and bridge readiness before arming the reviewed adapter. '
         'Use the reviewed adapter with --decision-policy learning --request-server for every input. Submit packet paths with veda_submit.py; receive the matching reply without fixed 10/30-second Terminal waits. '
         'Compact combat/menu drafts carry decision_policy:learning. Retain before/after evidence and record SQLite outcomes. '
-        'Read docs/veda-play-hot-path.md first and only the guide for the current screen. '
+        'Read docs/veda-play-hot-path.md and docs/veda-screen-guide.md first, then only the current-screen guide. Do not search source/tests to rediscover listed actions. '
         'Use the explicit /tmp/veda-ps5-bridge.sock bridge channel and docs/veda-arm-startup.md: '
         'validate the arm draft before capture, capture/stage/display together, then briefly confirm '
         'the exact inspected image and submit the ordinary arm request immediately. '
@@ -108,6 +108,7 @@ def main():
         'For menus without a visible hint, use the applicable reviewed default-PS5 control profile in '
         'docs/veda-menu-controls.md; a missing hint alone is not a blocker. Open upgrade choices, inspect '
         'the actual cards, choose strategically, and verify the upgrade before recording it. '
+        'For Rest sites use veda_campfire.py and docs/veda-campfire-play.md: choose Rest/Smith once, verify actual healing or upgrade, then return to map. Use the retained observation once, not an ephemeral capture followed by another capture to archive. veda_submit.py and veda_campfire.py inherit VEDA_PLAY_SESSION only for an explicitly requested run. '
         'For merchants use docs/veda-shop-play.md and veda_shop.py, canonical session IDs, and verified result reuse. '
         'Inspect priced slots, excluding tooltip previews; SALE does not mean upgraded. Compare stock/removal/saving once, retain the choice through focus/select/confirm, and use compact shop result commands with --last-result and generated packet paths. Verify Leave then Proceed separately. '
         'Do not leave merely because navigation documentation is missing or write Python request builders during play. '
@@ -171,6 +172,11 @@ def main():
             print(f'Startup timing unavailable ({type(error).__name__}). '
                   'Codex will still start; live preflight and every input check remain required.',
                   file=sys.stderr, flush=True)
+    # Bind only an explicitly requested run; never inherit an unrelated old session.
+    if args.run_id:
+        os.environ['VEDA_PLAY_SESSION'] = str(root / 'artifacts/reviewed-play' / args.run_id)
+    else:
+        os.environ.pop('VEDA_PLAY_SESSION', None)
     print('Starting Luna High with automatic approval review. Game input begins only after live preflight.',
           flush=True)
     os.execv(executable, command)

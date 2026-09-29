@@ -1,6 +1,6 @@
 # Play loop and timing targets
 
-Read this once at startup. Use the guide for the current screen only. Spire
+Read this once at startup. Use the [screen guide](veda-screen-guide.md) to find the current handler once; do not search source/tests during routine play. Spire
 interprets the current image and chooses the move; helpers validate and package
 that declaration. They do not recognize pixels. After authorized arming, continue
 playing in the same turn; an armed status is not task completion.
@@ -122,6 +122,7 @@ require another image. Inspect again after an input or an outside state change.
 - Combat focus outside the hand: use [focus recovery](veda-combat-play.md#combat-focus),
   then inspect the actual destination. A raised card's keyword help is hand focus.
 - Combat loot: use [quick loot](veda-loot-play.md); gold needs no strategic analysis.
+- Rest site: use [campfire flow](veda-campfire-play.md) and `veda_campfire.py`; choose Rest/Smith once, verify the actual heal or upgrade, then return to map.
 - Merchant: use [merchant flow](veda-shop-play.md); use session-derived context and
   reuse the selected purchase through observed focus movements.
 - Other menus: use [menu controls](veda-menu-controls.md).

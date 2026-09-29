@@ -111,13 +111,13 @@ def _ui(value):
     _require(not set(value) - allowed, "source fields and control proofs do not belong in a menu draft")
     ui = deepcopy(value)
     family = ui.get("menu_family")
-    _require(family in {"event_options", "event_leave", "card_upgrade", "map_nodes", "map_inspect", "loot_rewards", "loot_cards", "shop_entry", "shop_stock", "shop_exit", "shop_remove"},
+    _require(family in {"event_options", "event_leave", "card_upgrade", "map_nodes", "map_inspect", "loot_rewards", "loot_cards", "shop_entry", "shop_stock", "shop_exit", "shop_remove", "campfire_options", "campfire_exit"},
              "unsupported draft menu family")
     _require(isinstance(ui.get("options"), list), "complete visible draft options required")
     for option in ui["options"]:
         _require(isinstance(option, dict) and not set(option) - {"id", "label", "enabled", "costs", "card", "role", "node", "reward", "activate_hint", "shortcut_hint", "offer"},
                  "draft options need visible semantics, not prebound controls")
-    derived = {"screen": "selection" if family in {"card_upgrade", "shop_remove"} else "shop" if family.startswith('shop_') else "map" if family.startswith("map_") else "reward" if family == "loot_rewards" else "card_reward" if family == "loot_cards" else "event",
+    derived = {"screen": "rest" if family.startswith("campfire_") else "selection" if family in {"card_upgrade", "shop_remove"} else "shop" if family.startswith('shop_') else "map" if family.startswith("map_") else "reward" if family == "loot_rewards" else "card_reward" if family == "loot_cards" else "event",
         "order": [option["id"] for option in ui["options"]], "control_layout": "ps5_default",
         "selection_mode": "toggle" if family == "card_upgrade" else "immediate",
         "required_count": 1, "navigation": []}
@@ -175,7 +175,7 @@ def _request(draft, checked, control_profile, clock, max_age_seconds=30):
                 'hint_text': shortcut_hint['hint_text']}}
         activate_hint = option.pop('activate_hint', None)
         if activate_hint is not None:
-            _require(ui['menu_family'] in {'loot_rewards', 'loot_cards'}
+            _require(ui['menu_family'] in {'loot_rewards', 'loot_cards', 'campfire_options', 'campfire_exit'}
                      and isinstance(activate_hint, dict) and set(activate_hint) == {'button', 'hint_text'},
                      'loot activation hint needs its actual visible button and text')
             option['activate'] = {'button': activate_hint['button'], 'evidence': {

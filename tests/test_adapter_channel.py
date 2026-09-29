@@ -118,3 +118,15 @@ class AdapterChannelTests(unittest.TestCase):
             self.assertEqual('verified',reply['status']); self.assertEqual(1,len(f.fx.controller.inputs))
             self.assertIsNone(f.session.state['pending'])
             submit(f.session.path,{'operation':'stop'}); thread.join(2); self.assertFalse(thread.is_alive())
+
+    def test_launcher_session_default_and_explicit_session_override(self):
+        from scripts.veda_submit import main
+        from unittest.mock import patch
+        from contextlib import redirect_stdout
+        from io import StringIO
+        with patch.dict('os.environ',{'VEDA_PLAY_SESSION':str(self.root)}), \
+             patch('scripts.veda_submit.submit',return_value={'status':'summary'}) as send, redirect_stdout(StringIO()):
+            self.assertEqual(0,main(['--operation','summary']))
+            self.assertEqual(self.root,send.call_args.args[0])
+            self.assertEqual(0,main(['--session',str(self.root/'other'),'--operation','summary']))
+            self.assertEqual(self.root/'other',send.call_args.args[0])

@@ -77,7 +77,7 @@ def _unbound_ui(value):
         # A focus result declares the other visible option facts unchanged.
         # Preserve the actual hint's meaning, then bind it to the inspected
         # after-frame instead of silently changing Square/Triangle to Cross.
-        if ui.get('menu_family') in {'loot_rewards', 'loot_cards'} and activate:
+        if ui.get('menu_family') in {'loot_rewards', 'loot_cards', 'campfire_options', 'campfire_exit'} and activate:
             proof = activate.get('evidence', {})
             if proof.get('kind') == 'visible_hint':
                 option['activate_hint'] = {'button': activate['button'], 'hint_text': proof['hint_text']}

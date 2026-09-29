@@ -35,12 +35,14 @@ class OrchestratorLauncherTimingTests(unittest.TestCase):
             argv += ['--run-id', self.run]
         if print_only:
             argv.append('--print-command')
-        with (patch.object(self.module.sys, 'argv', argv),
+        with (patch.dict(self.module.os.environ, {}),
+              patch.object(self.module.sys, 'argv', argv),
               patch.object(self.module, '_nested_launch_reason', return_value=None),
               patch.object(self.module.shutil, 'which', return_value='/synthetic/codex'),
               patch.object(self.module.os, 'execv') as execute,
               redirect_stdout(stdout), redirect_stderr(stderr)):
             result = self.module.main()
+            execute.session_env = self.module.os.environ.get('VEDA_PLAY_SESSION')
         return execute, stdout.getvalue(), stderr.getvalue(), result
 
     def assert_launched(self, execute):
@@ -50,6 +52,17 @@ class OrchestratorLauncherTimingTests(unittest.TestCase):
         self.assertIn('gpt-5.6-luna', command)
         self.assertIn('before arming the reviewed adapter', command[-1])
         self.assertIn('Never invent observations, replay unresolved input', command[-1])
+
+    def test_session_default_only_binds_explicit_run_and_print_is_read_only(self):
+        with patch.dict(self.module.os.environ, {'VEDA_PLAY_SESSION':'/old/unrelated-session'}):
+            execute,_,_,_=self.launch()
+            self.assertEqual(str(self.path.parent),execute.session_env)
+            with patch('veda.play_context.read_play_context',return_value={'selection_status':'needs_review'}):
+                execute,_,_,_=self.launch(explicit=False)
+            self.assertIsNone(execute.session_env)
+            execute,_,_,_=self.launch(print_only=True)
+            self.assertEqual('/old/unrelated-session',execute.session_env)
+            execute.assert_not_called()
 
     def test_corrupt_clock_reports_warning_preserves_file_and_still_launches(self):
         self.path.parent.mkdir(parents=True)

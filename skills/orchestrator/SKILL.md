@@ -17,7 +17,7 @@ require a guaranteed win or a complete model of the game before acting.
 
 ## Start once, then keep playing
 
-Read `docs/veda-play-hot-path.md` and only the guide for the current screen.
+Read `docs/veda-play-hot-path.md`, route the current screen with `docs/veda-screen-guide.md`, and read only its guide. Do not repeatedly search source/tests for listed actions.
 Use `veda_play_context.py` for recorded IDs, inventory and pending actions;
 these are historical expectations until compared with the live game.
 
@@ -106,6 +106,8 @@ skip once, retain it through focus/select/visible confirmation, and record the
 card only after actual acquisition. Do not repeat strategy or boss research
 for routine loot. Timing history is available on request, not a task to
 reanalyze between taps.
+
+For Rest sites use `docs/veda-campfire-play.md` and `veda_campfire.py`: choose Rest/Smith once, reuse the decision through focus, inspect the actual heal or upgrade, and leave for the map. Use generated paths and sealed `--last-result`. Capture once into retained observations and reuse that exact inspected image; do not recapture merely to archive it.
 
 For merchants use `docs/veda-shop-play.md` and `veda_shop.py`. Compact result
 commands, session-derived IDs, generated packet paths and `--last-result`

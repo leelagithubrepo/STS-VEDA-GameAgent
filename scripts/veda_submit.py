@@ -2,6 +2,7 @@
 """Send one request to the existing reviewed adapter; return on its reply."""
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -10,7 +11,8 @@ from veda.adapter_channel import submit, ReplyUnknown
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--session', required=True, type=Path)
+    p.add_argument('--session', required=not bool(os.environ.get('VEDA_PLAY_SESSION')), type=Path,
+                   default=os.environ.get('VEDA_PLAY_SESSION'), help='Explicit session; defaults to this launcher process’s VEDA_PLAY_SESSION.')
     source = p.add_mutually_exclusive_group(required=True)
     source.add_argument('--request', type=Path, help='Existing ordinary request packet; sent exactly once.')
     source.add_argument('--operation', choices=['summary', 'bridge_preflight', 'finalize', 'stop'])
