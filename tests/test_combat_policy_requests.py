@@ -12,6 +12,7 @@ from tests import test_combat_requests as combat_fixtures
 from tests.test_menu_requests import make_capture
 from veda.combat_requests import validate_combat_draft, write_combat_request, read_pending, _result_draft
 from veda.reviewed_play import SCHEMA as SESSION_SCHEMA, ReviewedPlaySession
+from veda.decision_policy import candidate_action_summary
 
 
 def floor_two_draft():
@@ -34,6 +35,19 @@ def floor_two_draft():
 
 
 class CompactPolicyTests(unittest.TestCase):
+    def test_candidate_summary_records_legal_and_unselected_lines_without_model_round(self):
+        value = floor_two_draft(); value['state']['energy'] = 1
+        value['state']['hand'] = [
+            dict(id='strike-0', name='Strike', type='Attack', cost=1, playable=True),
+            dict(id='defend-0', name='Defend', type='Skill', cost=1, playable=True),
+        ]
+        summary = candidate_action_summary({'state': value['state'], 'inventory': value['inventory']},
+                                           {'kind': 'card', 'card_id': 'strike-0', 'target': 'spike-medium'})
+        self.assertEqual(3, len(summary))
+        self.assertTrue(next(item for item in summary if item['action'].get('card_id') == 'strike-0')['chosen'])
+        self.assertFalse(next(item for item in summary if item['action'].get('card_id') == 'defend-0')['chosen'])
+        self.assertTrue(any(item['action']['kind'] == 'end_turn' for item in summary))
+
     def test_floor_two_end_turn_repro_strict_blocks_learning_warns_without_forecast(self):
         value = floor_two_draft()
         with self.assertRaisesRegex(ValueError, 'survival forecast.*Energy Potion'):

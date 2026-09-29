@@ -190,6 +190,35 @@ def _known_action_reasons(context, action):
     return reasons
 
 
+def candidate_action_summary(context, chosen=None):
+    """Build a cheap, source-bound ledger of legal alternatives.
+
+    This is deliberately a legality summary, not a guessed outcome simulator.
+    It lets learning compare the chosen line with actions that were visible but
+    not taken without adding another model round or controller interaction.
+    """
+    state = context.get('state', {}) if isinstance(context, dict) else {}
+    enemies = [enemy for enemy in state.get('enemies', [])
+               if isinstance(enemy, dict) and enemy.get('hp') not in (0, None)]
+    target = enemies[0].get('id', enemies[0].get('name')) if enemies else None
+    chosen_key = (chosen or {}).get('card_id') if isinstance(chosen, dict) else None
+    candidates = []
+    for card in state.get('hand', []):
+        if not isinstance(card, dict) or not card.get('id'):
+            continue
+        action = {'kind': 'card', 'card_id': card['id']}
+        if card.get('type') == 'Attack' and target is not None:
+            action['target'] = target
+        reasons = _known_action_reasons(context, action)
+        candidates.append({'action': action, 'legal': not reasons, 'reasons': reasons,
+                           'chosen': card['id'] == chosen_key})
+    end_turn = {'kind': 'end_turn'}
+    end_reasons = _known_action_reasons(context, end_turn)
+    candidates.append({'action': end_turn, 'legal': not end_reasons, 'reasons': end_reasons,
+                       'chosen': isinstance(chosen, dict) and chosen.get('kind') == 'end_turn'})
+    return candidates
+
+
 def assess_combat(context, plan, policy='strict', visual=None):
     """Assess one declared action; this result does not authorize controller input.
 
@@ -219,7 +248,9 @@ def assess_combat(context, plan, policy='strict', visual=None):
         if checked.get('forecast') is None:
             warnings.append('damage, Block and survival forecast is unknown; observe the actual result before another action')
     warnings = list(dict.fromkeys(warnings))
+    alternatives = candidate_action_summary(context, plan['steps'][0]) if isinstance(context, dict) else []
     return {**deepcopy(checked), 'allowed': not hard, 'reasons': hard, 'hard_reasons': hard,
         'warnings': warnings, 'checked': deepcopy(checked), 'policy': policy,
         'forecast_status': 'known' if checked.get('forecast') is not None else 'unknown',
-        'decision_under_uncertainty': policy == 'learning' and bool(warnings)}
+        'decision_under_uncertainty': policy == 'learning' and bool(warnings),
+        'candidate_actions': alternatives}
