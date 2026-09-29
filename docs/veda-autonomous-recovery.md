@@ -46,6 +46,12 @@ planning; an elevated Disarm frame is therefore treated as incomplete evidence.
 
 ## Continuous improvement checks
 
+Timing phases now distinguish `model_inference` from `tool_wait`; verification
+and recovery remain separate. This prevents a future report from presenting
+all terminal and capture latency as strategy time. The launcher should mark
+those phases around long-running work, while controller dispatch remains its
+own phase.
+
 At the end of a play block, review these independent signals:
 
 * `recovery-events.jsonl`: interruption, recovery, and failed-recovery counts;

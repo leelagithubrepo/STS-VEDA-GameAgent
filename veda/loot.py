@@ -6,10 +6,33 @@ The returned draft uses the same single-input/result-verification adapter.
 from copy import deepcopy
 import hashlib
 import json
+import re
 from .menu_requests import _inventory, _ui, _text, validate_menu_draft
 from .menu_controls import CONTROL_PROFILE
 
 SCHEMA = 'veda.loot-snapshot.v1'
+
+
+def canonical_reward_role(option):
+    """Infer routine reward semantics from reviewed labels when role metadata is absent."""
+    if not isinstance(option, dict):
+        return None
+    role = option.get('role')
+    if role in {'gold', 'potion', 'card_reward', 'card', 'skip', 'proceed', 'relic'}:
+        return role
+    text = str(option.get('id', '')).lower().replace('_', '-').strip()
+    label = str(option.get('label', '')).lower()
+    if text in {'gold', 'gold-reward'} or re.fullmatch(r'\d+\s+gold', label):
+        return 'gold'
+    if text in {'potion', 'potion-reward'}:
+        return 'potion'
+    if text in {'card-reward', 'cards', 'card'}:
+        return 'card_reward' if text != 'card' else 'card'
+    if text in {'skip', 'skip-rewards'}:
+        return 'skip'
+    if text in {'proceed', 'continue'}:
+        return 'proceed'
+    return None
 
 
 def resolve_snapshot(snapshot, session):
@@ -34,8 +57,17 @@ def decision_key(snapshot):
     value['ui'] = {k: ui[k] for k in ('menu_family', 'choice_id')}
     # Control hints rebind to each image; strategy depends on the actual offers.
     value['ui']['options'] = [{k: o[k] for k in ('id', 'label', 'enabled', 'costs', 'role', 'reward') if k in o}
-                              for o in ui['options']]
+                              for o in _normalized_options(ui['options'])]
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
+
+
+def _normalized_options(options):
+    result = []
+    for option in options:
+        normalized = deepcopy(option)
+        normalized.setdefault('role', canonical_reward_role(normalized))
+        result.append(normalized)
+    return result
 
 
 def plan_loot(snapshot, decision=None):
@@ -47,7 +79,12 @@ def plan_loot(snapshot, decision=None):
     ui = _ui(value['ui'])
     if ui['menu_family'] not in {'loot_rewards', 'loot_cards'} or value['facts'].get('reward_source') != 'combat':
         raise ValueError('routine loot applies only to reviewed combat reward screens')
-    options = [o for o in ui['options'] if o['enabled']]
+    normalized_options = _normalized_options(ui['options'])
+    options = normalized_options
+    options = [o for o in normalized_options if o['enabled']]
+    # Carry the normalized role into the emitted draft as well as the local
+    # planner view; downstream menu validation must see the same semantics.
+    value['ui']['options'] = deepcopy(normalized_options)
     key = decision_key(value)
     selected, reason, routine = None, None, True
     if decision is not None:

@@ -30,8 +30,8 @@ TARGET_SECONDS = {"startup": 90, "move": 20, "noncombat": 90, "combat": 240, "el
 STALE_RECAPTURE_LIMIT = 2
 MAX_BYTES = 1_000_000
 MAX_HISTORY = 128
-PHASES = frozenset({"startup", "preflight", "capture", "inspection", "planning", "draft", "prepare",
-                    "dispatch", "verification", "telemetry", "recovery", "idle"})
+PHASES = frozenset({"startup", "preflight", "capture", "inspection", "planning", "model_inference",
+                    "tool_wait", "draft", "prepare", "dispatch", "verification", "telemetry", "recovery", "idle"})
 INTERMEDIATE_STEPS = frozenset({"focus", "target", "inspect", "navigation", "arm"})
 _PROCESS_CLOCK_ID = str(uuid4())
 

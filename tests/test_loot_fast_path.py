@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from veda.loot import plan_loot, decision_key
+from veda.loot import plan_loot, decision_key, canonical_reward_role
 from veda.menu_requests import write_menu_request
 from veda.menu_results import write_menu_result
 from veda.menu_controls import CONTROL_PROFILE
@@ -27,6 +27,17 @@ def snapshot(cards=False):
                   'grid':{'complete':True,'cells':[{'id':o['id'],'row':i,'column':0} for i,o in enumerate(options)]}}}
 
 class LootTests(unittest.TestCase):
+    def test_reward_aliases_normalize_without_changing_the_visible_id(self):
+        self.assertEqual('potion', canonical_reward_role({'id': 'potion-reward', 'label': 'Smoke Potion'}))
+        self.assertEqual('gold', canonical_reward_role({'id': 'gold', 'label': '15 Gold'}))
+        self.assertIsNone(canonical_reward_role({'id': 'relic-1', 'label': 'Potion Belt'}))
+
+    def test_decision_key_matches_plan_when_role_metadata_is_omitted(self):
+        source = snapshot(True)
+        source['ui']['options'][1].pop('role')
+        decision = {'option_id': 'skip', 'reason': 'Skip once.', 'decision_key': decision_key(source)}
+        self.assertEqual('planned', plan_loot(source, decision)['status'])
+
     def test_gold_is_deterministic_and_keeps_card_reward_for_later(self):
         source=snapshot();original=deepcopy(source)
         result=plan_loot(source)

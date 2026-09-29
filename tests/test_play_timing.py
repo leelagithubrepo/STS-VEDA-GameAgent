@@ -104,6 +104,14 @@ class PlayTimingTests(unittest.TestCase):
         self.assertFalse(summary["automatic_input"])
         self.assertFalse(summary["targets_are_safety_overrides"])
 
+    def test_model_and_tool_wait_have_separate_phase_buckets(self):
+        state = event(self.state(), 1, "phase", name="model_inference")
+        state = event(state, 4, "phase", name="tool_wait")
+        summary = summarize_timing(state)
+        self.assertEqual(summary["startup"]["phase_active_seconds"],
+                         {"startup": 1, "model_inference": 3})
+        self.assertIn("tool_wait", PHASES)
+
     def test_stale_capture_budget_is_bounded_per_move_and_duplicate_receipt_does_not_inflate(self):
         state = event(self.state(), 0, "begin_move", move_id="play", kind="combat_card")
         state = event(state, 10, "stale_capture", capture_id="frame-1")
