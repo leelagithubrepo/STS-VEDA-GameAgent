@@ -94,6 +94,11 @@ bindings; results can be recorded later without replay. Report observed manual
 input or outside screen changes with `invalidate_evidence` and inspect again.
 Submit the helper's `request_file` object unchanged; the operation/path spelling
 is also accepted. Never resend gameplay input to repair a result envelope.
+Reuse a capture only while the inspected state and input epoch remain unchanged.
+After a repair, reload the stopped adapter and establish a fresh preflight before
+resuming.
+For the full autonomous repair order and hard-stop list, use
+`docs/veda-recovery-play.md`.
 
 For combat loot use `docs/veda-loot-play.md` and `veda_loot.py`. Collect free
 gold with the fixed routine reason, collect potions into confirmed empty slots,
@@ -156,10 +161,16 @@ An action that may already have been sent needs fresh observation and outcome
 reconciliation before another input. Never blindly replay it or erase its
 pending record. This is a temporary recovery step, not a game-strategy stop.
 Verified results awaiting logging use `finalize`, not another button press.
-Do not fabricate evidence, rewrite capture times or modify product code during
-play. If a helper cannot express the observed situation, record the specific
-capability gap and keep pursuing a supported inspection or alternative. Report
-an ongoing recovery honestly; do not claim progress when the floor is unchanged.
+Do not fabricate evidence or rewrite capture times. If a helper cannot express
+the observed situation, classify the failure before acting. Repair source-free
+packets without recapturing. After an input, preserve the pending action and
+reconcile the exact after-image; never resend it. For a real product capability
+gap, close the owned bridge, confirm no input is in flight, make the smallest
+compatible code change, run focused and affected tests, reinstall this skill if
+it changed, and re-arm the same run. Do not edit code while controller input is
+still owned or delivery is unresolved. Hardware, feed, identity and network
+failures remain hard stops. Report an ongoing recovery honestly; do not claim
+progress when the floor is unchanged.
 
 Measure first input (90s), ordinary move (20s), noncombat floor (90s), ordinary
 combat (4m), elite (6m) and boss (8m). These are targets, not measured guarantees
@@ -177,5 +188,6 @@ A normal combat victory continues to rewards and the next floor.
 Uncertainty about game strategy, a new event, a missing rule, a forecast miss
 or a time target is **not** an end condition. Keep deciding and learning.
 See `references/operating-loop.md` for recovery details. Do not use system-level
-controller buttons, change device permissions, publish the site or perform
-development work as part of a run.
+controller buttons, change device permissions, publish the site, or perform
+unrelated development work as part of a run. Approved recovery repairs follow
+`docs/veda-recovery-play.md` and require the bridge to be stopped first.

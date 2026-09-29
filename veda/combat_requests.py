@@ -74,6 +74,15 @@ def _reading(value, checked):
         'schema', 'observed_at', 'frame_id', 'image_sha256', 'source', 'review', 'context', 'fresh',
         'run_id', 'floor_id', 'combat_id', 'turn_id'},
         'one source-free combat state required; schema, source time and IDs are derived')
+    # Vision summaries sometimes provide pile counts instead of card names.
+    # Counts cannot support card-zone reconciliation, so retain the fact as
+    # unknown rather than rejecting an otherwise usable learning-policy move.
+    piles = state.get('piles')
+    if policy == 'learning' and isinstance(piles, dict):
+        for key in ('draw', 'discard', 'exhaust'):
+            if type(piles.get(key)) is int:
+                _require(piles[key] >= 0, 'pile counts must be nonnegative')
+                piles[key] = None
     state.update(schema='spire.advisory.v1', observed_at=checked['source']['captured_at'])
     inventory = _combat_inventory(value['inventory'], policy)
     encounter = value['encounter']; perception = value['perception']

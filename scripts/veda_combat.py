@@ -10,6 +10,32 @@ from veda.combat_requests import (read_combat_draft, validate_combat_draft, vali
                                    write_combat_request, write_combat_result)
 
 
+def _actual_payload(value, *, expected_action_id=None):
+    """Unwrap a generated combat-result envelope for actual observation.
+
+    The compact helper needs only the observed state/UI fields. Keeping the
+    envelope metadata out of that payload prevents a valid post-input result
+    from being rejected merely because it was saved using the result schema;
+    the normal `others_unchanged` attestation is still required downstream.
+    """
+    if not isinstance(value, dict) or value.get('schema') != 'veda.combat-result.v1':
+        return value
+    allowed = {'state', 'ui', 'inventory', 'encounter', 'perception', 'unknowns',
+               'rules', 'boss_manifest', 'next_turn', 'card_destination',
+               'telemetry', 'others_unchanged'}
+    if expected_action_id is not None and value.get('action_id') != expected_action_id:
+        raise ValueError('actual result envelope action_id does not match the pending action')
+    envelope_allowed = allowed | {'schema', 'action_id', 'observed_result',
+                                  'decision_policy', 'context'}
+    if set(value) - envelope_allowed:
+        raise ValueError('actual result envelope contains unsupported fields')
+    if 'context' in value:
+        raise ValueError('actual result envelope context must come from the pending action')
+    if 'decision_policy' in value:
+        raise ValueError('actual result envelope decision_policy must come from the pending action')
+    return {key: value[key] for key in allowed if key in value}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     modes = parser.add_mutually_exclusive_group(required=True)
@@ -65,7 +91,10 @@ def main(argv=None):
             value = observed_result(args.session, note=args.observed_result, unchanged=args.unchanged,
                 focus=args.focus_result, selected=args.selection_result, target=args.target,
                 ui=read_combat_draft(args.ui_result) if args.ui_result else None,
-                actual=read_combat_draft(args.actual_result) if args.actual_result else None,
+                actual=_actual_payload(read_combat_draft(args.actual_result), expected_action_id=(
+                    json.loads((args.session if args.session.is_file() else args.session / 'state.json').read_text())
+                    .get('pending', {}).get('action_id') if args.actual_result and args.session else None
+                )) if args.actual_result else None,
                 boundary=read_combat_draft(args.boundary_result) if args.boundary_result else None,
                 tooltip=args.tooltip_kind)
         else:

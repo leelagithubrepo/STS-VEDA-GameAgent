@@ -5,6 +5,7 @@ from tests.test_combat_requests import draft
 from veda.combat_requests import validate_combat_draft
 from veda.combat_input import FOCUS_CONTROL_PROFILE
 from veda.combat_flow import last_snapshot, observed_result, snapshot_from_result
+from scripts.veda_combat import _actual_payload
 
 
 class CombatFlowTests(unittest.TestCase):
@@ -25,6 +26,36 @@ class CombatFlowTests(unittest.TestCase):
         self.assertEqual(['cross'], validate_combat_draft(v)['next_atomic_input_preview']['buttons'])
         v['ui']['navigation_mode'] = 'single'; v['ui']['focused_card_id'] = 's0'
         self.assertEqual(['right'], validate_combat_draft(v)['next_atomic_input_preview']['buttons'])
+
+    def test_learning_draft_accepts_pile_counts_as_unknown(self):
+        v = draft()
+        v['decision_policy'] = 'learning'
+        v['state']['piles'] = {'draw': 8, 'discard': 0, 'exhaust': []}
+        self.assertTrue(validate_combat_draft(v)['draft_valid'])
+        v['state']['piles']['draw'] = -1
+        with self.assertRaisesRegex(ValueError, 'nonnegative'):
+            validate_combat_draft(v)
+        v['decision_policy'] = 'strict'; v['state']['piles']['draw'] = 8
+        with self.assertRaises(ValueError):
+            validate_combat_draft(v)
+
+    def test_actual_result_envelope_is_reduced_to_observed_payload(self):
+        envelope = {'schema': 'veda.combat-result.v1', 'action_id': 'a',
+                    'state': {'hp': 70}, 'ui': {'phase': 'hand'},
+                    'others_unchanged': True, 'observed_result': 'seen',
+                    'card_destination': 'discard'}
+        self.assertEqual({'state': {'hp': 70}, 'ui': {'phase': 'hand'},
+                          'others_unchanged': True, 'card_destination': 'discard'},
+                         _actual_payload(envelope))
+        with self.assertRaisesRegex(ValueError, 'action_id'):
+            _actual_payload(envelope, expected_action_id='different')
+        envelope['unexpected'] = True
+        with self.assertRaisesRegex(ValueError, 'unsupported'):
+            _actual_payload(envelope, expected_action_id='a')
+        envelope.pop('unexpected')
+        envelope['decision_policy'] = 'learning'
+        with self.assertRaisesRegex(ValueError, 'decision_policy'):
+            _actual_payload(envelope, expected_action_id='a')
 
     def test_reuse_through_focus_select_play_and_decision_expires(self):
         f = self.fixture()
