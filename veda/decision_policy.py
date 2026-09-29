@@ -12,7 +12,7 @@ from .routine_combat import routine_observation_reasons
 from .vision import explicit_nonattack_intent
 
 POLICIES = frozenset({'strict', 'learning'})
-_PLAN_FIELDS = {'steps', 'potion_review', 'zero_cost_review', 'setup_reason', 'claims_lethal'}
+_PLAN_FIELDS = {'steps', 'queue', 'potion_review', 'zero_cost_review', 'setup_reason', 'claims_lethal'}
 _CARD_FIELDS = {'kind', 'card_id', 'target', 'return_card', 'return_card_id', 'exhaust_card_id', 'copy_card_id'}
 
 
@@ -21,20 +21,31 @@ def _text(value, maximum=4096):
 
 
 def plan_shape_reasons(plan):
-    """Only one action plus bounded advice fields; never raw controller commands."""
+    """One current action plus a bounded, verified-after-each-step queue."""
     if not isinstance(plan, dict) or set(plan) - _PLAN_FIELDS:
         return ['plan requires one action and only supported advisory fields']
     steps = plan.get('steps')
     if not isinstance(steps, list) or len(steps) != 1 or not isinstance(steps[0], dict):
         return ['exactly one card or End Turn is required']
-    action = steps[0]
-    if action.get('kind') not in {'card', 'end_turn'}:
-        return ['only one card or End Turn is supported by this combat input path']
-    if action['kind'] == 'end_turn' and set(action) != {'kind'}:
-        return ['End Turn cannot carry card, target or controller fields']
-    if action['kind'] == 'card' and (set(action) - _CARD_FIELDS or not _text(action.get('card_id'), 256)
-            or any(not _text(v, 256) for k, v in action.items() if k != 'kind' and v is not None)):
-        return ['card action needs an observed card ID and bounded named selections']
+    def action_reason(action):
+        if not isinstance(action, dict) or action.get('kind') not in {'card', 'end_turn'}:
+            return 'only card or End Turn actions are supported'
+        if action['kind'] == 'end_turn' and set(action) != {'kind'}:
+            return 'End Turn cannot carry card, target or controller fields'
+        if action['kind'] == 'card' and (set(action) - _CARD_FIELDS or not _text(action.get('card_id'), 256)
+                or any(not _text(v, 256) for k, v in action.items() if k != 'kind' and v is not None)):
+            return 'card action needs an observed card ID and bounded named selections'
+        return None
+    reason = action_reason(steps[0])
+    if reason:
+        return [reason]
+    queue = plan.get('queue', [])
+    if not isinstance(queue, list) or len(queue) > 8:
+        return ['queue must contain at most eight future actions']
+    for action in queue:
+        reason = action_reason(action)
+        if reason:
+            return ['queue: ' + reason]
     for field in ('potion_review', 'zero_cost_review'):
         if field in plan and (not isinstance(plan[field], dict) or len(plan[field]) > 32
                 or any(not _text(k, 256) or not _text(v) for k, v in plan[field].items())):

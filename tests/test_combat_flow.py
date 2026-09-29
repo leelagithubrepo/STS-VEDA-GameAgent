@@ -57,6 +57,27 @@ class CombatFlowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'decision_policy'):
             _actual_payload(envelope, expected_action_id='a')
 
+    def test_completed_card_retains_next_queued_action(self):
+        f = self.fixture(); value = f.value
+        f.fx.db.start_combat_zones(combat_id=f.fx.context_ids['combat_id'], deck=['Strike', 'Defend'],
+                                   hand=['Strike', 'Defend'], source='Synthetic opening')
+        value['plan']['queue'] = [{'kind': 'end_turn'}]
+        f.prepare_send(arm=True)
+        f.session.handle(f.packet(observed_result(f.session.path, note='Defend focused.', unchanged=True, focus='d'), result_mode=True))
+        f.prepare_send(last_snapshot(f.session.path))
+        f.session.handle(f.packet(observed_result(f.session.path, note='Defend selected.', unchanged=True, selected='d'), result_mode=True))
+        current = last_snapshot(f.session.path); f.prepare_send(current)
+        state = deepcopy(current['state']); state['hand'] = [state['hand'][0]]; state.update(energy=0, block=5)
+        state['piles']['discard'] = ['Defend']
+        ui = deepcopy(current['ui']); ui.update(phase='hand', selected_card_id=None,
+                                                hand_order=['s'], focused_card_id='s',
+                                                focus_domain='hand')
+        actual = {'state': state, 'ui': ui, 'others_unchanged': True, 'card_destination': 'discard'}
+        f.session.handle(f.packet(observed_result(f.session.path, note='Defend resolved.', actual=actual), result_mode=True))
+        queued = last_snapshot(f.session.path)
+        self.assertEqual('end_turn', queued['plan']['steps'][0]['kind'])
+        self.assertEqual([], queued['plan']['queue'])
+
     def test_reuse_through_focus_select_play_and_decision_expires(self):
         f = self.fixture()
         f.fx.db.start_combat_zones(combat_id=f.fx.context_ids['combat_id'], deck=['Strike','Defend'],

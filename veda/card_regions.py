@@ -386,11 +386,19 @@ def detect_card_regions(image_path, *, viewport, observations):
     if overlapping_titles:
         issues.append("overlapping title observations cannot establish separate cards")
     issues.append("candidate discovery does not prove card count or absence of hidden cards")
+    occlusion_evidence = {
+        "status": "present" if (popup or menu or overlapping_titles) else "not_established",
+        "causes": (["popup_or_nonhand_candidate"] if popup else [])
+                  + (["menu_text_present"] if menu else [])
+                  + (["overlapping_title_observations"] if overlapping_titles else []),
+        "action": "require a clear settled hand frame before card planning",
+    }
     return {"schema": "veda.card-region-candidates.v1", "image_sha256": image_digest,
             "source_dimensions": [image.width, image.height], "viewport": _pixels(viewport),
             "candidate_count": len(cards), "hand_candidate_count": sum(c["location"] == "hand_band" for c in cards),
             "card_candidates": cards, "hand_complete": False if popup or overlapping_titles else None,
             "popup_or_nonhand_candidate": popup, "menu_text_present": menu, "issues": issues,
+            "occlusion_evidence": occlusion_evidence,
             "rejected_text_regions": rejected_text_regions,
             "runtime_authorized": False, "controller_authorized": False,
             "provenance": {"method": "native_ocr_title_geometry_and_independent_pixel_colour",

@@ -94,6 +94,8 @@ class CardRegionTests(unittest.TestCase):
         self.assertEqual(result["card_candidates"][0]["location"], "popup_or_nonhand")
         self.assertEqual(result["hand_candidate_count"], 0)
         self.assertIs(result["hand_complete"], False)
+        self.assertEqual(result["occlusion_evidence"]["status"], "present")
+        self.assertIn("popup_or_nonhand_candidate", result["occlusion_evidence"]["causes"])
 
     def test_case_variants_of_type_and_menu_text_do_not_create_card_candidates(self):
         self.text("SKILL", (250, 650))

@@ -1126,7 +1126,35 @@ class ReviewedPlaySession(CombatInputAdapter):
                 self.state['last_verified']['map_after'] = deepcopy(pending['verified_map_after'])
             if pending.get('verified_combat_after') is not None:
                 self.state['last_verified']['combat_after'] = deepcopy(pending['verified_combat_after'])
-                if not complete:
+                queued = pending['request'].get('plan', {}).get('queue', [])
+                after_reading = pending.get('verified_combat_after', {}).get('reading', {})
+                after_context = after_reading.get('context', {})
+                after_state = after_context.get('state', {})
+                after_ui = after_reading.get('ui', {})
+                before_state = pending.get('request', {}).get('reading', {}).get('context', {}).get('state', {})
+                next_step = queued[0] if queued else None
+                next_card = next((card for card in after_state.get('hand', [])
+                                  if card.get('id') == (next_step or {}).get('card_id')), None)
+                next_cost = next_card.get('cost') if next_card is not None else None
+                queue_eligible = (complete and next_step is not None
+                                  and after_ui.get('phase') == 'hand'
+                                  and after_ui.get('tooltip_kind', 'none') == 'none'
+                                  and after_state.get('turn') == before_state.get('turn')
+                                  and after_state.get('hand_complete') is True
+                                  and (next_step.get('target') is None or
+                                       next_step.get('target') in after_ui.get('target_order', []))
+                                  and (next_step.get('kind') != 'card' or
+                                       (next_card is not None and next_card.get('playable') is True
+                                        and type(next_cost) is int and type(after_state.get('energy')) is int
+                                        and next_cost >= 0 and next_cost <= after_state.get('energy'))))
+                if queue_eligible:
+                    next_plan = deepcopy(pending['request']['plan'])
+                    next_plan['steps'] = [deepcopy(queued[0])]
+                    next_plan['queue'] = deepcopy(queued[1:])
+                    self.state['last_verified']['combat_continuation'] = {
+                        'plan': next_plan,
+                        'reasoning': pending['request']['reasoning']}
+                elif not complete:
                     self.state['last_verified']['combat_continuation'] = {
                         'plan': deepcopy(pending['request']['plan']),
                         'reasoning': pending['request']['reasoning']}

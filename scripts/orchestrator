@@ -137,6 +137,15 @@ def main():
         'End at confirmed full-run victory, defeat or user stop; ordinary combat wins continue. '
         'Stop controls for actual hardware/network/bridge failure or loss of the game feed/target. '
         'Unknown action delivery needs observation and reconciliation, never blind replay.'
+        ' For PlayStation power, Remote Play, network, bridge, or feed loss, preserve the pending action and run '
+        'scripts/veda_recovery_watch.py in its side-band paused process; do not run probes during an ordinary move. Record '
+        'the interruption/recovery JSONL, then re-preflight and resume this same run only after a fresh frame and '
+        'pending-action reconciliation. Never start a new run or resend an unknown action. '
+        'Combat plans may carry a bounded queue of up to eight future card/end-turn steps; execute each with the '
+        'same focus/select/result verification. Promote the queue only when the next card is visible/playable, the '
+        'turn and target remain valid, and no tooltip is present; otherwise clear it and request a new plan. A raised '
+        'card or tooltip is occlusion evidence: do not treat visible cards as a complete hand. '
+        'Read docs/veda-autonomous-recovery.md for the recovery journal and improvement checks.'
     )
     command = ['codex', '-C', str(root), '-m', 'gpt-5.6-luna',
                '-c', 'model_reasoning_effort="high"', '--approve-for-me', '--no-alt-screen', prompt]
