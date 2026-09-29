@@ -238,6 +238,19 @@ class CombatResultTests(unittest.TestCase):
             self.assertEqual('attempted', self.session.state['pending']['status'])
         self.assertEqual(1, len(self.fx.controller.inputs))
 
+    def test_result_explanation_accepts_normal_paragraph_and_names_oversize_error(self):
+        prepared=self.prepare_send(arm=True)
+        observed=result(prepared['action_id'])
+        observed['observed_result']='Observed focus changed; no game effects. ' * 10
+        self.assertGreater(len(observed['observed_result'].encode()),256)
+        self.assertTrue(validate_combat_result(observed,session=self.session.path,
+                                              action_id=prepared['action_id'])['result_valid'])
+        for note in ('', 'x'*2049, 'é'*1025):
+            observed['observed_result']=note
+            with self.subTest(note_length=len(note)),self.assertRaisesRegex(ValueError,'2048 UTF-8 bytes'):
+                validate_combat_result(observed,session=self.session.path,action_id=prepared['action_id'])
+        self.assertEqual(1,len(self.fx.controller.inputs))
+
     def test_wrong_action_or_unattempted_or_finalization_state_cannot_be_packaged(self):
         prepared = self.prepare_send(arm=True); observed = result(prepared['action_id'])
         with self.assertRaises(ValueError): validate_combat_result(observed, session=self.session.path, action_id='other')

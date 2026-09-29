@@ -122,17 +122,16 @@ class LearningRuntimeTests(unittest.TestCase):
             self.assertTrue(result['armed'])
             self.assertEqual([], f.controller.inputs)
 
-    def test_wrong_navigation_result_can_be_reinspected_without_repeating_input(self):
+    def test_unexpected_actual_hand_focus_is_recorded_without_repeating_input(self):
         f = self.f; self.create(); prepared = f.prepare(); f.send(prepared)
         f.now += timedelta(seconds=1)
-        failed = self.verify(prepared, f.combat_request(1, focus='d'))
-        self.assertEqual('recoverable_review', failed['status'])
-        self.assertEqual('verify', failed['next_operation'])
+        result = self.verify(prepared, f.combat_request(1, focus='d'))
+        self.assertEqual('verified', result['status'])
+        self.assertFalse(result['logical_action_complete'])
+        self.assertEqual('unchanged', result['focus_transition']['effect'])
+        self.assertEqual('d', result['observed_mismatches'][0]['observed']['focused_card_id'])
         self.assertTrue(f.session.armed)
-        self.assertEqual('attempted', f.session.state['pending']['status'])
-        f.now += timedelta(seconds=1)
-        result = f.verify_navigation(prepared, 2)
-        self.assertEqual('verified', result['status'], result)
+        self.assertIsNone(f.session.state['pending'])
         self.assertEqual(1, len(f.controller.inputs))
 
     def test_actual_card_effect_is_logged_despite_wrong_prediction(self):

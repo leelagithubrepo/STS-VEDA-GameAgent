@@ -120,6 +120,17 @@ Block or other keyword explanation stays `phase:"hand"`,
 `focused_card_id` and ordinary horizontal navigation. The keyword explanation
 is not a modal to dismiss. End Turn from ordinary hand focus uses Triangle.
 
+Read the focus markers on the exact current image before carrying forward a
+card label. Yellow corner markers around Ironclad mean player inspection:
+`phase:"inspect"`, `focus_domain:"player_status"`, `focused_subject_id:"player"`,
+and no focused/selected card. The tooltip kind is `none` if no help box is open.
+Yellow corners around an enemy mean enemy inspection when no card is selected;
+a selected card with a target prompt remains `phase:"targeting"`. The playable glow around
+the whole hand and a card's position in the fan do not establish focused-card
+identity. In the September 29 failure, the before-image marked Ironclad, but
+the request said Disarm; Right then focused Jaw Worm. Treat that as a corrected
+observation, not evidence of a Disarm-to-enemy controller mapping.
+
 Player status, relic, potion and enemy inspection use their actual domain and
 subject, with no selected card. A recovery input is one observed navigation
 attempt; its intended destination is not an established result. The default
@@ -139,6 +150,17 @@ different inspection area. Such a result can finish logging a navigation
 attempt without completing a card or claiming return to the hand. Follow the
 returned recovery guidance; each next input needs its own fresh observation.
 Actual card completion still requires the observed card effect and hand change.
+
+This also applies when ordinary hand navigation (`card_focus`) unexpectedly
+lands on player/enemy/relic/potion inspection or another hand card. In learning
+mode, keep using `veda_combat.py --result` for that pending combat input, with
+actual explicit focus and inspected unchanged state/inventory. Do not switch
+to an inspection-result schema to close a combat request. Submit the generated
+verification pointer; it supplies a valid operation UUID and accepts the exact
+post-input image without an age-only recapture. The explanation may contain up
+to 2048 UTF-8 bytes. A changed focus is not an unknown delivery: log the actual
+navigation, then prepare recovery from its actual domain. Never resend the
+pending Left/Right merely to repair verification.
 
 ## Inspect an enemy tooltip
 

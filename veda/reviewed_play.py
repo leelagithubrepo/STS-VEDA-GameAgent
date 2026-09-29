@@ -36,7 +36,7 @@ SCHEMA = "veda.reviewed-play.v1"
 def verify_combat_observation(before, after, action, expected, checked, *, policy='strict'):
     """Separate proof of an observed action from its tactical forecast."""
     _require(policy in {'strict', 'learning'}, 'unknown decision policy')
-    if expected['kind'] == 'focus_probe' or expected['kind'] == 'clear' and policy == 'learning':
+    if expected['kind'] == 'focus_probe' or expected['kind'] in {'clear', 'card_focus'} and policy == 'learning':
         _require((after.floor_id, after.turn_id) == (before.floor_id, before.turn_id)
                  and _state_key(before) == _state_key(after), 'focus navigation changed observed gameplay state or context')
         transition = focus_transition(before.ui, after.ui, [card['id'] for card in after.context['state']['hand']])
@@ -47,9 +47,16 @@ def verify_combat_observation(before, after, action, expected, checked, *, polic
                      and (transition['effect'] == 'unchanged'
                           or transition['effect'] == 'focus_observed' and transition['before']['domain'] == 'unknown'),
                      'identical pixels cannot prove a changed focus or return to hand')
+        if expected['kind'] == 'card_focus':
+            matched = (transition['returned_to_hand']
+                       and transition['after']['focused_card_id'] == expected['expected'])
+            mismatch = {'field': 'card_focus', 'expected': expected['expected'],
+                        'observed': transition['after']}
+        else:
+            matched = transition['returned_to_hand']
+            mismatch = {'field': 'focus_recovery', 'expected': 'hand', 'observed': transition['after']}
         return {'logical_action_complete': False, 'focus_transition': transition,
-                'observed_mismatches': [] if transition['returned_to_hand'] else [{
-                    'field': 'focus_recovery', 'expected': 'hand', 'observed': transition['after']}]}
+                'observed_mismatches': [] if matched else [mismatch]}
     if policy == 'strict' or expected['kind'] != 'advance':
         complete = CombatInputAdapter()._verify(before, after, action, expected, checked)
         return {'logical_action_complete': complete, 'observed_mismatches': []}

@@ -246,8 +246,10 @@ def _result_draft(value, pending):
     combat = {'state', 'ui', 'encounter', 'perception', 'unknowns'}
     extras = {'context', 'telemetry', 'card_destination', 'next_turn', 'decision_policy'} | _EXTRAS
     _require(isinstance(value, dict) and required <= set(value) and value['schema'] == RESULT_SCHEMA
-             and value['action_id'] == pending['action_id'] and _text(value['observed_result'], 256),
+             and value['action_id'] == pending['action_id'],
              'compact veda.combat-result.v1 and exact pending action required')
+    _require(_text(value['observed_result'], 2048),
+             'observed_result must be a nonempty explanation of at most 2048 UTF-8 bytes')
     if 'boundary' in value:
         _require(not set(value) - required - {'boundary', 'telemetry', 'decision_policy'}, 'boundary review cannot carry a combat snapshot or controls')
     else:

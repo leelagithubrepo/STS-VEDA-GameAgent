@@ -66,6 +66,13 @@ is still hand focus; do not dismiss it with Up. Status, relic and potion focus
 are separate locations. Use the combat guide's observed, single-step recovery
 and report its actual destination, including no progress. Never declare hand
 focus merely because the intended action was to return there.
+On each image, read the yellow focus corners: around Ironclad means player
+inspection; around an enemy with no card selected means enemy inspection.
+A selected card and target prompt remain targeting. The whole hand's playable
+glow does not identify a focused card. An unexpected result of `card_focus`
+still uses `veda_combat.py --result` with actual focus and unchanged gameplay;
+verify it before preparing recovery. Do not swap to an inspection result schema
+or repeat the delivered input.
 
 Use `docs/veda-evidence-continuity.md`: each input invalidates prior action
 bindings; results can be recorded later without replay. Report observed manual

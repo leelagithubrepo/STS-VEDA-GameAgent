@@ -1,0 +1,26 @@
+{
+  "evidence_kind": "manually inspected archived frames; not automatic pixel recognition",
+  "hand_ids": ["strike-2", "disarm-0", "strike-3", "defend-3", "bash-plus-0"],
+  "resources": {"hp": 55, "max_hp": 80, "energy": 3, "gold": 39},
+  "enemy": {"id": "enemy-0", "name": "Jaw Worm", "hp": 21, "max_hp": 40},
+  "frames": [
+    {
+      "captured_at": "2026-09-29T00:45:48.537639+00:00",
+      "sha256": "be54bcb9bb1f2dc77e4e80db42476e23861d35092da4701df577bbf33f2aa541",
+      "phase": "inspect",
+      "focus_domain": "player_status",
+      "tooltip_kind": "none",
+      "focused_subject_id": "player",
+      "focus_evidence_note": "Yellow corners surround Ironclad. No raised isolated hand card or card keyword help is visible. Original Disarm focus declaration was incorrect."
+    },
+    {
+      "captured_at": "2026-09-29T00:55:35.979317+00:00",
+      "sha256": "d7a72e355b6a20aacd00db8f449162d649e55ffc7cc59c3a5b343fa097490c41",
+      "phase": "inspect",
+      "focus_domain": "enemy",
+      "tooltip_kind": "enemy",
+      "focused_subject_id": "enemy-0",
+      "focus_evidence_note": "Yellow corners surround Jaw Worm with Aggressive, Vulnerable and Weakened help. No card is selected."
+    }
+  ]
+}

@@ -4,6 +4,7 @@ Annotations were manually compared with the retained images. These tests check
 the UI contract and never claim automatic visual recognition or hardware proof.
 """
 from copy import deepcopy
+from dataclasses import replace
 from datetime import timedelta
 import json
 from pathlib import Path
@@ -29,6 +30,46 @@ def away(domain='potion', subject='potion:slot-1', direction='down'):
 
 
 class FocusTraceTests(unittest.TestCase):
+    def test_archived_player_and_enemy_markers_request_recovery_not_card_navigation(self):
+        trace=json.loads((Path(__file__).parent/'fixtures/combat_focus_20260929.json').read_text())
+        for frame in trace['frames']:
+            ui={k:v for k,v in frame.items() if k not in {'sha256','captured_at'}}
+            value=draft(); value['decision_policy']='learning'
+            value['ui'].update(ui,focused_card_id=None,selected_card_id=None,focused_target_id=None,
+                               control_profile=FOCUS_CONTROL_PROFILE)
+            with self.subTest(domain=frame['focus_domain']):
+                preview=validate_combat_draft(value)['next_atomic_input_preview']
+                self.assertEqual({'buttons':['down'],'expected_kind':'focus_probe'},preview)
+
+    def test_card_focus_accepts_actual_reviewed_domain_only_in_learning(self):
+        c = context()
+        original = fixtures.reading(c, {'screen_type':'combat', 'phase':'hand',
+            'focused_card_id':'d', 'selected_card_id':None, 'focused_target_id':None,
+            'focus_domain':'hand', 'tooltip_kind':'none', 'focused_subject_id':None,
+            'focus_evidence_note':'Synthetic declared hand focus.', 'hand_order':['s','d']})
+        before = Reading.from_dict(dict(original, frame_id='before', image_sha256='a'*64))
+        expected = {'kind':'card_focus','expected':'s'}
+        for domain in ('player_status','enemy','relic','potion'):
+            ui = dict(original['ui'], **away(domain, domain + ':observed'))
+            after = Reading.from_dict(dict(fixtures.reading(c,ui),frame_id='after',image_sha256='b'*64))
+            with self.subTest(domain=domain):
+                result = verify_combat_observation(before,after,{},expected,{},policy='learning')
+                self.assertFalse(result['logical_action_complete'])
+                self.assertFalse(result['focus_transition']['returned_to_hand'])
+                self.assertEqual(domain,result['observed_mismatches'][0]['observed']['domain'])
+                with self.assertRaisesRegex(RuntimeStop,'navigation verification mismatch'):
+                    verify_combat_observation(before,after,{},expected,{},policy='strict')
+        bad = deepcopy(after); bad.context['state']['energy'] -= 1
+        with self.assertRaisesRegex(RuntimeStop,'gameplay state'):
+            verify_combat_observation(before,bad,{},expected,{},policy='learning')
+        selected = replace(deepcopy(before),image_sha256='b'*64)
+        selected.ui.update(phase='card_selected',selected_card_id='d')
+        with self.assertRaisesRegex(RuntimeStop,'cannot select'):
+            verify_combat_observation(before,selected,{},expected,{},policy='learning')
+        wrong = replace(deepcopy(before),image_sha256='b'*64)
+        result = verify_combat_observation(before,wrong,{},expected,{},policy='learning')
+        self.assertEqual('d',result['observed_mismatches'][0]['observed']['focused_card_id'])
+
     def test_original_up_trace_is_away_from_hand_and_cannot_be_relabeled_hand(self):
         trace = json.loads((Path(__file__).parent / 'fixtures/combat_focus_trace.json').read_text())
         previous = None
@@ -136,6 +177,25 @@ class FocusRuntimeTests(unittest.TestCase):
         self.assertIsNone(f.session.state['pending'])
         actual = json.loads(f.decisions()[-1]['actual_outcome_json'])
         self.assertEqual('verified', actual['status'])
+
+    def test_unexpected_enemy_after_card_focus_recovers_and_completes_card(self):
+        f = self.f
+        packets = [f.combat_request(0,focus='d'),
+            f.combat_request(1,focus=None,ui_override=away('enemy','enemy')),
+            f.combat_request(2,focus='d'), f.combat_request(3,focus='s'),
+            f.combat_request(4,focus='s',ui_override={'phase':'targeting','selected_card_id':'s',
+                'focused_target_id':'enemy','target_order':['enemy']})]
+        game=context(); game['state']['hand']=game['state']['hand'][1:]
+        game['state']['energy']=0; game['state']['enemies'][0]['hp']=6
+        packets.append(f.combat_request(5,game=game))
+        results=[self.step(packets[i],packets[i+1]) for i in range(len(packets)-1)]
+        self.assertEqual([['left'],['down'],['left'],['cross'],['cross']],
+                         [v['buttons'] for v in f.controller.inputs])
+        self.assertEqual([False]*4+[True],[r['logical_action_complete'] for r in results])
+        self.assertEqual('enemy',results[0]['focus_transition']['after']['domain'])
+        self.assertEqual('card_focus',results[0]['observed_mismatches'][0]['field'])
+        self.assertIsNone(f.session.state['pending'])
+        self.assertTrue(f.session.armed)
 
     def test_unchanged_down_records_no_progress_then_circle_is_available_once(self):
         f = self.f
