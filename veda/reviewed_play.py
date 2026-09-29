@@ -1276,6 +1276,13 @@ class ReviewedPlaySession(CombatInputAdapter):
 
     def handle(self, request):
         op = request.get('operation') if isinstance(request, dict) else None
+        # Recovery waits are excluded from active move/floor timing. A new
+        # actionable request resumes the clock immediately; summaries and
+        # cleanup preserve the paused state.
+        if op not in {'timing', 'summary', 'stop'}:
+            snapshot = self._timing_snapshot()
+            if snapshot is not None and snapshot.get('pause') is not None:
+                self._timing_event('resume')
         if op in {'bridge_preflight', 'arm'}:
             self._timing_event('phase', name='preflight')
         if op in {'verify', 'finalize'}:
@@ -1322,6 +1329,9 @@ class ReviewedPlaySession(CombatInputAdapter):
             status, required = 'storage_recovery_required', 'Recover durable session storage, reopen and reconcile the pending action; never resend it.'
         else:
             status, required = 'recoverable_review', 'Inspect a fresh frame, correct the reviewed request and continue in this armed session.'
+            snapshot = self._timing_snapshot()
+            if snapshot is not None and snapshot.get('pause') is None:
+                self._timing_event('pause', category='paused', reason='Recoverable workflow error; awaiting repair.')
         pending = self.state.get('pending')
         next_operation = 'prepare'
         if pending:
