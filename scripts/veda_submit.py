@@ -23,6 +23,10 @@ def _pending_recovery(session, result):
     original_delivery = result.get('controller_input_sent')
     if pending.get('status') == 'verified_pending_log':
         finalized = submit(session, {'operation': 'finalize'})
+        if finalized.get('status') == 'run_complete':
+            return {**finalized, 'controller_input_sent': False,
+                    'recovery': {'automatic': True, 'packet_found': False, 'input_replayed': False,
+                                 'original_controller_input_sent': original_delivery}}
         if finalized.get('status') in {'verified', 'finalized', 'run_complete'}:
             return {'status': 'pending_recovered', 'ready': False, 'armed': bool(result.get('armed')),
                     'controller_input_sent': False,
@@ -69,6 +73,10 @@ def _pending_recovery(session, result):
                 'controller_input_sent': False,
                 'required': 'Result verified but not finalized; submit finalize before arming. Never resend.',
                 'recovery': {'automatic': True, 'packet_found': True, 'packet': str(packet), 'input_replayed': False}}
+    if finalized.get('status') == 'run_complete':
+        return {**finalized, 'controller_input_sent': False,
+                'recovery': {'automatic': True, 'packet_found': True, 'packet': str(packet),
+                             'input_replayed': False, 'original_controller_input_sent': original_delivery}}
     return {'status': 'pending_recovered', 'ready': False, 'armed': bool(result.get('armed')),
             'controller_input_sent': False,
             'next_operation': 'resume_play' if result.get('armed') else 'bridge_preflight',

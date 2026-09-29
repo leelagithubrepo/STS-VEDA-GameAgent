@@ -830,6 +830,14 @@ class PlayTelemetry:
     def _zones(self, db, req, ids):
         context, source = req["context"], req["source"]
         events = list(req.get("zone_events", []))
+        # A verified gameplay result must never be blocked by a missing
+        # optional opening-zone baseline.  Preserve the result and defer zone
+        # reconstruction until a complete opening hand/deck is observed.
+        if context["combat_id"] and not db.execute(
+                "SELECT 1 FROM combat_zone_bases WHERE combat_id=?", (context["combat_id"],)).fetchone():
+            if events:
+                ids["zones_deferred"] = len(events)
+            return
         if (context["combat_id"] and req.get("zone_coverage", "unknown") != "complete"
                 and db.execute("SELECT 1 FROM combat_zone_bases WHERE combat_id=?", (context["combat_id"],)).fetchone()):
             events.append({"kind": "unknown", "evidence_note": "Outcome did not establish all zone movements: " + req["evidence_note"]})

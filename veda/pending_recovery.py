@@ -33,9 +33,17 @@ def find_matching_verify_request(session, action_id):
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError):
             continue
+        after = value.get("after") if isinstance(value, dict) else None
+        source = after.get("source") if isinstance(after, dict) else None
+        review = after.get("review") if isinstance(after, dict) else None
+        complete = (isinstance(source, dict) and isinstance(review, dict)
+                    and isinstance(source.get("path"), str) and bool(source.get("path"))
+                    and isinstance(source.get("sha256"), str) and len(source["sha256"]) == 64
+                    and review.get("complete") is True)
         if (isinstance(value, dict) and value.get("operation") == "verify"
                 and value.get("action_id") == action_id
-                and {'operation_id', 'after', 'action_id', 'operation'} <= set(value)):
+                and isinstance(value.get("operation_id"), str) and bool(value["operation_id"].strip())
+                and complete):
             try:
                 matches.append((path.stat().st_mtime_ns, path))
             except OSError:
