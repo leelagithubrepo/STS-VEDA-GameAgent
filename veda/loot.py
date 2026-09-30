@@ -26,9 +26,13 @@ def canonical_reward_role(option):
         return 'gold'
     if text in {'potion', 'potion-reward'}:
         return 'potion'
+    if text in {'colorless-potion', 'colorless_potion'} or 'colorless potion' in label:
+        return 'potion'
     if text in {'card-reward', 'cards', 'card'}:
         return 'card_reward' if text != 'card' else 'card'
     if text in {'skip', 'skip-rewards'}:
+        return 'skip'
+    if text in {'skip-potion', 'skip_potion'} or 'skip potion' in label:
         return 'skip'
     if text in {'proceed', 'continue'}:
         return 'proceed'
@@ -70,13 +74,14 @@ def _normalized_options(options):
     return result
 
 
-def plan_loot(snapshot, decision=None):
+def plan_loot(snapshot, decision=None, *, fallback=False):
     required = {'schema', 'context', 'inventory', 'resources', 'facts', 'ui'}
     if not isinstance(snapshot, dict) or set(snapshot) != required or snapshot['schema'] != 'veda.loot-snapshot.v1':
         raise ValueError('reviewed veda.loot-snapshot.v1 required')
     value = deepcopy(snapshot)
     inventory = _inventory(value['inventory'], 'learning')
     ui = _ui(value['ui'])
+    value['ui']['menu_family'] = ui['menu_family']
     if ui['menu_family'] not in {'loot_rewards', 'loot_cards'} or value['facts'].get('reward_source') != 'combat':
         raise ValueError('routine loot applies only to reviewed combat reward screens')
     normalized_options = _normalized_options(ui['options'])
@@ -114,6 +119,14 @@ def plan_loot(snapshot, decision=None):
                 selected = next((o for o in free if o.get('role') == 'potion'), None)
                 if selected:
                     reason = 'Collect the potion into an empty slot.'
+            if selected is None and fallback:
+                # A watchdog fallback must remain a legal, visible choice.  A
+                # full belt cannot be changed safely without naming the exact
+                # potion to discard, so skipping is the bounded least-risk
+                # action when the strategic replacement pass has timed out.
+                selected = next((o for o in free if o.get('role') == 'skip'), None)
+                if selected:
+                    reason = 'Watchdog fallback: skip the potion and continue after the replacement decision timed out.'
             if selected is None:
                 selected = next((o for o in free if o.get('role') == 'card_reward'), None)
                 if selected:
@@ -121,7 +134,13 @@ def plan_loot(snapshot, decision=None):
             if selected is None and len(options) == 1 and options[0].get('role') == 'proceed' and options[0]['costs'] == {}:
                 selected, reason = options[0], 'Rewards handled; continue.'
     if selected is None:
+        fallback_option = next((o for o in options if o.get('role') == 'skip'
+                                and ui['menu_family'] == 'loot_rewards'), None)
         return {'status': 'strategy_required', 'decision_key': key, 'options': options,
+                'fallback': ({'option_id': fallback_option['id'],
+                              'reason': 'Skip the full-belt potion if the bounded replacement review expires.',
+                              'decision_budget_seconds': 10}
+                             if fallback_option is not None else None),
                 'instruction': ('Choose one card or skip once; reuse that decision while navigating.'
                     if ui['menu_family'] == 'loot_cards' else
                     'Review the remaining reward tradeoffs and choose an available option once; for a full potion belt, decide replacement or leave.'),
@@ -156,8 +175,10 @@ def plan_loot(snapshot, decision=None):
                 resources['deck_size'] += 1
     elif role == 'card_reward' and ui['menu_family'] == 'loot_rewards':
         screen = 'card_reward'
-    elif role == 'skip' and ui['menu_family'] == 'loot_cards':
-        screen = 'reward'
+    elif role == 'skip' and ui['menu_family'] in {'loot_cards', 'loot_rewards'}:
+        screen = 'reward' if ui['menu_family'] == 'loot_cards' else 'map'
+        if ui['menu_family'] == 'loot_rewards':
+            screen = 'map'
     elif role == 'proceed' and ui['menu_family'] == 'loot_rewards':
         screen = 'map'
     else:
@@ -170,6 +191,21 @@ def plan_loot(snapshot, decision=None):
              'choice': {'kind': 'reward', 'option_ids': [selected['id']], 'postconditions': post},
              'reasoning': reason}
     validate_menu_draft(draft, CONTROL_PROFILE)
+    # This is deliberately only a routing annotation: the ordinary reviewed
+    # request/result contract still owns controller delivery and confirmation.
+    # It lets the player bypass a separate model pass for free, known rewards.
+    fast_path = None
+    if routine and role in {'gold', 'potion', 'card_reward', 'proceed', 'skip'}:
+        fast_path = {
+            'kind': 'routine_loot',
+            'option_id': selected['id'],
+            'focused': ui['focused_id'] == selected['id'],
+            'next_step': ('commit' if selected.get('shortcut_hint') is not None
+                          or ui['focused_id'] == selected['id'] else 'focus_then_commit'),
+            'after_commit': 'inspect_one_settled_after_frame_and_continue_from_it',
+            'decision_budget_seconds': 10,
+        }
     return {'status': 'planned', 'routine': routine, 'draft': draft,
             'decision': {'option_id': selected['id'], 'reason': reason, 'decision_key': key},
+            'fast_path': fast_path,
             'controller_input_sent': False}

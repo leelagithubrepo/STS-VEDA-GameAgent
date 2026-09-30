@@ -127,6 +127,16 @@ class CombatDraftTests(unittest.TestCase):
         packet = json.loads(self.output.read_text()); self.assertEqual('execute', packet['operation'])
         self.assertNotIn('armed', packet)
 
+    def test_upgrade_confirmation_uses_observed_triangle_button(self):
+        value = deepcopy(self.value)
+        value['ui'].update(
+            phase='card_selected', focused_card_id='d', selected_card_id='d',
+            upgrade_confirm_button='triangle', hand_order=['s', 'd'])
+        value['plan'] = {'steps': [{'kind': 'card', 'card_id': 'd'}]}
+        checked = validate_combat_draft(value)
+        self.assertEqual({'buttons': ['triangle'], 'expected_kind': 'upgrade_confirm'},
+                         checked['next_atomic_input_preview'])
+
     def test_duplicate_or_nonfinite_or_oversized_json_is_rejected(self):
         path = self.root / 'bad.json'
         for payload in ('{"a":1,"a":2}', '{"a":NaN}', ' ' * 256001):
@@ -294,6 +304,20 @@ class CombatResultTests(unittest.TestCase):
         self.assertEqual({}, packet['telemetry']); self.assertEqual(0, packet['after']['observation']['ui']['required_count'])
         response = self.session.handle(packet)
         self.assertEqual(self.fx.context_ids, response['next_context'])
+        self.assertTrue(response['logical_action_complete'])
+
+    def test_boundary_strips_semantic_option_annotations(self):
+        self.value['plan']['steps'][0] = {'kind':'card','card_id':'s','target':'enemy'}
+        self.value['state']['enemies'][0]['hp'] = 1
+        self.value['ui'].update(phase='targeting', selected_card_id='s', focused_target_id='enemy', focus_domain='enemy')
+        prepared = self.prepare_send(arm=True)
+        observed = {'schema':'veda.combat-result.v1','action_id':prepared['action_id'], 'inventory':'unchanged',
+            'observed_result':'Synthetic reward boundary with annotated options.',
+            'boundary':{'screen':'reward','resources':{'hp':40,'max_hp':80,'gold':99},
+                'facts':{'combat_outcome':'win'},'choice_id':'reward-after-combat','layout_id':'synthetic-reward',
+                'options':[{'id':'gold','label':'16 Gold','enabled':True,'costs':{},'role':'gold',
+                            'reward':{'amount':16}}],'focused_id':'gold'}}
+        response = self.session.handle(self.packet(observed, result_mode=True))
         self.assertTrue(response['logical_action_complete'])
 
     def test_result_requires_distinct_post_dispatch_capture_and_explicit_review(self):

@@ -164,6 +164,8 @@ class ForcedMapTests(unittest.TestCase):
             result = plan_map(value, cache)
         self.assertEqual('planned', result['status'])
         self.assertTrue(result['forced_move'])
+        self.assertEqual(10, result['fast_path']['decision_budget_seconds'])
+        self.assertEqual('activate_once_then_verify_room', result['fast_path']['next_step'])
         self.assertEqual(cache['route']['baseline'], result['cache']['route']['baseline'])
         self.assertIn('deck_relics_or_potions_changed', plan_map(dict(original, inventory=value['inventory']), result['cache'])['reasons'])
 

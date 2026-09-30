@@ -81,7 +81,7 @@ def observed_result(session, *, note, unchanged=False, focus=None, selected=None
                  and {'state', 'ui'} <= set(actual) and target is None,
                  'supply actual state/UI and others_unchanged; do not use --unchanged after a card effect')
         allowed = {'state', 'ui', 'inventory', 'encounter', 'perception', 'unknowns', 'rules', 'boss_manifest',
-                   'next_turn', 'card_destination', 'telemetry', 'others_unchanged'}
+                   'next_turn', 'card_destination', 'telemetry', 'others_unchanged', 'state_reconciliation'}
         _require(not set(actual) - allowed and isinstance(actual['state'], dict) and isinstance(actual['ui'], dict),
                  'actual state and UI objects required; unsupported result fields')
         value.update({k: deepcopy(v) for k,v in actual.items() if k != 'others_unchanged'})

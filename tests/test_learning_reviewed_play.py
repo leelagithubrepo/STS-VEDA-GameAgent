@@ -157,6 +157,20 @@ class LearningRuntimeTests(unittest.TestCase):
         self.assertTrue(f.session.armed)
         self.assertEqual('attempted', f.session.state['pending']['status'])
 
+    def test_recovery_deadline_promotes_one_reobservation_to_fallback(self):
+        f = self.f; prepared = self.advance()
+        bad = f.combat_request(1, focus='s')
+        first = self.verify(prepared, bad)
+        self.assertEqual('recoverable_review', first['status'], first)
+        self.assertEqual('combat', first['recovery']['class'])
+        self.assertEqual(30, first['recovery']['budget_seconds'])
+        self.assertFalse(first['recovery']['budget_exceeded'])
+        f.now += timedelta(seconds=31)
+        second = self.verify(prepared, bad)
+        self.assertEqual('recovery_budget_exceeded', second['status'], second)
+        self.assertTrue(second['recovery']['fallback_required'])
+        self.assertEqual('verify', second['next_operation'])
+
     def test_uncertain_transport_terminates_but_preserves_pending_and_never_replays(self):
         f = self.f; self.create(); prepared = f.prepare(); f.controller.uncertain = True
         result = f.send(prepared)

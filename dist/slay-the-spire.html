@@ -138,6 +138,22 @@ body { padding-left: 248px; }
           <article role="listitem"><span class="training-step">04</span><h3>Verify</h3><p>Compare the next screen with the expected result and record the gap.</p></article>
           <article role="listitem"><span class="training-step">05</span><h3>Learn</h3><p>Turn repeatable evidence into a tested rule and a clearer next run.</p></article>
         </div>
+        <div class="learning-ledger" aria-labelledby="learning-ledger-title">
+          <div class="learning-ledger-heading">
+            <div><p class="spire-eyebrow">Verified ledger</p><h3 id="learning-ledger-title">The loop is measured from the run record.</h3></div>
+            <span class="learning-ledger-updated">Snapshot <time>2026-09-30</time></span>
+          </div>
+          <p class="learning-ledger-intro">These totals are generated from VEDA’s resolved SQLite evidence when the site is built. They show what was observed, compared, and promoted; they do not claim that the model retrained itself from a single outcome.</p>
+          <div class="learning-ledger-grid" aria-label="Verified learning metrics">
+            <div><strong>719</strong><span>decisions recorded</span></div>
+            <div><strong>663</strong><span>decisions resolved</span></div>
+            <div><strong>442</strong><span>verified outcomes</span></div>
+            <div><strong>67</strong><span>floor records</span></div>
+            <div><strong>15</strong><span>victory floors</span></div>
+            <div><strong>49</strong><span>improvements verified</span></div>
+          </div>
+          <p class="learning-ledger-note">On the next run, VEDA retrieves relevant verified cases, uses tested fast paths, compares prediction with outcome, and queues larger gaps for Builder without blocking the current floor.</p>
+        </div>
         <div class="training-footer"><span><i></i> Current mode: evidence-bound</span><span>Last focus: controller recovery, boss thresholds, and reward telemetry</span><a href="#live-progress">See the progress report ↓</a></div>
       </div>
     </section>

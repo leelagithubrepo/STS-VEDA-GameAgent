@@ -74,7 +74,9 @@ def focus_transition(before_ui, after_ui, hand_ids):
     """Record actual navigation; away-domain observations never claim hand return."""
     before = validate_combat_focus(before_ui, hand_ids)
     after = validate_combat_focus(after_ui, hand_ids, require_explicit=True)
-    if after_ui.get('phase') in {'card_selected', 'targeting'} or after['selected_card_id'] is not None:
+    if after_ui.get('phase') == 'targeting' or (
+            after['selected_card_id'] is not None
+            and after['selected_card_id'] != before['selected_card_id']):
         raise RuntimeStop('focus navigation cannot select a card or enter targeting')
     keys = ('domain', 'tooltip_kind', 'subject_id', 'focused_card_id', 'selected_card_id')
     prior, actual = ({key: focus[key] for key in keys} for focus in (before, after))
@@ -151,6 +153,33 @@ class CombatInputAdapter:
         card = next((c for c in cards if c["id"] == action["card_id"]), None)
         if card is None:
             raise RuntimeStop("planned card disappeared")
+        if ui.get('upgrade_confirm_button') is not None:
+            if ui.get('phase') != 'card_selected':
+                raise RuntimeStop('upgrade confirmation needs the inspected card-selected phase')
+            selected = ui.get('selected_card_id')
+            if selected != card['id']:
+                if ui.get('focused_card_id') == card['id']:
+                    # The hand focus has reached the retained upgrade choice.
+                    # Cross changes the picker selection; Triangle remains a
+                    # separate confirmation input and is never batched here.
+                    self.machine.phase, self.machine.card_name = "card_selected", card['id']
+                    return {'buttons': ['cross']}, {'kind': 'advance', 'card': card}
+                if (selected not in ids or ui.get('focused_card_id') != selected
+                        or ui.get('hand_order') != ids
+                        or ui.get('control_profile') != FOCUS_CONTROL_PROFILE
+                        or not FOCUS_FIELDS <= set(ui)
+                        or focus['domain'] != 'hand'):
+                    raise RuntimeStop('upgrade picker focus/order is unread; cannot navigate to the planned card')
+                index = ids.index(selected)
+                target_index = ids.index(card['id'])
+                delta = 1 if target_index > index else -1
+                count = min(4, abs(target_index - index)) if ui.get('navigation_mode') == 'bounded_hand' else 1
+                return {'buttons': [('right' if delta > 0 else 'left')] * count}, {
+                    'kind': 'card_focus', 'expected': ids[index + delta * count]}
+            self.machine.reset()
+            return {'buttons': [ui['upgrade_confirm_button']]}, {
+                'kind': 'upgrade_confirm', 'card': card,
+                'button': ui['upgrade_confirm_button']}
         if ui["phase"] in {"targeting", "card_selected"}:
             if ui.get("selected_card_id") != card["id"]:
                 raise RuntimeStop("a different card is selected")
@@ -218,6 +247,19 @@ class CombatInputAdapter:
                     or not after.context.get("fresh")
                     or after.context.get("state", {}).get("hand_complete") is not True or unchanged):
                 raise RuntimeStop("End Turn transition not verified")
+            return True
+        if kind == 'upgrade_confirm':
+            if (after.floor_id, after.turn_id) != (before.floor_id, before.turn_id):
+                raise RuntimeStop('floor or turn changed during upgrade confirmation')
+            state = after.context.get('state', {})
+            if not after.context.get('fresh') or after.ui.get('screen_type') != 'combat':
+                raise RuntimeStop('upgrade confirmation lacks a fresh settled combat result')
+            if after.ui.get('phase') not in {'hand', 'tooltip'} or after.ui.get('selected_card_id') is not None:
+                raise RuntimeStop('upgrade confirmation did not return to the combat hand')
+            upgraded_name = expected['card'].get('name', '') + '+'
+            if not any(card.get('name') == upgraded_name or card.get('title_color') == 'green'
+                       for card in state.get('hand', [])):
+                raise RuntimeStop('confirmed upgrade is not visible in the resulting hand')
             return True
         if (after.floor_id, after.turn_id) != (before.floor_id, before.turn_id):
             raise RuntimeStop("floor or turn changed during card input")

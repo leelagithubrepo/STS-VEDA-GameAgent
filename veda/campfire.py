@@ -11,6 +11,21 @@ from .menu_results import read_pending
 SCHEMA='veda.campfire-snapshot.v1'
 
 
+def _role(option):
+    role = option.get('role')
+    if role in {'rest', 'smith', 'proceed'}:
+        return role
+    value = str(option.get('id', '')).casefold()
+    label = str(option.get('label', '')).casefold()
+    if value == 'rest' or label == 'rest':
+        return 'rest'
+    if value == 'smith' or label == 'smith':
+        return 'smith'
+    if value in {'proceed', 'leave'} or label in {'proceed', 'leave'}:
+        return 'proceed'
+    return None
+
+
 def output_path(session, result=False):
     root=session_directory(session)/'campfire-packets'; root.mkdir(exist_ok=True)
     return root/(('result-' if result else 'action-')+uuid4().hex+'.json')
@@ -43,9 +58,11 @@ def plan_campfire(snapshot,decision=None):
     _require(isinstance(snapshot,dict) and set(snapshot)=={'schema','context','inventory','resources','facts','ui'}
              and snapshot['schema']==SCHEMA, 'reviewed campfire snapshot required')
     value=deepcopy(snapshot); ui=_ui(value['ui']); family=ui['menu_family']
+    ui['options'] = [_role_option(o) for o in ui['options']]
+    value['ui']['options'] = deepcopy(ui['options'])
     _require(family in {'campfire_options','campfire_exit','card_upgrade'} and value['facts'].get('node_type')=='rest',
              'campfire planner only handles an observed rest site')
-    key=decision_key(value); selected=None; reason=None
+    key=decision_key(value); selected=None; reason=None; routine=False
     if family=='campfire_exit':
         selected=next((o for o in ui['options'] if o['enabled'] and o.get('role')=='proceed'),None)
         reason='Campfire outcome verified; return to the map.'
@@ -59,12 +76,31 @@ def plan_campfire(snapshot,decision=None):
         selected=next((o for o in ui['options'] if o['id']==decision['option_id'] and o['enabled']),None)
         _require(selected is not None,'selected campfire option is unavailable')
         reason=decision['reason']
+    elif family=='campfire_options':
+        # A high-health campfire with a known unupgraded Armaments has a
+        # deterministic, low-risk Smith fast path.  It avoids a second model
+        # round while preserving the ordinary reviewed focus/upgrade proof.
+        options = [_role_option(o) for o in ui['options']]
+        smith = next((o for o in options if _role(o) == 'smith' and o['enabled']), None)
+        rest = next((o for o in options if _role(o) == 'rest' and o['enabled']), None)
+        hp, maximum = value['resources'].get('hp'), value['resources'].get('max_hp')
+        cards = value['inventory'].get('current', {}).get('card', [])
+        complete = value['inventory'].get('coverage', {}).get('card') == 'complete'
+        if (smith is not None and complete and 'Armaments' in cards
+                and type(hp) is int and type(maximum) is int and maximum > 0
+                and hp / maximum >= 0.75):
+            selected, reason, routine = smith, 'At or above 75% HP with an unupgraded Armaments, Smith is the fast-path campfire choice.', True
+        elif (rest is not None and type(hp) is int and type(maximum) is int and maximum > 0
+              and hp / maximum <= 0.50):
+            selected, reason, routine = rest, 'At or below 50% HP, Rest is the fast-path damage-risk choice.', True
     if selected is None:
         return {'status':'strategy_required','decision_key':key,'options':ui['options'],
+                'fast_path': {'kind':'campfire_options','decision_budget_seconds':10,
+                              'next_step':'choose_once_then_focus_and_verify'},
                 'instruction':'Choose Rest versus Smith once, or choose the actual upgrade card; retain that choice through focus.',
                 'controller_input_sent':False}
     inventory=deepcopy(value['inventory']); resources=deepcopy(value['resources']); facts=deepcopy(value['facts'])
-    role=selected.get('role'); kind='rest'; phase='choose'
+    role=_role(selected); kind='rest'; phase='choose'
     if family=='card_upgrade':
         kind='selection'; screen='rest'; phase='result'
         old,new=selected['card']['name'],selected['card']['upgrade_name']
@@ -92,8 +128,20 @@ def plan_campfire(snapshot,decision=None):
         **{k:deepcopy(value[k]) for k in ('context','inventory','resources','facts','ui')},
         'choice':{'kind':kind,'option_ids':[selected['id']],'postconditions':post},'reasoning':reason}
     validate_menu_draft(draft,CONTROL_PROFILE)
-    return {'status':'planned','draft':draft,'decision':{'option_id':selected['id'],'reason':reason,'decision_key':key},
+    return {'status':'planned','routine':routine,
+            'fast_path': ({'kind':'campfire_options','option_id':selected['id'],
+                           'decision_budget_seconds':10,'next_step':'focus_then_commit'}
+                          if routine else None),
+            'draft':draft,'decision':{'option_id':selected['id'],'reason':reason,'decision_key':key},
             'controller_input_sent':False}
+
+
+def _role_option(option):
+    value = deepcopy(option)
+    role = _role(value)
+    if role is not None:
+        value['role'] = role
+    return value
 
 
 def observed_result(session,kind,*,note,unchanged=False,focused_id=None,ui=None,actual=None,preview=None):

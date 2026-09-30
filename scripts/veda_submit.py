@@ -93,7 +93,26 @@ def main(argv=None):
     source.add_argument('--request', type=Path, help='Existing ordinary request packet; sent exactly once.')
     source.add_argument('--operation', choices=['summary', 'bridge_preflight', 'finalize', 'stop'])
     p.add_argument('--capture-after', action='store_true', help='Capture only after acknowledged input; inspect the image before verifying.')
+    p.add_argument('--window-id', type=int, default=(int(os.environ['VEDA_GAME_WINDOW_ID'])
+                   if os.environ.get('VEDA_GAME_WINDOW_ID', '').isdigit() else None),
+                   help='Reuse the selected QuickTime Movie Recording window for capture-after.')
     args = p.parse_args(argv)
+    # A stale terminal command can arrive after reconciliation has already
+    # cleared the durable pending action. Treat finalize as an idempotent
+    # no-op instead of reopening the old recovery loop.
+    if args.operation == 'finalize':
+        session_path = Path(args.session)
+        state_path = session_path if session_path.is_file() else session_path / 'state.json'
+        try:
+            state = json.loads(state_path.read_text(encoding='utf-8'))
+            if not state.get('pending'):
+                print(json.dumps({'status': 'no_pending_action', 'ready': False,
+                                  'controller_input_sent': False,
+                                  'next_operation': 'summary',
+                                  'required': 'Refresh the current screen and prepare a new action.'}))
+                return 0
+        except (OSError, ValueError, TypeError):
+            pass
     request = {'request_file': str(args.request.resolve())} if args.request else {'operation': args.operation}
     try:
         result = submit(args.session, request)
@@ -110,7 +129,7 @@ def main(argv=None):
         try:
             from veda.game_capture import capture_game_window
             from veda.observation import DEFAULT_CAPTURE_DIR
-            result['observation_path'] = str(capture_game_window(DEFAULT_CAPTURE_DIR))
+            result['observation_path'] = str(capture_game_window(DEFAULT_CAPTURE_DIR, window_id=args.window_id))
             result['observation_reviewed'] = False
         except Exception as error:
             result['capture_error'] = str(error)

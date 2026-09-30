@@ -4,7 +4,8 @@ from tempfile import TemporaryDirectory
 import unittest
 import subprocess
 
-from veda.recovery_supervisor import RecoveryJournal, classify_failure, recovery_summary, retry_delays
+from veda.recovery_supervisor import (BuilderGapQueue, RecoveryJournal, classify_failure,
+    classify_workflow_gap, recovery_summary, retry_delays)
 from scripts.veda_recovery_watch import _probe_ready
 
 
@@ -32,6 +33,25 @@ class RecoverySupervisorTests(unittest.TestCase):
     def test_probe_requires_positive_bridge_marker(self):
         self.assertTrue(_probe_ready(subprocess.CompletedProcess([], 0, "PS5 'x' — Ok\n", "")))
         self.assertFalse(_probe_ready(subprocess.CompletedProcess([], 0, "PS5 'x' — Unreachable\n", "")))
+
+    def test_workflow_gap_classification_keeps_small_variations_on_hot_path(self):
+        request = {"kind": "loot", "context": {"screen": "loot_rewards"}}
+        self.assertEqual("small_variation", classify_workflow_gap(request, "focus was unchanged"))
+        self.assertEqual("known_family_gap", classify_workflow_gap(request, "missing mapping"))
+        self.assertEqual("new_family_gap", classify_workflow_gap({"kind": "unknown_menu"}, "unrecognized screen"))
+        self.assertEqual("infrastructure", classify_workflow_gap(request, "Remote Play feed lost"))
+
+    def test_builder_gap_queue_deduplicates_without_blocking_the_run(self):
+        with TemporaryDirectory() as directory:
+            queue = BuilderGapQueue(Path(directory), "run")
+            request = {"kind": "shop", "context": {"screen": "merchant"}}
+            first = queue.enqueue(scenario="known_family_gap", reason="missing mapping",
+                                  request=request, pending_action_id="a")
+            second = queue.enqueue(scenario="known_family_gap", reason="missing mapping",
+                                   request=request, pending_action_id="a")
+            self.assertTrue(first["queued"])
+            self.assertTrue(second["deduplicated"])
+            self.assertEqual(1, len(queue.path.read_text().splitlines()))
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ _DIRECTIONS = {"up", "down", "left", "right"}
 _SCREENS = {
     "selection": {"selection"}, "potion": {"potion_slots", "potion_menu", "potion_target"},
     "map": {"map"}, "reward": {"reward", "card_reward"}, "rest": {"rest"},
-    "event": {"event"}, "shop": {"shop"}, "continue_run": {"title"},
+    "event": {"event"}, "shop": {"shop"}, "treasure": {"treasure"}, "continue_run": {"title"},
 }
 _ALL_SCREENS = set().union(*_SCREENS.values()) | {"combat", "result", "treasure"}
 _CONTEXT = {"run_id", "floor_id", "combat_id", "turn_id"}

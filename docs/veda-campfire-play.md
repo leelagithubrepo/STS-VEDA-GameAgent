@@ -23,6 +23,13 @@ useful upgrades and the next encounters. Do not choose Rest solely because
 it is focused. Default PS5 Cross selects the focused enabled option; reviewed
 grid positions provide adjacent direction taps without inventing button hints.
 
+For a routine handoff, the helper applies a bounded fast path. With complete
+card coverage, at least 75% HP and an unupgraded `Armaments`, it plans Smith;
+at or below 50% HP it plans Rest. Either choice is made within a 10-second
+decision budget, then the same pending action is carried through focus and
+verification. A result that opens the picker goes directly to the picker
+handler; it does not return to map planning.
+
 ```sh
 python3 scripts/veda_campfire.py --snapshot CAMPFIRE.json \
   --choose ACTUAL_OPTION_ID --reason 'The current health/upgrade tradeoff.' \

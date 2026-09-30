@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Iterable
@@ -18,6 +19,15 @@ INFRASTRUCTURE_MARKERS = (
     "socket", "connection", "timeout", "unreachable", "disconnected",
 )
 
+KNOWN_WORKFLOW_KINDS = frozenset({
+    "combat", "combat_inspection", "choice", "loot", "map", "campfire",
+    "shop", "event", "selection", "reward", "treasure",
+})
+GAP_MARKERS = (
+    "unsupported", "no reviewed path", "missing mapping", "unknown screen",
+    "menu family", "unrecognized", "not implemented", "cannot navigate",
+)
+
 
 def classify_failure(reason: str, *, input_sent: bool = False) -> str:
     """Return a stable class used by the launcher and learning replay."""
@@ -25,6 +35,66 @@ def classify_failure(reason: str, *, input_sent: bool = False) -> str:
     if any(marker in text for marker in INFRASTRUCTURE_MARKERS):
         return "infrastructure_post_input" if input_sent else "infrastructure_pre_input"
     return "post_input_unknown" if input_sent else "pre_input"
+
+
+def classify_workflow_gap(request: dict[str, Any] | None, reason: str, *, attempts: int = 0) -> str:
+    """Classify a workflow mismatch without turning it into a stop condition.
+
+    A known request family with a transient mismatch is a small variation. A
+    missing helper/control rule becomes a known-family gap. An unregistered
+    request family becomes a new-family gap. Infrastructure remains separate
+    because it requires the connectivity recovery path.
+    """
+    text = str(reason or "").casefold()
+    if any(marker in text for marker in INFRASTRUCTURE_MARKERS):
+        return "infrastructure"
+    value = request if isinstance(request, dict) else {}
+    kind = value.get("kind")
+    if kind not in KNOWN_WORKFLOW_KINDS:
+        return "new_family_gap"
+    if attempts > 1 or any(marker in text for marker in GAP_MARKERS):
+        return "known_family_gap"
+    return "small_variation"
+
+
+class BuilderGapQueue:
+    """Low-latency append-only queue consumed outside the live player."""
+
+    def __init__(self, run_dir: Path, run_id: str):
+        self.path = Path(run_dir) / "builder-gaps.jsonl"
+        self.run_id = run_id
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def enqueue(self, *, scenario: str, reason: str, request: dict[str, Any] | None,
+                pending_action_id: str | None) -> dict[str, Any]:
+        value = request if isinstance(request, dict) else {}
+        kind = str(value.get("kind") or "unknown")
+        context = value.get("context") if isinstance(value.get("context"), dict) else {}
+        identity = json.dumps({"scenario": scenario, "kind": kind,
+                               "screen": context.get("screen"),
+                               "encounter_type": context.get("encounter_type"),
+                               "reason": str(reason)[:256]}, sort_keys=True,
+                              separators=(",", ":"), ensure_ascii=False)
+        dedupe_key = hashlib.sha256(identity.encode()).hexdigest()
+        if self.path.exists():
+            for line in self.path.read_text(encoding="utf-8").splitlines()[-256:]:
+                try:
+                    if json.loads(line).get("dedupe_key") == dedupe_key:
+                        return {"queued": False, "deduplicated": True, "dedupe_key": dedupe_key}
+                except json.JSONDecodeError:
+                    continue
+        record = {"schema": "veda.builder-gap.v1", "run_id": self.run_id,
+                  "scenario": scenario, "kind": kind,
+                  "screen": context.get("screen"),
+                  "encounter_type": context.get("encounter_type"),
+                  "reason": str(reason)[:500],
+                  "pending_action_id": pending_action_id,
+                  "dedupe_key": dedupe_key,
+                  "status": "queued",
+                  "recorded_at": datetime.now(timezone.utc).isoformat()}
+        with self.path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n")
+        return {"queued": True, "deduplicated": False, "dedupe_key": dedupe_key}
 
 
 def retry_delays(limit: int = 6) -> list[float]:

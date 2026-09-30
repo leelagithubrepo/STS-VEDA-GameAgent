@@ -65,5 +65,21 @@ At the end of a play block, review these independent signals:
   cards in archived frames; an incomplete frame is a correct abstention.
 * focused regression tests and replay IDs recorded with each repair.
 
+The reviewed session state also records `evidence_metrics`: source checks and
+reuses by path, plus workflow recovery attempts. A routine menu action gets
+one repair attempt; combat inspection gets two. Once the limit is reached, the
+adapter reports the deterministic current-screen fallback instead of opening
+another capture loop. Mandatory decision/outcome ledger writes remain durable
+and synchronous because they protect against duplicate controller input;
+optional performance metrics are kept in the sidecar state and do not add a
+second database round trip to routine play.
+
+Workflow mismatches are classified as `small_variation`, `known_family_gap`, or
+`new_family_gap`. Small variations stay on the live hot path. The latter two
+append a deduplicated record to `builder-gaps.jsonl` for Builder to consume
+outside the player process; they do not wait for code changes or tests before
+the current floor continues. Infrastructure failures remain a separate class
+and use the connectivity recovery watcher.
+
 An improvement is accepted only when the new test/replay passes, the measured
 failure rate or latency improves, and no safety boundary is weakened.

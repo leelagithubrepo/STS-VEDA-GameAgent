@@ -19,7 +19,8 @@ from tests.test_execution import context, reading
 from tests.test_choice_execution import observation as choice_observation, choice as choice_goal
 from veda.execution import ARM_PHRASE
 from veda.play_telemetry import PlayTelemetry
-from veda.reviewed_play import ReviewedPlaySession, RuntimeStop, inventory_digest
+from veda.reviewed_play import (ReviewedPlaySession, RuntimeStop, _choice_semantic_signature,
+                                inventory_digest)
 from veda.telemetry_database import TelemetryDatabase
 
 
@@ -88,12 +89,24 @@ class ReviewedPlayTests(unittest.TestCase):
         self.controller = FakeController()
         self.factories = 0
         self.session = None
+
         self.addCleanup(self.close_session)
         self.before = self.combat_request(0)
 
     def close_session(self):
         if self.session:
             self.session.close()
+
+    def test_choice_semantic_signature_ignores_rebound_controls_but_detects_focus_change(self):
+        observation = choice_observation()
+        changed_controls = deepcopy(observation)
+        changed_controls['ui']['options'][0]['activate'] = {'button': 'cross', 'evidence': {'hint_text': 'Choose'}}
+        self.assertEqual(_choice_semantic_signature(observation),
+                         _choice_semantic_signature(changed_controls))
+        changed_focus = deepcopy(observation)
+        changed_focus['ui']['focused_id'] = 'skip-rewards'
+        self.assertNotEqual(_choice_semantic_signature(observation),
+                            _choice_semantic_signature(changed_focus))
 
     def factory(self):
         self.factories += 1

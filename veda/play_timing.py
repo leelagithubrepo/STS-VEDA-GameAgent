@@ -27,6 +27,17 @@ from .pipeline_trace import _percentile
 
 SCHEMA = "veda.play-timing.v1"
 TARGET_SECONDS = {"startup": 90, "move": 20, "noncombat": 90, "combat": 240, "elite": 360, "boss": 480}
+# These are decision budgets, separate from the larger floor/move measurement
+# targets above.  They are an operational handoff signal: the caller must
+# choose and verify a legal action, while this module never presses a button.
+WATCHDOG_SECONDS = {"routine": 10, "combat": 45, "elite": 60, "boss": 90, "new_noncombat": 45}
+WATCHDOG_FALLBACKS = {
+    "routine": "use_current_screen_helper",
+    "combat": "choose_safest_legal_action",
+    "elite": "choose_safest_legal_action",
+    "boss": "choose_safest_legal_action",
+    "new_noncombat": "activate_default_control_then_verify",
+}
 STALE_RECAPTURE_LIMIT = 2
 MAX_BYTES = 1_000_000
 MAX_HISTORY = 128
@@ -66,7 +77,9 @@ def _scope(identifier, kind, at, **metadata):
     return {"id": identifier, "kind": kind, "started_at": at, "completed_at": None,
             "target_seconds": TARGET_SECONDS[kind], "active_seconds": 0.0, "excluded_seconds": 0.0,
             "phase_active_seconds": {}, "overrun_alerted": False, "stale_capture_ids": [],
-            "stale_recapture_count": 0, "stale_budget_alerted": False, **metadata}
+            "stale_recapture_count": 0, "stale_budget_alerted": False,
+            "watchdog_budget_seconds": None, "watchdog_class": None,
+            "watchdog_fallback": None, "watchdog_alerted": False, **metadata}
 
 
 def begin_session(run_id, session_id=None, *, at=None, monotonic_ns=None, clock_id=None, startup_observed=True):
@@ -82,7 +95,7 @@ def begin_session(run_id, session_id=None, *, at=None, monotonic_ns=None, clock_
             "pause": None, "excluded_by_category": {"paused": 0.0, "user_wait": 0.0},
             "measurement_complete": True, "clock_issues": [], "clock_bridges": 0,
             "startup": _scope(session_id, "startup", stamp, observed_from_launch=startup_observed), "move": None, "floor": None,
-            "completed_moves": [], "completed_floors": [], "completed_move_count": 0, "completed_floor_count": 0,
+            "completed_moves": [], "completed_floors": [], "interrupted_floors": [], "completed_move_count": 0, "completed_floor_count": 0,
             "completed_move_overrun_count": 0, "completed_floor_overrun_count": 0,
             "verified_inputs": [], "verified_input_count": 0, "events": [], "poll_alerts": []}
 
@@ -93,7 +106,51 @@ def _copy_state(state):
     _text(state.get("session_id"), "session_id")
     raw = json.dumps(state, allow_nan=False)
     _require(len(raw.encode()) <= MAX_BYTES, "timing state exceeds byte bound")
-    return json.loads(raw)
+    copied = json.loads(raw)
+    # Timing sidecars predate segment rebasing.  Preserve their completed
+    # scopes and add the optional history lazily for compatibility.
+    copied.setdefault("interrupted_floors", [])
+    # Older timing sidecars did not carry the adaptive watchdog metadata.
+    # Backfill it without changing their measured totals or pending scopes.
+    for scope_name in ("startup", "move", "floor"):
+        scope = copied.get(scope_name)
+        if scope is not None:
+            scope.setdefault("watchdog_budget_seconds", None)
+            scope.setdefault("watchdog_class", None)
+            scope.setdefault("watchdog_fallback", None)
+            scope.setdefault("watchdog_alerted", False)
+    return copied
+
+
+def decision_watchdog_profile(request):
+    """Return the bounded decision budget for one reviewed request.
+
+    This deliberately uses only the request's already-inspected facts.  It is
+    safe to call while a model is thinking and does not capture a frame or
+    authorize input.
+    """
+    if not isinstance(request, dict):
+        return {"class": "new_noncombat", "seconds": WATCHDOG_SECONDS["new_noncombat"],
+                "fallback": WATCHDOG_FALLBACKS["new_noncombat"]}
+    context = request.get("context") or {}
+    observation = request.get("observation") or {}
+    facts = observation.get("facts") or {}
+    choice = request.get("choice") or {}
+    choice_kind = choice.get("kind")
+    encounter = context.get("encounter_type") or facts.get("encounter_type")
+    if encounter == "boss":
+        cls = "boss"
+    elif encounter == "elite" or facts.get("node_type") == "elite":
+        cls = "elite"
+    elif request.get("kind") in {"combat", "combat_inspection"} or facts.get("node_type") == "enemy":
+        cls = "combat"
+    elif choice_kind in {"map", "reward", "rest", "shop", "selection", "event"}:
+        cls = "routine"
+    elif request.get("kind") in {"choice", "menu", "loot", "map", "campfire", "shop"}:
+        cls = "routine"
+    else:
+        cls = "new_noncombat"
+    return {"class": cls, "seconds": WATCHDOG_SECONDS[cls], "fallback": WATCHDOG_FALLBACKS[cls]}
 
 
 def _issue(state, code):
@@ -159,7 +216,7 @@ def _complete_move(state, move_id, action_id):
 def record_event(state, event, *, at=None, monotonic_ns=None, clock_id=None):
     """Return an updated copy; persist it atomically before accepting another event.
 
-    Required event ``operation`` is one of begin_move, start_floor/begin_floor,
+    Required event ``operation`` is one of begin_move, set_watchdog, start_floor/begin_floor,
     phase, verified_input, complete_move, complete_floor, pause, resume,
     stale_capture, resume_session, or tick. verified_input may set move_complete
     only for a verified logical outcome, never a focus/target/inspection step.
@@ -169,9 +226,11 @@ def record_event(state, event, *, at=None, monotonic_ns=None, clock_id=None):
     _require(isinstance(event, dict), "timing event must be an object")
     operation = event.get("operation")
     allowed = {
-        "begin_move": {"move_id", "kind", "label"}, "start_floor": {"floor_id", "kind", "observed_from_entry"},
+        "begin_move": {"move_id", "kind", "label", "watchdog_seconds", "watchdog_class", "watchdog_fallback"},
+        "set_watchdog": {"watchdog_seconds", "watchdog_class", "watchdog_fallback"}, "start_floor": {"floor_id", "kind", "observed_from_entry"},
         "begin_floor": {"floor_id", "kind", "observed_from_entry"},
-        "phase": {"name"}, "verified_input": {"action_id", "step_kind", "move_complete"},
+        "rebase_floor": {"floor_id", "kind", "reason"},
+        "phase": {"name", "reason"}, "verified_input": {"action_id", "step_kind", "move_complete"},
         "complete_move": {"move_id", "action_id"}, "complete_floor": {"floor_id"},
         "pause": {"category", "reason"}, "resume": set(), "stale_capture": {"capture_id"},
         "failure": {"code", "reason"}, "overrun": {"reason"},
@@ -183,13 +242,39 @@ def record_event(state, event, *, at=None, monotonic_ns=None, clock_id=None):
         move_id = _text(event.get("move_id"), "move_id")
         kind = _text(event.get("kind"), "move kind")
         label = _text(event.get("label", kind), "move label", 512)
+        watchdog_seconds = event.get("watchdog_seconds")
+        watchdog_class = event.get("watchdog_class")
+        watchdog_fallback = event.get("watchdog_fallback")
+        if watchdog_seconds is not None:
+            _require(type(watchdog_seconds) is int and watchdog_seconds > 0 and watchdog_seconds <= 600,
+                     "watchdog_seconds must be an integer from 1 to 600")
+            _require(watchdog_class in WATCHDOG_SECONDS, "unknown watchdog class")
+            _require(watchdog_seconds == WATCHDOG_SECONDS[watchdog_class],
+                     "watchdog_seconds must match its watchdog class")
+            _text(watchdog_fallback, "watchdog fallback", 128)
         if value["move"] is not None:
             _require(value["move"]["id"] == move_id and value["move"]["move_kind"] == kind,
                      "pending logical move must not be reset or replaced")
         else:
             _require(not any(item["id"] == move_id for item in value["completed_moves"]), "logical move already completed")
             value["move"] = _scope(move_id, "move", value["updated_at"], move_kind=kind, label=label,
-                                    floor_id=value["floor"]["id"] if value["floor"] else None)
+                                    floor_id=value["floor"]["id"] if value["floor"] else None,
+                                    watchdog_budget_seconds=watchdog_seconds,
+                                    watchdog_class=watchdog_class,
+                                    watchdog_fallback=watchdog_fallback)
+    elif operation == "set_watchdog":
+        scope = value["move"]
+        _require(scope is not None, "set_watchdog requires a pending logical move")
+        watchdog_seconds = event.get("watchdog_seconds")
+        watchdog_class = event.get("watchdog_class")
+        watchdog_fallback = event.get("watchdog_fallback")
+        _require(type(watchdog_seconds) is int and watchdog_seconds in WATCHDOG_SECONDS.values(),
+                 "watchdog_seconds must be a supported decision budget")
+        _require(watchdog_class in WATCHDOG_SECONDS and watchdog_seconds == WATCHDOG_SECONDS[watchdog_class],
+                 "watchdog_seconds must match its watchdog class")
+        _text(watchdog_fallback, "watchdog fallback", 128)
+        scope.update(watchdog_budget_seconds=watchdog_seconds, watchdog_class=watchdog_class,
+                     watchdog_fallback=watchdog_fallback)
     elif operation in {"start_floor", "begin_floor"}:
         floor_id, kind = _text(event.get("floor_id"), "floor_id"), event.get("kind")
         _require(kind in {"noncombat", "combat", "elite", "boss"}, "unknown floor timing kind")
@@ -201,8 +286,26 @@ def record_event(state, event, *, at=None, monotonic_ns=None, clock_id=None):
         else:
             _require(not any(item["id"] == floor_id for item in value["completed_floors"]), "floor already completed")
             value["floor"] = _scope(floor_id, kind, value["updated_at"], observed_from_entry=observed)
+    elif operation == "rebase_floor":
+        floor_id, kind = _text(event.get("floor_id"), "floor_id"), event.get("kind")
+        _require(kind in {"noncombat", "combat", "elite", "boss"}, "unknown floor timing kind")
+        _text(event.get("reason"), "floor rebase reason", 512)
+        prior = value["floor"]
+        _require(prior is not None and prior["id"] == floor_id,
+                 "floor rebase requires the same active floor")
+        _require(value["move"] is None, "floor rebase requires no pending logical move")
+        archived = deepcopy(prior)
+        archived.update(interrupted_at=value["updated_at"], interruption_reason=event["reason"])
+        value["interrupted_floors"].append(archived)
+        value["interrupted_floors"] = value["interrupted_floors"][-MAX_HISTORY:]
+        # A resumed observer did not see room entry, so its new segment is
+        # useful for current performance but must never claim a full-floor SLA.
+        value["floor"] = _scope(floor_id, kind, value["updated_at"], observed_from_entry=False,
+                                resumed_segment=True, prior_segment_started_at=prior["started_at"])
     elif operation == "phase":
         _require(event.get("name") in PHASES, "unknown timing phase")
+        if "reason" in event:
+            _text(event.get("reason"), "phase reason", 512)
         value["phase"] = event["name"]
     elif operation == "verified_input":
         action_id = _text(event.get("action_id"), "action_id")
@@ -279,6 +382,12 @@ def _scope_summary(scope, complete_measurement):
                   measurement_basis="measured" if complete_measurement else "incomplete_elapsed_lower_bound",
                   stale_recapture_limit=STALE_RECAPTURE_LIMIT,
                   stale_budget_exhausted=scope["stale_recapture_count"] >= STALE_RECAPTURE_LIMIT)
+    budget = scope.get("watchdog_budget_seconds")
+    if budget is not None:
+        result.update(watchdog_due=active >= budget,
+                      watchdog_remaining_seconds=max(0, budget - active),
+                      watchdog_class=scope.get("watchdog_class"),
+                      watchdog_fallback=scope.get("watchdog_fallback"))
     if scope["kind"] in {"noncombat", "combat", "elite", "boss"}:
         result["full_floor_target_verifiable"] = complete_measurement and scope.get("observed_from_entry", False)
     return result
@@ -299,6 +408,15 @@ def _diagnostics(state):
                            "active_seconds": scope["active_seconds"], "target_seconds": scope["target_seconds"],
                            "dominant_phase": dominant,
                            "recommendation": "Use the prepared compact helper and existing context; finish source-free validation before the next fresh capture. Preserve every input and result check."})
+        if name == "move" and scope.get("watchdog_budget_seconds") is not None \
+                and scope["active_seconds"] >= scope["watchdog_budget_seconds"] \
+                and not scope.get("watchdog_alerted", False):
+            result.append({"code": "watchdog_due", "scope": name, "scope_id": scope["id"],
+                           "active_seconds": scope["active_seconds"],
+                           "decision_budget_seconds": scope["watchdog_budget_seconds"],
+                           "watchdog_class": scope.get("watchdog_class"),
+                           "fallback": scope.get("watchdog_fallback"),
+                           "recommendation": "Stop rereading the unchanged frame; use the named legal fallback once, then verify the resulting state."})
         if scope["stale_recapture_count"] >= STALE_RECAPTURE_LIMIT:
             result.append({"code": "stale_recapture_budget_exhausted", "scope": name, "scope_id": scope["id"],
                            "count": scope["stale_recapture_count"], "limit": STALE_RECAPTURE_LIMIT,
@@ -310,7 +428,7 @@ def _diagnostics(state):
 
 
 def summarize_timing(state, *, at=None, monotonic_ns=None, clock_id=None):
-    """JSON-ready snapshot; no automatic action, no deadline-based authorization."""
+    """JSON-ready snapshot; watchdog signals never authorize controller input."""
     value = _copy_state(state)
     if at is not None or monotonic_ns is not None or clock_id is not None:
         _advance(value, at, monotonic_ns, clock_id)
@@ -326,6 +444,7 @@ def summarize_timing(state, *, at=None, monotonic_ns=None, clock_id=None):
             "completed_move_count": value["completed_move_count"], "completed_floor_count": value["completed_floor_count"],
             "completed_move_overrun_count": value["completed_move_overrun_count"],
             "completed_floor_overrun_count": value["completed_floor_overrun_count"],
+            "interrupted_floor_segments": len(value.get("interrupted_floors", [])),
             "verified_input_count": value["verified_input_count"],
             "recent_completed_move_seconds": {"samples": len(moves), "p50": _percentile(moves, .5), "p95": _percentile(moves, .95),
                                                "window": f"last {MAX_HISTORY} completed logical moves; excludes declared pauses/waits"},
@@ -423,10 +542,12 @@ class PlayTiming:
             value = record_event(self._read(), {"operation": "tick"}, **self._now())
             alerts = []
             for diagnostic in _diagnostics(value):
-                if diagnostic["code"] not in {"target_exceeded", "stale_recapture_budget_exhausted"}:
+                if diagnostic["code"] not in {"target_exceeded", "stale_recapture_budget_exhausted", "watchdog_due"}:
                     continue
                 scope = value[diagnostic["scope"]]
-                flag = "overrun_alerted" if diagnostic["code"] == "target_exceeded" else "stale_budget_alerted"
+                flag = {"target_exceeded": "overrun_alerted",
+                        "stale_recapture_budget_exhausted": "stale_budget_alerted",
+                        "watchdog_due": "watchdog_alerted"}[diagnostic["code"]]
                 if not scope[flag]:
                     alerts.append(diagnostic)
                     scope[flag] = True

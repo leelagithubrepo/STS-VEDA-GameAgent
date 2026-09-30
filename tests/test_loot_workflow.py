@@ -175,6 +175,21 @@ class LootWorkflowTests(unittest.TestCase):
         self.assertEqual({}, packet['telemetry'])
         self.assertEqual('square', self.f.controller.inputs[-1]['buttons'][0])
 
+    def test_card_pending_action_can_reconcile_directly_into_fresh_spoils(self):
+        value, _, _ = self.open_cards()
+        decision = {'option_id': 'Headbutt', 'reason': 'Synthetic choice.', 'decision_key': decision_key(value)}
+        self.f.prepare(plan_loot(value, decision)['draft'])
+        spoils = rewards('potion', 'skip')
+        spoils['choice_id'] = 'combat-spoils'
+        spoils['focused_id'] = 'potion'
+        spoils['options'][0].update(label='Colorless Potion', reward={'name': 'Colorless Potion'})
+        spoils['options'][1].update(id='skip-potion', label='Skip Potion', role='skip',
+                                    activate_hint={'button': 'triangle', 'hint_text': 'Triangle Skip Potion'})
+        spoils['grid']['cells'][1]['id'] = 'skip-potion'
+        spoils['grid']['cells'][0]['id'] = 'potion'
+        self.verify('returned', ui=spoils, unchanged=True)
+        self.assertIsNone(self.f.session.state['pending'])
+
     def test_cli_reuses_verified_state_and_generates_action_and_result_paths(self):
         value, packet, _ = self.open_cards()
         cli = str(Path('scripts/veda_loot.py').resolve())

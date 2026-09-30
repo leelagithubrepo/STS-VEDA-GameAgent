@@ -183,3 +183,15 @@ class CombatFlowTests(unittest.TestCase):
             code=main(['--selection-result','d','--session',str(f.session.path),
                 '--unchanged','--observed-result','Actual selected Defend.','--validate'])
         self.assertEqual(0,code,output.getvalue()); self.assertTrue(json.loads(output.getvalue())['result_valid'])
+
+    def test_boundary_result_cli_unwraps_generated_envelope(self):
+        from scripts.veda_combat import _boundary_payload
+        boundary = {'screen': 'reward', 'resources': {'hp': 29},
+                    'facts': {'combat_outcome': 'win'}, 'choice_id': 'reward',
+                    'layout_id': 'loot', 'options': [], 'focused_id': None}
+        envelope = {'schema': 'veda.combat-result.v1', 'action_id': 'action-1',
+                    'inventory': 'unchanged', 'observed_result': 'Loot inspected.',
+                    'boundary': boundary}
+        self.assertEqual(boundary, _boundary_payload(envelope, expected_action_id='action-1'))
+        with self.assertRaisesRegex(ValueError, 'action_id'):
+            _boundary_payload(envelope, expected_action_id='other')

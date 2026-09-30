@@ -155,6 +155,15 @@ tool work. The standalone clock can show the full record:
 python3 scripts/veda_play_clock.py status --session SESSION_DIRECTORY --run-id RUN_ID
 ```
 
+The adapter also starts a decision watchdog immediately after every verified
+action. It refines that budget from the next inspected request: 10 seconds for
+routine helpers, 45 seconds for ordinary combat, 60 seconds for elites, 90
+seconds for bosses, and 45 seconds for a new noncombat screen. A
+`watchdog_due` reply names the safest legal fallback and must be handled once
+against the current state, followed by normal verification. It is a handoff
+signal only: it never authorizes an unchecked input or a replay of uncertain
+delivery.
+
 Use `operation:timing` with `event:{operation:"phase",name:...}` when work
 changes phase: `preflight`, `capture`, `inspection`, `planning`, `draft`,
 `prepare`, `dispatch`, `verification`, `telemetry`, `recovery`, or `idle`.

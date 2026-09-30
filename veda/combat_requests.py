@@ -95,12 +95,19 @@ def _reading(value, checked):
              'unknowns must be explicit bounded descriptions')
     ui = deepcopy(value['ui'])
     _require(isinstance(ui, dict) and not set(ui) - {'screen_type', 'phase', 'focused_card_id',
-        'selected_card_id', 'focused_target_id', 'hand_order', 'target_order', 'control_profile', 'recovery_direction', 'navigation_mode'} - FOCUS_FIELDS
+        'selected_card_id', 'focused_target_id', 'hand_order', 'target_order', 'control_profile', 'recovery_direction',
+        'navigation_mode', 'upgrade_confirm_button'} - FOCUS_FIELDS
         and ui.get('screen_type', 'combat') == 'combat'
         and ui.get('phase') in {'hand', 'card_selected', 'targeting', 'tooltip', 'inspect'}
         and {'phase', 'focused_card_id', 'selected_card_id', 'focused_target_id', 'hand_order'} <= set(ui),
         'combat UI needs explicit phase, focus, selection and hand order; no source or controls')
     _require(ui.get('navigation_mode', 'single') in {'single', 'bounded_hand'}, 'unsupported hand navigation mode')
+    if 'upgrade_confirm_button' in ui:
+        _require(ui.get('phase') == 'card_selected'
+                 and ui.get('selected_card_id') is not None
+                 and ui.get('focused_card_id') is not None
+                 and ui['upgrade_confirm_button'] in {'triangle', 'cross'},
+                 'upgrade confirmation needs visible hand focus/selection and an observed PS5 confirmation button')
     ui['screen_type'] = 'combat'
     shape = assess_observation(None, {'state': state, 'inventory': inventory, 'fresh': True,
                                     'unknowns': value['unknowns']}, policy=policy)
@@ -254,7 +261,8 @@ def _result_draft(value, pending):
     value = _json(value)
     required = {'schema', 'action_id', 'inventory', 'observed_result'}
     combat = {'state', 'ui', 'encounter', 'perception', 'unknowns'}
-    extras = {'context', 'telemetry', 'card_destination', 'next_turn', 'decision_policy'} | _EXTRAS
+    extras = {'context', 'telemetry', 'card_destination', 'next_turn', 'decision_policy',
+              'state_reconciliation'} | _EXTRAS
     _require(isinstance(value, dict) and required <= set(value) and value['schema'] == RESULT_SCHEMA
              and value['action_id'] == pending['action_id'],
              'compact veda.combat-result.v1 and exact pending action required')
@@ -277,8 +285,11 @@ def _boundary(draft, pending, checked, inventory):
         'boundary needs exact observed result screen/resources/facts/options/focus and UI identities')
     ui = {k: deepcopy(boundary[k]) for k in ('screen', 'choice_id', 'layout_id', 'options', 'focused_id')}
     _require(ui['screen'] in {'selection', 'reward', 'card_reward', 'result'}
-             and isinstance(ui['options'], list) and all(isinstance(o, dict) and set(o) == {
-                 'id', 'label', 'enabled', 'costs'} for o in ui['options']), 'boundary result options cannot carry controls')
+             and isinstance(ui['options'], list) and all(isinstance(o, dict) and
+                 {'id', 'label', 'enabled', 'costs'} <= set(o) for o in ui['options']),
+             'boundary result options need id, label, enabled and costs')
+    ui['options'] = [{key: deepcopy(option[key]) for key in ('id', 'label', 'enabled', 'costs')}
+                     for option in ui['options']]
     ui.update(phase='result', order=[o['id'] for o in ui['options']], selection_mode='immediate',
               required_count=0, selected_ids=[], pending_ids=[], navigation=[])
     context = deepcopy(old['context'])
@@ -350,11 +361,26 @@ def _result_request(draft, pending, checked):
                 value[key] = deepcopy(old_context[key])
         reading = _reading(value, checked)
         from .reviewed_play import verify_combat_observation
-        verification = verify_combat_observation(Reading.from_dict(original), reading, old['plan']['steps'][0],
-                                 pending['proposal']['expected'], pending['proposal']['checked'], policy=policy)
+        before_reading = Reading.from_dict(original)
+        # A prior attempted End Turn may have opened the new turn before its
+        # result was finalized, leaving a later bounded focus input with a
+        # stale before-state. In the explicit recovery mode, preserve the
+        # exact after-image and verify only the focus transition against that
+        # reconciled gameplay baseline; never dispatch or replay input.
+        if (draft.get('state_reconciliation') == 'preexisting_pending_resolution'
+                and policy == 'learning'
+                and pending['proposal']['expected']['kind'] in {'clear', 'card_focus', 'focus_probe'}):
+            reconciled = deepcopy(original)
+            reconciled['context']['state'] = deepcopy(reading.context['state'])
+            before_reading = Reading.from_dict(reconciled)
+        verification = verify_combat_observation(before_reading, reading, old['plan']['steps'][0],
+                                 pending['proposal']['expected'], pending['proposal']['checked'], policy=policy,
+                                 allow_preexisting_state_drift=(draft.get('state_reconciliation') == 'preexisting_pending_resolution'))
         complete = verification['logical_action_complete']
         after = {'kind': 'combat', 'context': value['context'], 'source': deepcopy(checked['source']),
                  'review': deepcopy(checked['review']), 'reading': asdict(reading), 'decision_policy': policy}
+        if draft.get('state_reconciliation') == 'preexisting_pending_resolution':
+            after['state_reconciliation'] = 'preexisting_pending_resolution'
         outcome_state = reading.context['state']
         if 'next_turn' in draft:
             changes['transitions'] = [

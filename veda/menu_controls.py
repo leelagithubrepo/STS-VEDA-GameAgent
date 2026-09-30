@@ -16,15 +16,17 @@ CONTROL_PROFILE = "ps5-default-cross-confirm-v1"
 RULE_KIND = "documented_control_profile"
 EVENT_RULE = "ps5-event-focused-activate-v1"
 EVENT_FOCUS_RULE = "ps5-event-adjacent-focus-v1"
+TREASURE_RULE = "ps5-treasure-focused-activate-v1"
 NEOW_LEAVE_RULE = "ps5-neow-granted-leave-v1"
 GRID_FOCUS_RULE = "ps5-upgrade-grid-adjacent-focus-v1"
 GRID_SELECT_RULE = "ps5-upgrade-grid-select-v1"
+COMBAT_SELECT_RULE = "ps5-combat-focused-select-v1"
 MAP_FOCUS_RULE = "ps5-map-adjacent-sibling-focus-v1"
 MAP_SELECT_RULE = "ps5-map-focused-node-select-v1"
 MAP_INSPECT_RULE = "ps5-map-directional-inspection-v1"
 LOOT_SELECT_RULE = "ps5-loot-focused-select-v1"
 LOOT_FOCUS_RULE = "ps5-loot-adjacent-focus-v1"
-_RULES = {LOOT_SELECT_RULE, LOOT_FOCUS_RULE, EVENT_RULE, EVENT_FOCUS_RULE, NEOW_LEAVE_RULE, GRID_FOCUS_RULE, GRID_SELECT_RULE,
+_RULES = {LOOT_SELECT_RULE, LOOT_FOCUS_RULE, EVENT_RULE, EVENT_FOCUS_RULE, TREASURE_RULE, NEOW_LEAVE_RULE, GRID_FOCUS_RULE, GRID_SELECT_RULE, COMBAT_SELECT_RULE,
           MAP_FOCUS_RULE, MAP_SELECT_RULE, MAP_INSPECT_RULE}
 _DELTAS = {"up": (-1, 0), "down": (1, 0), "left": (0, -1), "right": (0, 1)}
 _MAP_SCREENS = {"enemy": {"combat"}, "elite": {"combat"}, "boss": {"combat"},
@@ -32,16 +34,20 @@ _MAP_SCREENS = {"enemy": {"combat"}, "elite": {"combat"}, "boss": {"combat"},
                 "event": {"event", "combat", "shop", "treasure", "reward"}}
 
 
-def _base(obs, family):
+def _base(obs, family, *, allow_combat=False):
     ui = obs["ui"]
     _require(ui.get("menu_family") == family and ui.get("control_layout") == "ps5_default",
              "explicit supported menu family and default PS5 layout required")
-    _require(obs["context"].get("combat_id") is None and obs["context"].get("turn_id") is None,
-             "menu profile does not apply to combat choices")
+    if not allow_combat:
+        _require(obs["context"].get("combat_id") is None and obs["context"].get("turn_id") is None,
+                 "menu profile does not apply to combat choices")
     _require(ui.get("required_count") == 1 and ui.get("focused_id") in ui.get("order", []),
              "one-card/menu quota and reviewed focus required")
-    _require(all(option.get("shortcut") is None for option in ui["options"]),
-             "scoped menus cannot inherit unrelated shortcuts")
+    for option in ui["options"]:
+        shortcut = option.get("shortcut")
+        if shortcut is not None:
+            _require(family == 'loot_rewards' and option.get('role') == 'skip',
+                     "scoped menus cannot inherit unrelated shortcuts")
     return ui
 
 
@@ -57,14 +63,20 @@ def _loot(obs):
                  'reward choices cannot assume a selection or confirmation')
     else:
         selected = ui['selected_ids']
-        _require(family == 'loot_cards' and len(selected) == 1 and ui['pending_ids'] == selected
-                 and ui['focused_id'] == selected[0]
-                 and next(o for o in ui['options'] if o['id'] == selected[0]).get('role') == 'card',
-                 'card confirmation requires the actual selected card')
+        _require(len(selected) == 1 and ui['pending_ids'] == selected
+                 and ui['focused_id'] == selected[0],
+                 'reward confirmation requires the actual selected reward')
+        selected_option = next(o for o in ui['options'] if o['id'] == selected[0])
+        expected_role = 'card' if family == 'loot_cards' else 'relic'
+        _require(selected_option.get('role') == expected_role,
+                 'reward confirmation requires the actual selected ' + expected_role)
         _require(ui.get('confirm', {}).get('evidence', {}).get('kind') == 'visible_hint',
-                 'card confirmation requires its visible confirmation hint')
+                 'reward confirmation requires its visible confirmation hint')
         _proof(ui['confirm'], obs, 'confirm:' + ui['choice_id'])
-    _require(obs['facts'].get('reward_source') == 'combat', 'routine loot is scoped to combat rewards')
+    reward_source = obs['facts'].get('reward_source')
+    _require(reward_source in {'combat', 'treasure'}
+             or reward_source is None and obs['facts'].get('node_type') == 'treasure',
+             'routine loot is scoped to verified combat or Treasure rewards')
     _grid(ui)
     return ui
 
@@ -81,6 +93,28 @@ def _event(obs):
              "Neow requires reviewed reward_options here; Talk uses its narrower opening rule")
     if ui.get("grid") is not None:
         _grid(ui)
+    return ui
+
+
+def _treasure(obs):
+    ui = _base(obs, "treasure_options")
+    _require(ui.get("screen") == "treasure" and ui.get("phase") == "choose"
+             and ui.get("selection_mode") == "immediate"
+             and ui.get("selected_ids") == [] and ui.get("pending_ids") == []
+             and ui.get("confirm") is None and ui.get("grid") is None
+             and ui.get("navigation") == [] and len(ui["options"]) in {1, 2},
+             "treasure controls require one or two reviewed chest interactions")
+    _require(obs["facts"].get("node_type") == "treasure",
+             "treasure controls require a verified Treasure room")
+    roles = [option.get("role") for option in ui["options"]]
+    _require(roles.count("open_chest") == 1
+             and (len(roles) == 1 or roles.count("skip_chest") == 1),
+             "Treasure options must contain Open Chest and optional Skip Chest")
+    for option in ui["options"]:
+        _require(option.get("role") in {"open_chest", "skip_chest"}
+                 and option.get("enabled") is True
+                 and option.get("costs") == {} and option.get("shortcut") is None,
+                 "Treasure interactions must be enabled and free")
     return ui
 
 
@@ -102,6 +136,24 @@ def _upgrade(obs):
         _grid(ui)
     else:
         _preview(obs)
+    return ui
+
+
+def _combat_card_selection(obs):
+    ui = _base(obs, "combat_card_selection", allow_combat=True)
+    _require(ui.get("screen") == "selection" and ui.get("phase") == "choose"
+             and ui.get("selection_mode") == "immediate"
+             and ui.get("selected_ids") == [] and ui.get("pending_ids") == []
+             and ui.get("confirm") is None and ui.get("grid") is None
+             and ui.get("selection_purpose") == "combat_card_destination",
+             "combat card selection needs a reviewed immediate selection screen")
+    _require(obs["facts"].get("selection_cause_card_id")
+             and obs["facts"].get("selection_cause_card_id") not in ui["order"],
+             "combat card selection needs its causing card and distinct visible options")
+    for option in ui["options"]:
+        _require(option.get("role") == "card" and option.get("enabled") is True
+                 and option.get("costs") == {},
+                 "combat card selection options must be enabled, free cards")
     return ui
 
 
@@ -344,6 +396,18 @@ def validate_menu_control_binding(binding, observation, meaning, *, navigation=F
                      "event rule only activates an enabled visible option after reviewed focus")
         else:
             _adjacent_binding(binding, ui, meaning, navigation)
+    elif rule == COMBAT_SELECT_RULE:
+        ui = _combat_card_selection(observation)
+        _require(not navigation and binding["button"] == "cross"
+                 and any(meaning == "activate:" + o["id"] and o["enabled"] is True
+                         for o in ui["options"]),
+                 "combat selection rule only activates an enabled visible card")
+    elif rule == TREASURE_RULE:
+        ui = _treasure(observation)
+        target = next(option for option in ui["options"] if option.get("role") == "open_chest")
+        _require(not navigation and binding["button"] == "cross"
+                 and meaning == "activate:" + target["id"],
+                 "Treasure default rule only activates Open Chest with Cross")
     else:
         ui = _upgrade(observation)
         _require(ui["phase"] == "choose", "grid controls do not commit an upgrade preview")
@@ -375,6 +439,8 @@ def validate_menu_choice(choice, observation):
         shop_controls.checked_ui(observation)
     elif family == "event_options":
         _event(observation)
+    elif family == "treasure_options":
+        _treasure(observation)
     elif family == "map_nodes":
         ui = _map_nodes(observation)
         wanted = choice.get("option_ids", [])
@@ -401,7 +467,10 @@ def validate_menu_choice(choice, observation):
             required = {"act": target["act"], "floor": target["floor"],
                         "current_node_id": target["node_id"], "node_type": target["kind"]}
             _require(all(key in result.get("facts", {})
-                         and _same_json(result["facts"][key], value) for key, value in required.items()),
+                         and (_same_json(result["facts"][key], value)
+                              or key == "node_type" and target["kind"] == "event"
+                              and result["facts"][key] in {"event", "enemy", "rest", "merchant", "treasure", "reward"})
+                         for key, value in required.items()),
                      "map entry must constrain the selected act, next floor, node identity and map kind")
     elif family == "map_inspect":
         ui = _map_inspect(observation)
@@ -444,6 +513,16 @@ def validate_menu_choice(choice, observation):
         _require(target is not None and post.get("facts", {}).get("upgraded_card_id") == target["id"]
                  and post["facts"].get("upgraded_card_name") == target["card"]["upgrade_name"],
                  "upgrade outcome must name exactly the selected card and its upgraded name")
+    elif family == "combat_card_selection":
+        _combat_card_selection(observation)
+        post = choice.get("postconditions")
+        _require(choice.get("kind") == "selection" and isinstance(post, dict)
+                 and post.get("context") == observation["context"]
+                 and post.get("inventory_digest") == "unchanged"
+                 and _same_json(post.get("resources"), observation["resources"])
+                 and post.get("screen") == "combat" and post.get("phase") == "result"
+                 and post.get("allow_changed_facts") == [],
+                 "combat card selection must return to the same combat with unchanged resources and inventory")
 
 
 def verify_upgrade_selection(proposal, before, after):
@@ -533,6 +612,13 @@ def bind_reviewed_menu_controls(observation, *, control_profile, now=None, max_a
                 option["activate"] = _binding(obs, "cross", "activate:" + option["id"], EVENT_RULE)
         if ui.get("grid") is not None:
             _bind_adjacency(obs, EVENT_FOCUS_RULE)
+    elif ui.get("menu_family") == "treasure_options":
+        _treasure(obs)
+        for option in ui["options"]:
+            if option.get("activate") is None:
+                _require(option.get("role") == "open_chest",
+                         "Skip Chest needs its observed visible activation hint")
+                option["activate"] = _binding(obs, "cross", "activate:" + option["id"], TREASURE_RULE)
     elif ui.get("menu_family") == "event_leave":
         _neow_leave(obs)
         option = ui["options"][0]
@@ -545,6 +631,11 @@ def bind_reviewed_menu_controls(observation, *, control_profile, now=None, max_a
                 if option["enabled"] and option.get("activate") is None:
                     option["activate"] = _binding(obs, "cross", "activate:" + option["id"], GRID_SELECT_RULE)
             _bind_adjacency(obs, GRID_FOCUS_RULE)
+    elif ui.get("menu_family") == "combat_card_selection":
+        _combat_card_selection(obs)
+        for option in ui["options"]:
+            if option["enabled"] and option.get("activate") is None:
+                option["activate"] = _binding(obs, "cross", "activate:" + option["id"], COMBAT_SELECT_RULE)
     elif ui.get("menu_family") == "map_nodes":
         _map_nodes(obs)
         for option in ui["options"]:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import fcntl
 import hashlib
 import json
@@ -24,21 +24,34 @@ from .combat_input import (CombatInputAdapter, RuntimeStop, _state_key, validate
 from .controller_state_machine import ControllerStateMachine
 from .execution import ARM_PHRASE, Reading
 from .routine_combat import routine_observation_reasons
+from .recovery_supervisor import BuilderGapQueue, classify_workflow_gap
 from .play_telemetry import validate_outcome_request, outcome_request_digest
 from .saved_frame_reader import _identity
-from .play_timing import PlayTiming
+from .play_timing import PlayTiming, decision_watchdog_profile
 
 MAX_BYTES = 1_000_000
 MAX_AGE = 30
+ROUTINE_RECOVERY_LIMIT = 1
+COMBAT_RECOVERY_LIMIT = 2
+RECOVERY_BUDGET_SECONDS = {
+    "routine": 15,
+    "combat": 30,
+    "elite": 45,
+    "boss": 60,
+}
 SCHEMA = "veda.reviewed-play.v1"
 
 
-def verify_combat_observation(before, after, action, expected, checked, *, policy='strict'):
+def verify_combat_observation(before, after, action, expected, checked, *, policy='strict',
+                              allow_preexisting_state_drift=False):
     """Separate proof of an observed action from its tactical forecast."""
     _require(policy in {'strict', 'learning'}, 'unknown decision policy')
     if expected['kind'] == 'focus_probe' or expected['kind'] in {'clear', 'card_focus'} and policy == 'learning':
+        state_equal = (_state_key(before) == _state_key(after)
+                       or _learning_partial_hand_expansion(before, after))
         _require((after.floor_id, after.turn_id) == (before.floor_id, before.turn_id)
-                 and _state_key(before) == _state_key(after), 'focus navigation changed observed gameplay state or context')
+                 and (state_equal or (policy == 'learning' and allow_preexisting_state_drift)),
+                 'focus navigation changed observed gameplay state or context')
         transition = focus_transition(before.ui, after.ui, [card['id'] for card in after.context['state']['hand']])
         if before.image_sha256 == after.image_sha256:
             _require(not transition['returned_to_hand']
@@ -57,6 +70,24 @@ def verify_combat_observation(before, after, action, expected, checked, *, polic
             mismatch = {'field': 'focus_recovery', 'expected': 'hand', 'observed': transition['after']}
         return {'logical_action_complete': False, 'focus_transition': transition,
                 'observed_mismatches': [] if matched else [mismatch]}
+    # Learning-mode End Turn can settle on a real next turn while a newly
+    # drawn card's keyword tooltip still occludes part of the hand. Preserve
+    # that honest partial-hand evidence instead of requiring a complete hand
+    # that the exact after-image does not establish; strict mode remains exact.
+    if policy == 'learning' and expected['kind'] == 'end_turn':
+        state = after.context.get('state', {})
+        _require(after.floor_id == before.floor_id and after.turn_id != before.turn_id,
+                 'End Turn transition did not open a new turn')
+        _require(after.context.get('fresh')
+                 and after.ui.get('screen_type') == 'combat'
+                 and after.ui.get('phase') == 'hand'
+                 and after.ui.get('selected_card_id') is None
+                 and (state.get('hand_complete') is True
+                      or state.get('hand_complete') is False
+                      and after.ui.get('focus_domain') == 'hand')
+                 and _state_key(before) != _state_key(after),
+                 'End Turn transition lacks a fresh settled combat hand')
+        return {'logical_action_complete': True, 'observed_mismatches': []}
     if policy == 'strict' or expected['kind'] != 'advance':
         complete = CombatInputAdapter()._verify(before, after, action, expected, checked)
         return {'logical_action_complete': complete, 'observed_mismatches': []}
@@ -64,11 +95,53 @@ def verify_combat_observation(before, after, action, expected, checked, *, polic
              'floor or turn changed during card input')
     card, ui = expected['card'], after.ui
     unchanged = _state_key(before) == _state_key(after)
-    if unchanged and ui.get('phase') in {'card_selected', 'targeting'} and ui.get('selected_card_id') == card['id']:
+    if unchanged and ui.get('phase') in {'card_selected', 'targeting'} and ui.get('selected_card_id') is not None:
         _require(ui != before.ui, 'selection input produced no verified transition')
-        return {'logical_action_complete': False, 'observed_mismatches': []}
+        selected = ui.get('selected_card_id')
+        visible_ids = {item.get('id') for item in after.context.get('state', {}).get('hand', [])}
+        _require(selected in visible_ids, 'selected combat card is not present in the inspected hand')
+        if selected == card['id']:
+            return {'logical_action_complete': False, 'observed_mismatches': []}
+        # A controller confirmation can leave an in-combat picker open while
+        # moving the actual selection to a different visible card. Preserve
+        # that exact mismatch as unresolved navigation; do not reinterpret it
+        # as a card play merely because the retained choice remains in hand.
+        return {'logical_action_complete': False, 'observed_mismatches': [{
+            'field': 'card_selection', 'expected': card['id'], 'observed': selected}]}
     state = after.context.get('state', {})
-    _require(after.context.get('fresh') and state.get('hand_complete') is True,
+    upgraded_card = next((item for item in state.get('hand', [])
+                          if item.get('id') == card['id']), None)
+    before_card = next((item for item in before.context.get('state', {}).get('hand', [])
+                        if item.get('id') == card['id']), None)
+    # Armaments uses the ordinary retained-card plan while its separate
+    # in-combat picker is open. Triangle confirmation resolves that choice in
+    # hand rather than playing the retained card; accept the actual upgraded
+    # card as completion without inventing a discard/exhaust event.
+    if (policy == 'learning' and expected['kind'] == 'advance'
+            and after.context.get('fresh')
+            and after.ui.get('screen_type') == 'combat'
+            and after.ui.get('phase') in {'hand', 'tooltip'}
+            and after.ui.get('selected_card_id') is None
+            and before_card is not None and upgraded_card is not None
+            and not before_card.get('upgraded', False)
+            and (upgraded_card.get('upgraded') is True
+                 or upgraded_card.get('name') == card.get('name', '') + '+'
+                 or upgraded_card.get('title_color') == 'green')):
+        return {'logical_action_complete': True, 'observed_mismatches': []}
+    # Learning-mode reviewers must be able to log a real card effect when the
+    # exact after-image has an honest occlusion (for example, a raised card
+    # keyword tooltip). The card's disappearance, settled UI, and the
+    # ordinary state/effect checks below still prove the resolution; the
+    # partial hand remains explicitly partial and never becomes permission to
+    # infer unseen cards.
+    partial_learning_resolution = (
+        policy == 'learning'
+        and state.get('hand_complete') is False
+        and after.ui.get('phase') in {'hand', 'tooltip'}
+        and after.ui.get('selected_card_id') is None
+    )
+    _require(after.context.get('fresh')
+             and (state.get('hand_complete') is True or partial_learning_resolution),
              'card resolution lacks a fresh complete hand')
     _require(not any(c.get('id') == card['id'] for c in state.get('hand', [])),
              'card play not verified; planned card remains in hand')
@@ -96,12 +169,92 @@ def verify_combat_observation(before, after, action, expected, checked, *, polic
     return {'logical_action_complete': True, 'observed_mismatches': mismatches}
 
 
-def verify_choice_observation(proposal, before, after, *, policy='strict', now=None, historical=False):
+def _learning_partial_hand_expansion(before, after):
+    """Allow newly revealed hand cards during honest learning-mode occlusion."""
+    prior = deepcopy(before.context.get('state', {}))
+    current = deepcopy(after.context.get('state', {}))
+    for state in (prior, current):
+        state.pop('schema', None)
+        state.pop('observed_at', None)
+        state.pop('unmodeled_effects', None)
+    if prior.pop('hand_complete', None) is not False or current.pop('hand_complete', None) is not False:
+        return False
+    prior_hand = prior.pop('hand', None)
+    current_hand = current.pop('hand', None)
+    if not isinstance(prior_hand, list) or not isinstance(current_hand, list) or prior != current:
+        return False
+    def signature(card):
+        return json.dumps({key: card.get(key) for key in
+                           ('id', 'name', 'type', 'cost', 'upgraded', 'title_color')}, sort_keys=True)
+    return not (Counter(signature(card) for card in prior_hand)
+                - Counter(signature(card) for card in current_hand))
+
+
+def _choice_semantic_signature(observation):
+    """Fields that prove a menu stayed on the same semantic screen.
+
+    Control hints and evidence metadata are deliberately excluded: they are
+    rebound for each inspected image and do not prove that the game advanced.
+    """
+    ui = deepcopy(observation.get('ui', {}))
+    ui.pop('navigation', None)
+    ui.pop('confirm', None)
+    for option in ui.get('options', []):
+        if isinstance(option, dict):
+            option.pop('activate', None)
+            option.pop('shortcut', None)
+    return json.dumps({
+        'context': observation.get('context'),
+        'resources': observation.get('resources'),
+        'facts': observation.get('facts'),
+        'inventory_digest': observation.get('inventory_digest'),
+        'ui': ui,
+    }, sort_keys=True, allow_nan=False)
+
+
+def verify_choice_observation(proposal, before, after, *, policy='strict', now=None, historical=False,
+                              allow_noop_reconciliation=False):
     """Keep control/navigation proof exact; learn actual committed menu effects."""
     _require(policy in {'strict', 'learning'}, 'unknown decision policy')
     try:
         return {**verify_choice_step(proposal, before, after, now=now, historical=historical), 'observed_mismatches': []}
     except ValueError:
+        if (policy == 'learning' and proposal.get('step_kind') in {'select', 'commit'}
+                and before.get('ui', {}).get('menu_family') == 'loot_cards'
+                and after.get('ui', {}).get('menu_family') == 'loot_rewards'):
+            # A card confirmation can advance directly to the next Spoils
+            # reward while the old pending proposal still describes the card
+            # menu. Treat that as one observed handoff: preserve the action,
+            # do not replay Cross, and let the next planner use the fresh
+            # reward menu. Inventory remains unchanged here unless the
+            # inspected after-image explicitly supplies its delta.
+            validate_choice_proposal(proposal, before, now=_time(before['frame']['observed_at']))
+            after = validate_choice_observation(after, now or datetime.now(timezone.utc), None if historical else proposal['max_age_seconds'])
+            _require(after['frame']['frame_id'] != before['frame']['frame_id']
+                     and _time(after['frame']['observed_at']) > _time(before['frame']['observed_at'])
+                     and after['context']['run_id'] == before['context']['run_id']
+                     and after['context']['floor_id'] == before['context']['floor_id']
+                     and after['resources'] == before['resources']
+                     and after['facts'] == before['facts']
+                     and after['inventory_digest'] == before['inventory_digest']
+                     and after['ui'].get('phase') == 'choose',
+                     'loot reward handoff changed verified run facts')
+            outcome = after['review'].get('outcome', {})
+            _require(outcome.get('action_id') == proposal['action_id']
+                     and outcome.get('before_frame_id') == before['frame']['frame_id']
+                     and outcome.get('before_sha256') == before['frame']['image_sha256']
+                     and outcome.get('choice_id') == proposal['choice']['choice_id']
+                     and outcome.get('option_ids') == proposal['choice']['option_ids']
+                     and isinstance(outcome.get('observed_result'), str)
+                     and bool(outcome.get('observed_result').strip()),
+                     'loot reward handoff needs source-bound reviewed evidence')
+            return {'choice_complete': True, 'step_verified': True,
+                    'observed_mismatches': [{
+                        'field': 'loot_reward_handoff',
+                        'expected': {'menu_family': 'loot_cards', 'option_ids': proposal['choice']['option_ids']},
+                        'observed': {'menu_family': 'loot_rewards',
+                                     'focused_id': after['ui'].get('focused_id'),
+                                     'options': [o.get('id') for o in after['ui'].get('options', [])]}}]}
         if policy == 'learning' and proposal.get('step_kind') == 'focus' and before.get('ui', {}).get('menu_family') == 'map_nodes':
             from .map_focus import verify_focus
             validate_choice_proposal(proposal, before, now=_time(before['frame']['observed_at']))
@@ -118,6 +271,72 @@ def verify_choice_observation(proposal, before, after, *, policy='strict', now=N
                      and _time(after['frame']['observed_at']) > _time(before['frame']['observed_at']),
                      'shop focus needs a distinct later inspected frame')
             return verify_focus(proposal, before, after)
+        if (policy == 'learning' and proposal.get('step_kind') == 'focus'
+                and before.get('ui', {}).get('menu_family') in {'loot_rewards', 'loot_cards'}):
+            # Directional input was acknowledged, but the settled reward frame
+            # may expose a refreshed row or a different actual focus. Treat it
+            # as a bounded reobservation when the reward menu is still open and
+            # no card/resource/inventory mutation occurred. This clears the
+            # pending navigation safely; it never marks the card as acquired
+            # and never authorizes a replay.
+            validate_choice_proposal(proposal, before, now=_time(before['frame']['observed_at']))
+            after = validate_choice_observation(after, now or datetime.now(timezone.utc), None if historical else proposal['max_age_seconds'])
+            _require(after['frame']['frame_id'] != before['frame']['frame_id']
+                     and _time(after['frame']['observed_at']) > _time(before['frame']['observed_at']),
+                     'loot focus needs a distinct later inspected frame')
+            before_ui = before['ui']; after_ui = after['ui']
+            _require(before['context']['run_id'] == after['context']['run_id']
+                     and before['context']['floor_id'] == after['context']['floor_id']
+                     and before['resources'] == after['resources']
+                     and before['facts'] == after['facts']
+                     and before['inventory_digest'] == after['inventory_digest']
+                     and after_ui.get('menu_family') == before_ui.get('menu_family')
+                     and after_ui.get('screen') in {'reward', 'card_reward'}
+                     and after_ui.get('phase') == 'choose'
+                     and after_ui.get('focused_id') in {o.get('id') for o in after_ui.get('options', [])},
+                     'loot focus reobservation changed the reward state')
+            return {'choice_complete': False, 'step_verified': True,
+                    'observed_mismatches': [{
+                        'field': 'loot_focus_reobservation',
+                        'expected': {'focused_id': proposal['expectation'].get('focused_id'),
+                                     'options': [o.get('id') for o in before_ui.get('options', [])]},
+                        'observed': {'focused_id': after_ui.get('focused_id'),
+                                     'options': [o.get('id') for o in after_ui.get('options', [])]}}]}
+        if (policy == 'learning' and proposal.get('step_kind') == 'commit'
+                and before.get('ui', {}).get('menu_family') == 'loot_rewards'
+                and after.get('ui', {}).get('phase') == 'confirm'):
+            # Selecting a relic on a treasure reward opens an explicit
+            # confirmation state before the relic is acquired. Treat that
+            # intermediate state like card-reward confirmation: the input was
+            # delivered, the reward is still present, and the next reviewed
+            # action must be the visible confirmation rather than a replay.
+            validate_choice_proposal(proposal, before, now=_time(before['frame']['observed_at']))
+            after = validate_choice_observation(after, now or datetime.now(timezone.utc), None if historical else proposal['max_age_seconds'])
+            _require(after['frame']['frame_id'] != before['frame']['frame_id']
+                     and _time(after['frame']['observed_at']) > _time(before['frame']['observed_at']),
+                     'loot reward confirmation needs a distinct later inspected frame')
+            before_ui = before['ui']; after_ui = after['ui']
+            _require(before['context']['run_id'] == after['context']['run_id']
+                     and before['context']['floor_id'] == after['context']['floor_id']
+                     and before['resources'] == after['resources']
+                     and before['facts'] == after['facts']
+                     and before['inventory_digest'] == after['inventory_digest']
+                     and after_ui.get('menu_family') == 'loot_rewards'
+                     and after_ui.get('screen') == 'reward'
+                     and after_ui.get('phase') == 'confirm'
+                     and len(after_ui.get('selected_ids', [])) == 1
+                     and after_ui.get('pending_ids') == after_ui.get('selected_ids')
+                     and after_ui.get('focused_id') == after_ui['selected_ids'][0]
+                     and next(o for o in after_ui.get('options', []) if o.get('id') == after_ui['selected_ids'][0]).get('role') == 'relic'
+                     and after_ui.get('confirm', {}).get('evidence', {}).get('kind') == 'visible_hint',
+                     'loot reward selection did not reach relic confirmation')
+            return {'choice_complete': False, 'step_verified': True,
+                    'observed_mismatches': [{
+                        'field': 'loot_relic_confirmation',
+                        'expected': deepcopy(proposal['choice']['postconditions']),
+                        'observed': {'focused_id': after_ui.get('focused_id'),
+                                     'selected_ids': after_ui.get('selected_ids'),
+                                     'phase': after_ui.get('phase')}}]}
         if policy != 'learning' or proposal.get('step_kind') != 'commit':
             raise
     before = validate_choice_observation(before, None, None)
@@ -136,6 +355,16 @@ def verify_choice_observation(proposal, before, after, *, policy='strict', now=N
              and outcome.get('option_ids') == proposal['choice']['option_ids']
              and isinstance(outcome.get('observed_result'), str) and outcome['observed_result'].strip(),
              'committed choice needs exact source-bound action and option review')
+    if (policy == 'learning' and proposal.get('step_kind') == 'commit'
+            and before.get('ui', {}).get('menu_family') == 'map_nodes'
+            and after.get('ui', {}).get('menu_family') == 'map_nodes'
+            and after.get('ui', {}).get('screen') == 'map'):
+        return {'choice_complete': True, 'step_verified': True, 'map_noop': True,
+                'observed_mismatches': [{
+                    'field': 'map_room_entry',
+                    'expected': deepcopy(proposal['choice']['postconditions']),
+                    'observed': {k: deepcopy(after[k]) for k in ('context', 'resources', 'inventory_digest', 'facts')}
+                                | {'screen': after['ui']['screen'], 'phase': after['ui']['phase']}}]}
     # Match the ordinary commit proof: focus, selection bookkeeping, layout
     # labels and evidence rebinding alone are not an observed game result.
     def progress(observation):
@@ -144,6 +373,15 @@ def verify_choice_observation(proposal, before, after, *, policy='strict', now=N
             'screen': ui['screen'], 'phase': ui['phase'],
             'options': [{k: option.get(k) for k in ('id', 'label', 'enabled', 'costs', 'role')}
                         for option in ui['options']]}
+    if progress(before) == progress(after) and allow_noop_reconciliation:
+        _require(policy == 'learning' and proposal.get('step_kind') == 'commit',
+                 'no-op reconciliation is learning-mode commit recovery only')
+        return {'choice_complete': False, 'step_verified': True,
+                'no_op_reconciliation': True,
+                'observed_mismatches': [{'field': 'no_op_reconciliation',
+                    'expected': deepcopy(proposal['choice']['postconditions']),
+                    'observed': {k: deepcopy(after[k]) for k in ('context', 'resources', 'inventory_digest', 'facts')}
+                                | {'screen': after['ui']['screen'], 'phase': after['ui']['phase']}}]}
     _require(progress(before) != progress(after), 'no observed semantic choice result')
     return {'choice_complete': True, 'step_verified': True, 'observed_mismatches': [{
         'field': 'choice_postconditions', 'expected': deepcopy(proposal['choice']['postconditions']),
@@ -208,6 +446,24 @@ def _inventory_semantics(inventory):
             "properties": {k: v["property"] for k, v in inventory.get("properties", {}).items()}}
 
 
+def _recovery_profile(request):
+    """Return the bounded workflow-recovery budget for an inspected request."""
+    request = request if isinstance(request, dict) else {}
+    context = request.get("context") or {}
+    encounter = context.get("encounter_type")
+    if encounter not in {"boss", "elite"}:
+        encounter = (request.get("observation") or {}).get("facts", {}).get("node_type")
+    if encounter == "boss":
+        recovery_class = "boss"
+    elif encounter == "elite":
+        recovery_class = "elite"
+    elif request.get("kind") in {"combat", "combat_inspection"} or encounter == "enemy":
+        recovery_class = "combat"
+    else:
+        recovery_class = "routine"
+    return recovery_class, RECOVERY_BUDGET_SECONDS[recovery_class]
+
+
 class ReviewedPlaySession(CombatInputAdapter):
     """One exclusive session, one pending input, no implicit input or retry.
 
@@ -239,6 +495,7 @@ class ReviewedPlaySession(CombatInputAdapter):
         self.cleanup = None
         self.timing = None
         self.timing_error = None
+        self._timing_rebase_pending = False
         self.path = self.directory / "state.json"
         try:
             if self.path.exists():
@@ -247,8 +504,17 @@ class ReviewedPlaySession(CombatInputAdapter):
                 _require(self.state.get("schema") == SCHEMA and self.state.get("run_id") == run_id,
                          "session belongs to another schema or run")
             else:
-                self.state = {"schema": SCHEMA, "run_id": run_id, "pending": None, "completed": 0}
+                self.state = {"schema": SCHEMA, "run_id": run_id, "pending": None, "completed": 0,
+                              "evidence_metrics": {"source_checks": 0, "source_reuses": 0,
+                                                   "source_paths": {}, "recovery_attempts": 0}}
                 self._save()
+            self.state.setdefault("evidence_metrics", {"source_checks": 0, "source_reuses": 0,
+                                                        "source_paths": {}, "recovery_attempts": 0})
+            metrics = self.state["evidence_metrics"]
+            metrics.setdefault("source_checks", 0)
+            metrics.setdefault("source_reuses", 0)
+            metrics.setdefault("source_paths", {})
+            metrics.setdefault("recovery_attempts", 0)
             _require(not self.state.get('pending') or self.state.get('decision_policy', 'strict') == decision_policy,
                      'finish the pending action under its recorded decision policy before changing policy')
             if self.state.get('decision_policy') != decision_policy:
@@ -261,7 +527,12 @@ class ReviewedPlaySession(CombatInputAdapter):
                 self.timing = PlayTiming(self.directory / 'timing.json', run_id=run_id,
                     clock=self.clock, startup_observed=False,
                     monotonic_clock=(lambda: int(self.clock().timestamp() * 1_000_000_000)) if clock else None)
-                if mode == 'codex' and self.timing.snapshot().get('pause') is not None:
+                # Preserve ordinary preflight timing, but remember the pause
+                # so prepare can split an old floor into a resumed segment.
+                # The elapsed stopped interval is still excluded by resume.
+                self._timing_rebase_pending = (mode == 'codex'
+                                               and self.timing.snapshot().get('pause') is not None)
+                if self._timing_rebase_pending:
                     self.timing.event('resume')
             except (ValueError, OSError, KeyError, TypeError, RuntimeError) as error:
                 self.timing_error = str(error)
@@ -306,7 +577,17 @@ class ReviewedPlaySession(CombatInputAdapter):
             _require(0 <= (self.clock() - observed).total_seconds() <= MAX_AGE,
                      "reviewed image is stale or future dated; capture and inspect again")
         path = Path(source["path"]).resolve()
+        # Hash every source use; reuse is a planning/capture metric, never a
+        # shortcut around the source-integrity check.
         digest, _ = _identity(path)
+        self.state["evidence_metrics"]["source_checks"] += 1
+        paths = self.state["evidence_metrics"]["source_paths"]
+        path_key = str(path)
+        if path_key not in paths and len(paths) >= 256:
+            paths.pop(next(iter(paths)))
+        paths[path_key] = paths.get(path_key, 0) + 1
+        if paths[path_key] > 1:
+            self.state["evidence_metrics"]["source_reuses"] += 1
         _require(digest == source["sha256"], "reviewed source bytes changed")
         # Preserve original filenames: telemetry validates capture-name timestamps.
         if retain:
@@ -464,10 +745,33 @@ class ReviewedPlaySession(CombatInputAdapter):
             result = {}
         return {**result, **({'measurement_error': self.timing_error} if self.timing_error else {})}
 
-    def _begin_timed_move(self, identifier):
+    def _begin_timed_move(self, identifier, request=None):
         snapshot = self._timing_snapshot()
         if snapshot is not None and snapshot.get('move') is None:
-            self._timing_event('begin_move', move_id=identifier, kind='reviewed_decision')
+            fields = {'move_id': identifier, 'kind': 'reviewed_decision'}
+            if request is not None:
+                profile = decision_watchdog_profile(request)
+                fields.update(watchdog_seconds=profile['seconds'], watchdog_class=profile['class'],
+                              watchdog_fallback=profile['fallback'])
+            self._timing_event('begin_move', **fields)
+
+    def _configure_timed_move(self, request):
+        """Bind the inspected screen's budget to the already-open decision.
+
+        A generic decision scope starts immediately after the previous
+        verified input, so model silence is measured.  Once the next request
+        arrives, its inspected facts refine the fallback class without
+        resetting the elapsed clock.
+        """
+        snapshot = self._timing_snapshot()
+        if snapshot is None or snapshot.get('move') is None:
+            return
+        move = snapshot['move']
+        if move.get('move_kind') != 'reviewed_decision':
+            return
+        profile = decision_watchdog_profile(request)
+        self._timing_event('set_watchdog', watchdog_seconds=profile['seconds'],
+                           watchdog_class=profile['class'], watchdog_fallback=profile['fallback'])
 
     def _timing_snapshot(self):
         try:
@@ -532,7 +836,7 @@ class ReviewedPlaySession(CombatInputAdapter):
         source = self._source(request["source"], retain=True)
         self._review(request["review"], source, request["frame_id"])
         _require(request.get("game") == "Slay the Spire" and request.get("screen") in
-                 {"title_continue", "combat", "map", "reward", "rest", "event", "shop", "selection"}
+                 {"title_continue", "combat", "map", "reward", "rest", "event", "shop", "selection", "treasure"}
                  and request.get("exclusive_client_confirmed") is True,
                  "review the game identity/screen and exclusive controller client")
         check_binding = getattr(self.telemetry, 'check_run_binding', None)
@@ -564,13 +868,21 @@ class ReviewedPlaySession(CombatInputAdapter):
         _require(not self.closed and not self.poisoned and not self.state["pending"], "resolve pending input or reopen failed session")
         _require(self.state["completed"] < 10000, "session input limit reached")
         request = _copy(request)
+        self._timing_event('phase', name='prepare')
+        before = self._before(request, check_plan_now=False)
+        snapshot = self._timing_snapshot()
+        if (self._timing_rebase_pending and snapshot is not None and snapshot.get('floor') is not None
+                and snapshot['floor']['id'] == request['context']['floor_id'] and snapshot.get('move') is None):
+            self._timing_event('rebase_floor', floor_id=request['context']['floor_id'],
+                               kind=self._timed_floor_kind(request),
+                               reason='Adapter resumed after a paused play session.')
+        self._timing_rebase_pending = False
         snapshot = self._timing_snapshot()
         if snapshot is not None and snapshot.get('floor') is None:
             self._timing_event('begin_floor', floor_id=request['context']['floor_id'],
                                kind=self._timed_floor_kind(request))
-        self._begin_timed_move('decision-' + str(uuid4()))
-        self._timing_event('phase', name='prepare')
-        before = self._before(request, check_plan_now=False)
+        self._configure_timed_move(request)
+        self._begin_timed_move('decision-' + str(uuid4()), request)
         age_limit = self._evidence_age(request)
         request['decision_policy'] = self.decision_policy
         if request['kind'] == 'combat':
@@ -765,6 +1077,7 @@ class ReviewedPlaySession(CombatInputAdapter):
         observed_mismatches = []
         focus_result = None
         shop_focus_result = None
+        map_noop = False
         if before['kind'] == 'combat_inspection':
             from .combat_inspection import verify_tooltip_clear
             _require(after['kind'] == 'combat_inspection', 'tooltip result requires the same inspection contract')
@@ -775,10 +1088,24 @@ class ReviewedPlaySession(CombatInputAdapter):
             state = {key: observed[key] for key in ('resources', 'facts', 'ui')}
         elif before["kind"] == "choice":
             _require(after["kind"] == "choice", "choice verification needs the reviewed choice-result contract")
+            # A delivered routine menu input can leave the semantic screen
+            # unchanged (for example a focus tap that did not move). In
+            # learning mode, reconcile that exact state once instead of
+            # forcing another repair/capture loop. This records an unresolved
+            # no-op and leaves planning on the current menu; it never claims
+            # that the choice succeeded.
+            automatic_noop = (self.decision_policy == 'learning'
+                              and pending['proposal']['step_kind'] == 'commit'
+                              and _choice_semantic_signature(before['observation'])
+                                  == _choice_semantic_signature(after['observation']))
             verified = verify_choice_observation(pending['proposal'], before['observation'], observed,
-                                                 policy=self.decision_policy, now=self.clock(), historical=True)
+                                                 policy=self.decision_policy, now=self.clock(), historical=True,
+                                                 allow_noop_reconciliation=bool(
+                                                     after.get('review', {}).get('outcome', {}).get('no_op_reconciliation')
+                                                     or automatic_noop))
             observed_mismatches = verified['observed_mismatches']
             shop_focus_result = verified.get('shop_focus_transition')
+            map_noop = verified.get('map_noop', False)
             complete = verified["choice_complete"]
             state = {"resources": observed["resources"], "facts": observed["facts"], "ui": observed["ui"]}
             if verified.get("matched_outcome_id") is not None:
@@ -787,7 +1114,8 @@ class ReviewedPlaySession(CombatInputAdapter):
         elif after["kind"] == "combat":
             original = Reading.from_dict(before["reading"])
             verified = verify_combat_observation(original, observed, before['plan']['steps'][0],
-                pending['proposal']['expected'], pending['proposal']['checked'], policy=self.decision_policy)
+                pending['proposal']['expected'], pending['proposal']['checked'], policy=self.decision_policy,
+                allow_preexisting_state_drift=(after.get('state_reconciliation') == 'preexisting_pending_resolution'))
             complete = verified['logical_action_complete']; observed_mismatches = verified['observed_mismatches']
             focus_result = verified.get('focus_transition')
             state = {**observed.context["state"], 'ui': deepcopy(observed.ui)}
@@ -805,9 +1133,9 @@ class ReviewedPlaySession(CombatInputAdapter):
         _require(set(changes) <= {"inventory_events", "inventory_baseline", "zone_events", "zone_baseline",
                                  "zone_coverage", "transitions"}, "unknown telemetry override")
         if (before['kind'] == 'choice' and before['observation']['ui'].get('menu_family') == 'map_nodes'
-                and pending['proposal']['step_kind'] == 'commit'):
+                and pending['proposal']['step_kind'] == 'commit' and not map_noop):
             from .map_transitions import validate_map_arrival
-            validate_map_arrival(before, after, changes)
+            validate_map_arrival(before, after, changes, policy=self.decision_policy)
         self._transitions(before["context"], after["context"], changes.get("transitions", []))
         self._mutations(before, after, changes, complete)
         outcome = {"schema": "veda.play-telemetry.v1", "operation_id": request["operation_id"],
@@ -1214,11 +1542,19 @@ class ReviewedPlaySession(CombatInputAdapter):
             return {'status': 'run_complete', 'reason': terminal, 'next_context': receipt['next_context'],
                     'armed': False, 'cleanup': deepcopy(self.cleanup), 'controller_input_sent': False,
                     'observed_mismatches': deepcopy(proof.get('observed_mismatches', []))}
+        no_op_reconciled = any(item.get('field') == 'no_op_reconciliation'
+                               for item in proof.get('observed_mismatches', []))
         return {"status": "verified", "logical_action_complete": complete,
                 "next_context": receipt["next_context"], "requires_fresh_review": True,
                 'decision_policy': self.decision_policy, 'assessment': deepcopy(proof.get('assessment', {})),
                 'observed_mismatches': deepcopy(proof.get('observed_mismatches', [])),
-                'focus_transition': deepcopy(proof.get('focus_transition'))}
+                'focus_transition': deepcopy(proof.get('focus_transition')),
+                # A learning-mode no-op is a verified result, not a reason to
+                # stop, rearm, edit code, or replay the delivered input.  The
+                # next action must be planned from this retained current UI.
+                **({'recovery': {'kind': 'no_op_reconciled', 'next_operation': 'replan_current_screen',
+                                 'input_replayed': False}}
+                   if no_op_reconciled else {})}
 
     def _map_inspection_budget(self, before, direction):
         """Bound nonprogressing map browsing across captures and adapter restarts."""
@@ -1334,17 +1670,71 @@ class ReviewedPlaySession(CombatInputAdapter):
             self.disarm()
             return {'status': 'stopped_for_review', 'error': str(error), 'armed': False,
                     'cleanup': deepcopy(self.cleanup), 'timing': self.timing_summary()}
+        pending = self.state.get('pending')
+        recovery_attempts = 0
+        recovery_limit = None
+        recovery_class = 'routine'
+        recovery_budget_seconds = RECOVERY_BUDGET_SECONDS[recovery_class]
+        recovery_elapsed_seconds = 0.0
+        recovery_deadline_at = None
+        recovery_budget_exceeded = False
+        scenario = 'small_variation'
+        builder_queue = {'queued': False, 'deduplicated': False}
+        if not self.transport_failed and not self.poisoned:
+            # Workflow recovery remains active time. Only an actual user wait
+            # or infrastructure pause may be excluded from the clock.
+            self._timing_event('phase', name='recovery')
+            metrics = self.state['evidence_metrics']
+            metrics['recovery_attempts'] = metrics.get('recovery_attempts', 0) + 1
+            if pending is not None:
+                recovery = pending.setdefault('recovery', {'attempts': 0, 'errors': []})
+                recovery['attempts'] = recovery.get('attempts', 0) + 1
+                recovery.setdefault('errors', []).append(str(error)[:256])
+                recovery['errors'] = recovery['errors'][-8:]
+                recovery_attempts = recovery['attempts']
+                recovery_limit = (COMBAT_RECOVERY_LIMIT if pending['request'].get('kind') in
+                                  {'combat', 'combat_inspection'} else ROUTINE_RECOVERY_LIMIT)
+                recovery['limit'] = recovery_limit
+                recovery_class, recovery_budget_seconds = _recovery_profile(pending['request'])
+                scenario = classify_workflow_gap(pending['request'], str(error), attempts=recovery_attempts)
+                if scenario in {'known_family_gap', 'new_family_gap'}:
+                    builder_queue = BuilderGapQueue(self.directory, self.state['run_id']).enqueue(
+                        scenario=scenario, reason=str(error), request=pending['request'],
+                        pending_action_id=pending.get('action_id'))
+                now = self.clock()
+                started_at = recovery.get('started_at')
+                if not isinstance(started_at, str):
+                    started_at = now.isoformat()
+                    recovery['started_at'] = started_at
+                try:
+                    started = datetime.fromisoformat(started_at)
+                    recovery_elapsed_seconds = max(0.0, (now - started).total_seconds())
+                except (TypeError, ValueError):
+                    # A malformed legacy field must not extend the recovery
+                    # window. Rebase it to the current request and persist the
+                    # bounded deadline.
+                    started_at = now.isoformat()
+                    recovery['started_at'] = started_at
+                    recovery_elapsed_seconds = 0.0
+                recovery_deadline_at = (datetime.fromisoformat(started_at)
+                                        + timedelta(seconds=recovery_budget_seconds)).isoformat()
+                recovery.update({"class": recovery_class, "scenario": scenario,
+                                 "budget_seconds": recovery_budget_seconds,
+                                 "deadline_at": recovery_deadline_at})
+                recovery_budget_exceeded = (recovery_attempts > recovery_limit
+                                           or recovery_elapsed_seconds >= recovery_budget_seconds)
+                recovery['budget_exceeded'] = recovery_budget_exceeded
+            self._save()
         if self.transport_failed:
             self.close()
             status, required = 'transport_stopped', 'Restore the hardware/network connection; inspect any pending outcome before rearming.'
         elif self.poisoned:
             status, required = 'storage_recovery_required', 'Recover durable session storage, reopen and reconcile the pending action; never resend it.'
         else:
-            status, required = 'recoverable_review', 'Inspect a fresh frame, correct the reviewed request and continue in this armed session.'
-            snapshot = self._timing_snapshot()
-            if snapshot is not None and snapshot.get('pause') is None:
-                self._timing_event('pause', category='paused', reason='Recoverable workflow error; awaiting repair.')
-        pending = self.state.get('pending')
+            status, required = 'recoverable_review', 'Inspect the current frame once, correct the reviewed request and continue in this armed session.'
+            if recovery_budget_exceeded:
+                required = ('Recovery budget reached; stop repeating the same capture/packet. '
+                            'Use the current-screen deterministic fallback once, then verify its result.')
         next_operation = 'prepare'
         if pending:
             state = pending.get('status')
@@ -1354,15 +1744,29 @@ class ReviewedPlaySession(CombatInputAdapter):
                 'preparing_dispatch': 'Use recover_unsent for the durable pre-dispatch record; no input may be repeated.',
                 'attempted': 'Inspect a fresh result and verify or reconcile this exact pending action; never resend it.',
                 'verified_pending_log': 'Finalize the retained verified result; do not repeat the gameplay input.'}.get(state, required)
+            if recovery_budget_exceeded and state == 'attempted':
+                required = ('Recovery budget reached; stop repeating the same capture/packet. '
+                            'Inspect this exact after-image once, reconcile unchanged state if applicable, '
+                            'then use the current-screen deterministic fallback.')
         delivery = False
         if pending and pending['status'] in {'attempted', 'verified_pending_log'}:
             response = pending.get('response', {})
             delivery = True if response.get('ok') is True else False if response.get('status') == 'not_sent' else None
+        if recovery_budget_exceeded and status == 'recoverable_review':
+            status = 'recovery_budget_exceeded'
         return {'status': status, 'error': str(error), 'armed': self.armed,
             'decision_policy': self.decision_policy, 'controller_input_sent': delivery, 'input_retried': False,
             'pending': None if pending is None else {'action_id': pending['action_id'], 'status': pending['status']},
             'must_not_repeat': bool(pending and pending['status'] != 'prepared'),
             'next_operation': next_operation, 'required': required,
+            'recovery_attempts': recovery_attempts, 'recovery_limit': recovery_limit,
+            'recovery': {'class': recovery_class, 'budget_seconds': recovery_budget_seconds,
+                         'scenario': scenario,
+                         'elapsed_seconds': recovery_elapsed_seconds,
+                         'deadline_at': recovery_deadline_at,
+                         'budget_exceeded': recovery_budget_exceeded,
+                         'fallback_required': recovery_budget_exceeded,
+                         'builder_queue': builder_queue},
             'cleanup': deepcopy(self.cleanup), 'timing': self.timing_summary()}
 
     def _handle(self, request):

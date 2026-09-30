@@ -22,7 +22,7 @@ def _actual_payload(value, *, expected_action_id=None):
         return value
     allowed = {'state', 'ui', 'inventory', 'encounter', 'perception', 'unknowns',
                'rules', 'boss_manifest', 'next_turn', 'card_destination',
-               'telemetry', 'others_unchanged'}
+               'telemetry', 'others_unchanged', 'state_reconciliation'}
     if expected_action_id is not None and value.get('action_id') != expected_action_id:
         raise ValueError('actual result envelope action_id does not match the pending action')
     envelope_allowed = allowed | {'schema', 'action_id', 'observed_result',
@@ -34,6 +34,25 @@ def _actual_payload(value, *, expected_action_id=None):
     if 'decision_policy' in value:
         raise ValueError('actual result envelope decision_policy must come from the pending action')
     return {key: value[key] for key in allowed if key in value}
+
+
+def _boundary_payload(value, *, expected_action_id=None):
+    """Unwrap a generated combat-result envelope for boundary review.
+
+    ``--boundary-result`` accepts the same sealed result file that the helper
+    emits.  The boundary validator consumes only its nested boundary object;
+    passing the outer schema back into ``observed_result`` made a valid Loot
+    screen look malformed and trapped a completed combat in recovery.
+    """
+    if not isinstance(value, dict) or value.get('schema') != 'veda.combat-result.v1':
+        return value
+    if expected_action_id is not None and value.get('action_id') != expected_action_id:
+        raise ValueError('boundary result envelope action_id does not match the pending action')
+    allowed = {'schema', 'action_id', 'inventory', 'observed_result', 'boundary',
+               'decision_policy', 'telemetry'}
+    if set(value) - allowed or not isinstance(value.get('boundary'), dict):
+        raise ValueError('combat boundary result envelope is malformed')
+    return value['boundary']
 
 
 def main(argv=None):
@@ -88,14 +107,29 @@ def main(argv=None):
         if not compact_result and (args.unchanged or args.observed_result):
             raise ValueError('unchanged/observed-result are compact result fields')
         if compact_result:
-            value = observed_result(args.session, note=args.observed_result, unchanged=args.unchanged,
+            note = args.observed_result
+            if not note and args.actual_result:
+                note = read_combat_draft(args.actual_result).get('observed_result')
+            if not note and args.boundary_result:
+                note = read_combat_draft(args.boundary_result).get('observed_result')
+            if not note and args.ui_result:
+                note = read_combat_draft(args.ui_result).get('observed_result')
+            if not note:
+                label = args.focus_result or args.selection_result or 'current combat UI'
+                note = f'Inspected settled result for {label}.'
+            pending_action_id = ((json.loads((args.session if args.session.is_file() else args.session / 'state.json').read_text())
+                                  .get('pending') or {}).get('action_id')
+                                 if args.session else None)
+            value = observed_result(args.session, note=note, unchanged=args.unchanged,
                 focus=args.focus_result, selected=args.selection_result, target=args.target,
                 ui=read_combat_draft(args.ui_result) if args.ui_result else None,
                 actual=_actual_payload(read_combat_draft(args.actual_result), expected_action_id=(
-                    json.loads((args.session if args.session.is_file() else args.session / 'state.json').read_text())
-                    .get('pending', {}).get('action_id') if args.actual_result and args.session else None
+                    pending_action_id
+                    if args.actual_result and args.session else None
                 )) if args.actual_result else None,
-                boundary=read_combat_draft(args.boundary_result) if args.boundary_result else None,
+                boundary=_boundary_payload(read_combat_draft(args.boundary_result),
+                                           expected_action_id=pending_action_id)
+                         if args.boundary_result else None,
                 tooltip=args.tooltip_kind)
         else:
             value = (last_snapshot(args.session) if args.last_result else
@@ -132,6 +166,18 @@ def main(argv=None):
                 reviewed=args.reviewed, output=args.output, execute=args.execute, session=args.session)
     except (ValueError, RuntimeError, OSError, KeyError, TypeError, AttributeError) as error:
         from veda.helper_timing import record_helper_failure
+        if args.session and not result_mode and (args.last_result or args.after_result):
+            try:
+                session_file = args.session if args.session.is_file() else args.session / 'state.json'
+                session_state = json.loads(session_file.read_text(encoding='utf-8'))
+                if not session_state.get('pending'):
+                    print(json.dumps({'status': 'stale_request',
+                                      'reason': 'no pending combat action; refresh the current screen and prepare a new action',
+                                      'controller_input_sent': False,
+                                      'must_not_repeat': True}))
+                    return 2
+            except (OSError, ValueError, TypeError):
+                pass
         ids = value.get('context') if isinstance(value, dict) else None
         timing = record_helper_failure(error, run_id=ids.get('run_id') if isinstance(ids, dict) else None,
             session_path=args.session, output_path=args.output, capture=args.capture)

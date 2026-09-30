@@ -23,6 +23,8 @@ def main(argv=None):
     p.add_argument('--choose')
     p.add_argument('--reason')
     p.add_argument('--decision-output', type=Path)
+    p.add_argument('--fallback', action='store_true',
+                   help='Use the bounded routine fallback when a full potion belt has no replacement decision.')
     p.add_argument('--session', type=Path)
     p.add_argument('--ui', type=Path, help='Actual changed reward rows/card offers, grid and focus.')
     p.add_argument('--actual', type=Path, help='Observed gold or acquired-item delta; not a prediction.')
@@ -31,6 +33,8 @@ def main(argv=None):
     p.add_argument('--hint-button', choices=['cross', 'triangle', 'circle', 'square'])
     p.add_argument('--hint-text')
     p.add_argument('--observed-result')
+    p.add_argument('--no-op-reconciliation', action='store_true',
+                   help='Reconcile a delivered commit whose exact after-frame proves no semantic change.')
     p.add_argument('--capture', type=Path)
     p.add_argument('--reviewer')
     p.add_argument('--evidence-note')
@@ -54,7 +58,8 @@ def main(argv=None):
             draft = observed_result(args.session, args.result, note=args.observed_result,
                 unchanged=args.unchanged, focused_id=args.focused_id, hint=hint,
                 ui=read_menu_draft(args.ui) if args.ui else None,
-                actual=read_menu_draft(args.actual) if args.actual else None)
+                actual=read_menu_draft(args.actual) if args.actual else None,
+                no_op_reconciliation=args.no_op_reconciliation)
             if binding:
                 result = write_menu_result(draft, session=args.session, action_id=draft['action_id'],
                     capture=args.capture, reviewer=args.reviewer, evidence_note=args.evidence_note,
@@ -78,7 +83,9 @@ def main(argv=None):
                     raise ValueError('supply choose and reason together, or reuse decision')
                 from veda.loot import decision_key
                 decision = {'option_id': args.choose, 'reason': args.reason, 'decision_key': decision_key(value)}
-            result = plan_loot(value, decision)
+            if args.fallback and decision:
+                raise ValueError('fallback cannot be combined with a saved strategic decision')
+            result = plan_loot(value, decision, fallback=args.fallback)
             if args.decision_output and result['status'] == 'planned':
                 with args.decision_output.open('x') as out:
                     json.dump(result['decision'], out, indent=2); out.write('\n')

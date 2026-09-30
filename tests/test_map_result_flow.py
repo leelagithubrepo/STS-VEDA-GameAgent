@@ -161,6 +161,36 @@ class MapResultFlowTests(unittest.TestCase):
                 self.assertIsNone(answer['next_context']['combat_id'])
                 self.assertEqual(['advance_floor'], [t['kind'] for t in packet['telemetry']['transitions']])
 
+    def test_question_mark_can_reveal_merchant_and_records_actual_kind(self):
+        draft = self.draft(room='merchant')
+        option = next(o for o in draft['ui']['options'] if o['id'] == 'center')
+        option['label'] = 'Question mark'
+        option['node']['kind'] = 'event'
+        draft['facts']['node_type'] = 'event'
+        draft['choice']['postconditions']['facts']['node_type'] = 'event'
+        draft['decision_policy'] = 'learning'
+        self.session.decision_policy = 'learning'
+        prepared = self.prepare(draft)
+        answer, packet = self.verify(prepared,
+            {'kind': 'room_entry', 'node_id': 'center', 'screen': 'shop'},
+            facts=dict(self.facts, floor=1, current_node_id='center', node_type='merchant'))
+        self.assertIsNone(answer['next_context']['combat_id'])
+        self.assertEqual('merchant', packet['telemetry']['transitions'][0]['node_type'])
+
+    def test_learning_map_commit_promotes_result_only_rest_to_room_handoff(self):
+        draft = self.draft(room='enemy')
+        draft['decision_policy'] = 'learning'
+        self.session.decision_policy = 'learning'
+        prepared = self.prepare(draft)
+        result = {'kind': 'menu', 'ui': {
+            'screen': 'rest', 'phase': 'result', 'choice_id': 'rest-arrival',
+            'layout_id': 'rest-result', 'options': [], 'focused_id': None}}
+        answer, packet = self.verify(prepared, result,
+            facts=dict(self.facts, floor=1, current_node_id='center', node_type='rest'))
+        self.assertIsNone(answer['next_context']['combat_id'])
+        self.assertEqual('rest', packet['after']['observation']['ui']['screen'])
+        self.assertEqual('rest', packet['telemetry']['transitions'][0]['node_type'])
+
     def test_no_progress_inspection_clears_pending_and_caps_repeated_attempts_across_restart(self):
         for _ in range(2):
             prepared = self.prepare(self.draft(direction='up'), color=(9,9,9))

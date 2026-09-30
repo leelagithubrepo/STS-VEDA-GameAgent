@@ -7,6 +7,12 @@ or repeated deck analysis between these steps. The adapter already writes the
 small durable outcome before allowing the next input. Defer optional summaries
 until the reward sequence is complete.
 
+Routine reward rows are a fast path. Gold, an empty-slot potion, opening the
+card offers, and a focused Proceed row get one compact request, one actual
+after-image, and one result packet. Do not create planning notes or run helper
+availability checks between them. Card selection remains the one deliberate
+reward decision.
+
 Compare the offered cards with the current deck once, including the option to
 skip. Retain that decision through focus, selection and confirmation. Opening
 the offers is routine; adding a card is a strategic choice.
@@ -72,6 +78,11 @@ its actual confirmation screen with unchanged inventory. Then confirm using
 the visible hint and record acquisition only after observing it. If the actual
 UI differs, reconcile that outcome instead of replaying the tap.
 
+If a delivered commit leaves the same reward UI unchanged, submit the observed
+no-op reconciliation once, retain the verified UI, and immediately plan the
+next control from its visible hint. Do not stop, re-arm, modify code, or replay
+the first input.
+
 ## Immediately reuse the verified result
 
 After gold verification, this opens the card offers (or collects an available
@@ -114,9 +125,12 @@ rebinding control hints or changing focus does not.
 Free ordinary gold, an available potion with a confirmed empty slot, opening
 offers and Proceed when rewards are handled have deterministic priorities.
 A full/unknown potion belt or Sozu requires a tradeoff; never automatically
-discard a potion. `strategy_required` asks Orchestrator to choose and continue,
-not to request player permission. Avoid a separate strategy round for gold,
-card-menu opening, focus or confirmation.
+discard a potion during the normal strategy pass. `strategy_required` asks
+Orchestrator to choose and continue, not to request player permission. If that
+bounded replacement review reaches the routine watchdog, the reviewed
+`--fallback` path may use an explicitly visible Skip Potion shortcut once and
+verify the map transition. Avoid a separate strategy round for gold, card-menu
+opening, focus or confirmation.
 
 The ordinary logical move target remains 20 seconds, including inspection and
 verification; this is an engineering target, not measured console performance.

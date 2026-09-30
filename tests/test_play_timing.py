@@ -7,7 +7,8 @@ import tempfile
 import unittest
 
 from veda.play_timing import (MAX_HISTORY, PHASES, STALE_RECAPTURE_LIMIT, TARGET_SECONDS,
-                              PlayTiming, begin_session, record_event, summarize_timing)
+                              WATCHDOG_SECONDS, PlayTiming, begin_session, decision_watchdog_profile,
+                              record_event, summarize_timing)
 
 
 BASE = datetime(2026, 9, 27, 20, 0, 0, tzinfo=timezone.utc)
@@ -47,6 +48,44 @@ class PlayTimingTests(unittest.TestCase):
         self.assertEqual(after["startup"]["active_seconds"], 125)
         self.assertEqual(after["startup"]["phase_active_seconds"], {"startup": 5, "preflight": 70, "planning": 50})
         self.assertEqual(after["completed_move_count"], 0)
+
+    def test_decision_watchdog_uses_inspected_request_class_and_never_authorizes_input(self):
+        self.assertEqual(decision_watchdog_profile({'kind': 'choice',
+            'choice': {'kind': 'reward'}})['seconds'], WATCHDOG_SECONDS['routine'])
+        self.assertEqual(decision_watchdog_profile({'kind': 'combat',
+            'context': {'encounter_type': 'boss'}})['seconds'], WATCHDOG_SECONDS['boss'])
+        self.assertEqual(decision_watchdog_profile({'kind': 'unknown'})['class'], 'new_noncombat')
+
+        state = event(self.state(), 0, 'begin_move', move_id='reward', kind='reviewed_decision',
+                      watchdog_seconds=WATCHDOG_SECONDS['routine'], watchdog_class='routine',
+                      watchdog_fallback='use_current_screen_helper')
+        result = summarize_timing(state, at=at(WATCHDOG_SECONDS['routine']))
+        self.assertTrue(result['move']['watchdog_due'])
+        self.assertEqual(result['move']['watchdog_fallback'], 'use_current_screen_helper')
+        self.assertTrue(any(item['code'] == 'watchdog_due' for item in result['diagnostics']))
+        self.assertFalse(result['automatic_input'])
+        self.assertFalse(result['controller_authorized'])
+
+    def test_watchdog_alert_is_emitted_once_by_poll(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'timing.json'
+            clock = Clock()
+            tracker = PlayTiming(path, run_id='run-1', clock=clock.wall,
+                                 monotonic_clock=clock.monotonic, clock_id='test')
+            tracker.event('begin_move', move_id='reward', kind='reviewed_decision',
+                          watchdog_seconds=WATCHDOG_SECONDS['routine'], watchdog_class='routine',
+                          watchdog_fallback='use_current_screen_helper')
+            clock.seconds = WATCHDOG_SECONDS['routine']
+            first = tracker.poll()
+            self.assertEqual([item['code'] for item in first['new_alerts']], ['watchdog_due'])
+            self.assertEqual(tracker.poll()['new_alerts'], [])
+
+    def test_watchdog_can_be_refined_without_resetting_elapsed_decision_time(self):
+        state = event(self.state(), 0, 'begin_move', move_id='after-input', kind='reviewed_decision')
+        state = event(state, 7, 'set_watchdog', watchdog_seconds=WATCHDOG_SECONDS['routine'],
+                      watchdog_class='routine', watchdog_fallback='use_current_screen_helper')
+        self.assertEqual(state['move']['active_seconds'], 7)
+        self.assertEqual(state['move']['watchdog_budget_seconds'], WATCHDOG_SECONDS['routine'])
 
     def test_focus_target_are_not_completed_cards_and_repeated_begin_does_not_reset(self):
         state = event(self.state(), 0, "begin_move", move_id="play-defend", kind="combat_card")
@@ -112,6 +151,11 @@ class PlayTimingTests(unittest.TestCase):
                          {"startup": 1, "model_inference": 3})
         self.assertIn("tool_wait", PHASES)
 
+    def test_phase_accepts_optional_reason_for_launcher_annotations(self):
+        state = event(self.state(), 1, "phase", name="model_inference", reason="Choose the next legal action")
+        self.assertEqual(state["phase"], "model_inference")
+        self.assertEqual(state["events"][-1]["reason"], "Choose the next legal action")
+
     def test_stale_capture_budget_is_bounded_per_move_and_duplicate_receipt_does_not_inflate(self):
         state = event(self.state(), 0, "begin_move", move_id="play", kind="combat_card")
         state = event(state, 10, "stale_capture", capture_id="frame-1")
@@ -152,6 +196,19 @@ class PlayTimingTests(unittest.TestCase):
         self.assertFalse(observed_result["floor"]["over_target"])
         repeated = event(partial, 20, "begin_floor", floor_id="floor", kind="combat", observed_from_entry=True)
         self.assertFalse(repeated["floor"]["observed_from_entry"], "later declarations cannot manufacture missing entry coverage")
+
+    def test_rebase_archives_a_paused_floor_and_starts_a_partial_resumed_segment(self):
+        state = event(self.state(), 0, "begin_floor", floor_id="floor", kind="combat", observed_from_entry=True)
+        state = event(state, 20, "pause", category="paused", reason="Player stopped the adapter")
+        state = event(state, 120, "resume")
+        state = event(state, 120, "rebase_floor", floor_id="floor", kind="combat",
+                      reason="Adapter resumed after a paused play session.")
+        result = summarize_timing(state, at=at(135))
+        self.assertEqual(1, result["interrupted_floor_segments"])
+        self.assertEqual(20, state["interrupted_floors"][0]["active_seconds"])
+        self.assertEqual(15, result["floor"]["active_seconds"])
+        self.assertFalse(result["floor"]["full_floor_target_verifiable"])
+        self.assertIsNone(result["floor"]["over_target"])
 
     def test_wall_rollback_uses_same_process_monotonic_without_losing_elapsed(self):
         state = self.state(monotonic_ns=0, clock_id="process-a")

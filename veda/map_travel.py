@@ -201,7 +201,10 @@ def plan_map(snapshot, cache=None, decision=None, views=()):
         return {'status': 'planned', 'destination': wanted, 'forced_move': True,
                 'reused_route': reused, 'draft': draft, 'cache': cache,
                 'controller_input_sent': False, 'survey_required': False,
-                'expected_boss': None, 'deferred_views': len(views)}
+                'expected_boss': None, 'deferred_views': len(views),
+                'fast_path': {'kind': 'single_reachable_node',
+                              'decision_budget_seconds': 10,
+                              'next_step': 'activate_once_then_verify_room'}}
     _, survey = _merge_views(cache, current, views)
     topology = _topology(survey)
     route = cache['route']

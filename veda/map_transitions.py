@@ -4,7 +4,7 @@ from collections import Counter
 from .choice_execution import _require, _same_json, _text
 
 
-def validate_map_arrival(before, after, changes):
+def validate_map_arrival(before, after, changes, *, policy='strict'):
     """Reject contradictory lifecycle/zone declarations before durable freeze.
 
     This is not a recognizer: it verifies that all declared versions of the
@@ -21,9 +21,21 @@ def validate_map_arrival(before, after, changes):
     expected = ['advance_floor', 'start_combat', 'start_turn'] if combat else ['advance_floor']
     _require([t.get('kind') for t in transitions] == expected, 'map arrival requires its exact ordered lifecycle')
     floor = transitions[0]
-    _require(floor.get('act') == node['act'] and floor.get('floor') == node['floor']
-             and floor.get('node_type') == node['kind'] and facts.get('current_node_id') == selected
-             and facts.get('node_type') == node['kind'], 'map arrival lifecycle conflicts with selected node')
+    revealed_kind = {'combat': 'enemy', 'rest': 'rest', 'shop': 'merchant',
+                     'treasure': 'treasure', 'event': 'event', 'reward': 'reward'}.get(obs['ui']['screen'])
+    expected_kind = facts.get('node_type') if node['kind'] == 'event' else node['kind']
+    kind_matches = floor.get('node_type') == expected_kind
+    # A normal map icon can reveal a different noncombat room in the live
+    # screen after activation (for example, a stale map declaration said
+    # Enemy but the settled room is Rest). Learning mode records the actual
+    # room and continues; strict mode retains the original contradiction gate.
+    recovered_room_kind = (policy == 'learning' and node['kind'] != 'event'
+                           and facts.get('node_type') == revealed_kind
+                           and floor.get('node_type') == facts.get('node_type'))
+    _require(revealed_kind is not None and facts.get('node_type') == revealed_kind
+             and floor.get('act') == node['act'] and floor.get('floor') == node['floor']
+             and (kind_matches or recovered_room_kind) and facts.get('current_node_id') == selected,
+             'map arrival lifecycle conflicts with selected or revealed room')
     _require(floor.get('previous_outcome') == 'departed'
              and _same_json(floor.get('previous_ending_state'),
                             {'screen': 'map', **before['observation']['resources']})

@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
-from .choice_execution import SCHEMA as OBSERVATION_SCHEMA, _checked, _require, verify_choice_step
+from .choice_execution import SCHEMA as OBSERVATION_SCHEMA, _checked, _digest, _require, verify_choice_step
 from .menu_controls import CONTROL_PROFILE, bind_reviewed_menu_controls
 from .menu_requests import _inventory, _json, _text, _ui
 from .play_requests import reviewed_capture_source
@@ -56,7 +56,7 @@ def _draft(value, pending):
     draft = _json(value)
     required = {'schema', 'action_id', 'resources', 'inventory', 'facts', 'result', 'observed_result'}
     _require(isinstance(draft, dict) and required <= set(draft)
-             and not set(draft) - required - {'context', 'telemetry', 'decision_policy'} and draft['schema'] == SCHEMA,
+             and not set(draft) - required - {'context', 'telemetry', 'decision_policy', 'no_op_reconciliation'} and draft['schema'] == SCHEMA,
              'compact veda.menu-result.v1 required; no source, hashes, reviews or frame IDs')
     _require('decision_policy' not in draft
              or draft['decision_policy'] == pending['request'].get('decision_policy', 'strict'),
@@ -82,7 +82,7 @@ def _unbound_ui(value):
             if proof.get('kind') == 'visible_hint':
                 option['activate_hint'] = {'button': activate['button'], 'hint_text': proof['hint_text']}
         shortcut = option.pop('shortcut', None)
-        if ui.get('menu_family', '').startswith('shop_') and shortcut:
+        if (ui.get('menu_family', '').startswith('shop_') or ui.get('menu_family') == 'loot_rewards') and shortcut:
             proof = shortcut.get('evidence', {})
             if proof.get('kind') == 'visible_hint':
                 option['shortcut_hint'] = {'button': shortcut['button'], 'hint_text': proof['hint_text']}
@@ -113,6 +113,12 @@ def _observed_ui(draft, pending, checked):
                  and before_ui.get('menu_family') == 'map_nodes'
                  and result['ui'].get('menu_family') == 'map_nodes',
                  'map reobservation requires pending learning-mode map focus and actual node UI')
+        ui = _ui(result['ui'])
+    elif kind == 'map_noop':
+        _require(set(result) == {'kind', 'ui'} and pending['proposal']['step_kind'] == 'commit'
+                 and before_ui.get('menu_family') == 'map_nodes'
+                 and result['ui'].get('menu_family') == 'map_nodes',
+                 'map no-op reconciliation requires pending map activation and actual node UI')
         ui = _ui(result['ui'])
     elif kind == 'focus':
         _require(set(result) == {'kind', 'focused_id'} and pending['proposal']['step_kind'] == 'focus',
@@ -194,10 +200,18 @@ def _room_entry(draft, pending, resources, facts, inventory):
     selected = next(o for o in before['observation']['ui']['options'] if o['id'] == result['node_id'])['node']
     _require(isinstance(facts, dict) and all(facts.get(key) == selected[key] for key in ('act', 'floor'))
              and facts.get('current_node_id') == result['node_id'], 'actual room floor/node differs from map selection')
+    revealed_kind = {'combat': 'enemy', 'rest': 'rest', 'shop': 'merchant',
+                     'treasure': 'treasure', 'event': 'event', 'reward': 'reward'}.get(result['screen'])
+    learning = before.get('decision_policy', 'strict') == 'learning'
+    kind_matches = (selected['kind'] == 'event' and facts.get('node_type') == revealed_kind
+                    or selected['kind'] != 'event' and facts.get('node_type') == selected['kind'])
+    _require(revealed_kind is not None and
+             (kind_matches or learning and selected['kind'] != 'event'),
+             'actual room kind conflicts with the selected map node')
     post = before['choice']['postconditions']
     branches = [post] if 'alternatives' not in post else [b['postconditions'] for b in post['alternatives']]
     # Use the room actually observed in learning, preserving the selected node.
-    if before.get('decision_policy', 'strict') == 'learning':
+    if learning:
         from .menu_requests import map_arrival_context
         contexts = [map_arrival_context(before['context'], result['node_id'], result['screen'])]
     else:
@@ -210,7 +224,7 @@ def _room_entry(draft, pending, resources, facts, inventory):
     state = {'screen': result['screen'], 'act': facts['act'], 'floor': facts['floor'],
              'node_id': result['node_id'], **deepcopy(resources)}
     transitions = [{'kind': 'advance_floor', 'act': facts['act'], 'floor': facts['floor'],
-        'node_type': selected['kind'], 'previous_outcome': 'departed',
+        'node_type': facts['node_type'], 'previous_outcome': 'departed',
         'previous_ending_state': {'screen': 'map', **deepcopy(before['observation']['resources'])},
         'starting_state': deepcopy(state), 'evidence_note': note}]
     changes = {'transitions': transitions}
@@ -285,12 +299,33 @@ def _request(draft, pending, checked, control_profile, clock):
         'option_ids': before['choice']['option_ids'], 'observed_result': draft['observed_result']})
     if draft['result'].get('kind') == 'map_reobservation':
         review['outcome']['map_reobservation'] = True
+    if draft['result'].get('kind') == 'map_noop':
+        review['outcome']['map_noop'] = True
+    if draft.get('no_op_reconciliation'):
+        _require(policy == 'learning' and pending['proposal']['step_kind'] == 'commit',
+                 'no-op reconciliation is learning-mode commit recovery only')
+        review['outcome']['no_op_reconciliation'] = True
     resources = observed('resources', old['resources'])
     facts = observed('facts', old['facts'])
     context = deepcopy(draft.get('context', before['context']))
     room_changes = None
-    if draft['result'].get('kind') == 'room_entry':
-        context, room_changes = _room_entry(draft, pending, resources, facts, inventory)
+    room_entry_draft = draft
+    # A settled map activation can reveal a noncombat room before the player
+    # has built a room-entry packet. In learning mode, promote that exact
+    # observed result into the room lifecycle once, preserving the pending
+    # action and avoiding a second map click or a manual adapter repair.
+    actual_ui = draft.get('result', {}).get('ui', {})
+    if (policy == 'learning' and draft.get('result', {}).get('kind') == 'menu'
+            and old['ui'].get('menu_family') == 'map_nodes'
+            and actual_ui.get('screen') in {'rest', 'shop', 'treasure', 'event'}):
+        room_entry_draft = deepcopy(draft)
+        room_entry_draft['result'] = {
+            'kind': 'room_entry',
+            'screen': actual_ui['screen'],
+            'node_id': before['choice']['option_ids'][0],
+        }
+    if room_entry_draft['result'].get('kind') == 'room_entry':
+        context, room_changes = _room_entry(room_entry_draft, pending, resources, facts, inventory)
     observation = {'schema': OBSERVATION_SCHEMA,
         'frame': {'frame_id': checked['frame_id'], 'image_sha256': checked['source']['sha256'],
                   'observed_at': checked['source']['captured_at']},
@@ -299,7 +334,28 @@ def _request(draft, pending, checked, control_profile, clock):
         'ui': _observed_ui(draft, pending, checked)}
     if observation['ui'].get('menu_family'):
         observation = bind_reviewed_menu_controls(observation, control_profile=control_profile, now=clock, max_age_seconds=None)
-    verified = verify_choice_observation(pending['proposal'], old, observation, policy=policy, now=clock, historical=True)
+    proposal_for_verify = pending['proposal']
+    if draft['result'].get('kind') == 'room_entry' and policy == 'learning':
+        selected_id = pending['request']['choice']['option_ids'][0]
+        selected_node = next(o['node'] for o in old['ui']['options'] if o['id'] == selected_id)
+        if selected_node.get('kind') == 'event':
+            # A question-mark node is provisional. For the actual observed
+            # room branch, verify the revealed facts rather than requiring the
+            # icon's placeholder kind to survive as a game fact.
+            proposal_for_verify = deepcopy(pending['proposal'])
+            branches = proposal_for_verify['choice'].get('postconditions', {}).get('alternatives')
+            if branches is None:
+                branches = [{'postconditions': proposal_for_verify['choice']['postconditions']}]
+            for branch in branches:
+                post = branch['postconditions']
+                if post.get('screen') == observation['ui']['screen']:
+                    post['facts'] = deepcopy(facts)
+            sealed = deepcopy(proposal_for_verify)
+            sealed.pop('proposal_digest', None)
+            proposal_for_verify['proposal_digest'] = _digest(sealed)
+    verified = verify_choice_observation(proposal_for_verify, old, observation,
+                                         policy=policy, now=clock, historical=True,
+                                         allow_noop_reconciliation=bool(draft.get('no_op_reconciliation')))
     changes = deepcopy(draft.get('telemetry', {}))
     _require(isinstance(changes, dict) and not set(changes) - {
         'inventory_events', 'inventory_baseline', 'zone_events', 'zone_baseline',
@@ -330,7 +386,7 @@ def _request(draft, pending, checked, control_profile, clock):
              'review': deepcopy(review), 'observation': observation, 'inventory': inventory}
     if room_changes is not None:
         from .map_transitions import validate_map_arrival
-        validate_map_arrival(before, after, changes)
+        validate_map_arrival(before, after, changes, policy=policy)
     if changes:
         after['mutation_review'] = dict(checked['review'], kind='reviewed_mutation', changes=deepcopy(changes))
     operation_id = str(uuid5(NAMESPACE_URL, pending['action_id'] + ':' + checked['frame_id']))

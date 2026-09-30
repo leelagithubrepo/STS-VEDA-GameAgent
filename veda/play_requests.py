@@ -17,7 +17,7 @@ from .execution import ARM_PHRASE
 from .reviewed_play import MAX_AGE, MAX_BYTES
 from .saved_frame_reader import _identity
 
-SCREENS = ("title_continue", "combat", "map", "reward", "rest", "event", "shop", "selection")
+SCREENS = ("title_continue", "combat", "map", "reward", "rest", "event", "shop", "selection", "treasure")
 MAX_RECEIPT_BYTES = 128 * 1024
 _CAPTURE_NAME = re.compile(r"ps5_observation_(\d{8}T\d{6}(?:\.\d{1,6})?)Z(?:_[0-9a-f]{32})?\.png")
 

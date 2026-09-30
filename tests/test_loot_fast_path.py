@@ -29,6 +29,8 @@ def snapshot(cards=False):
 class LootTests(unittest.TestCase):
     def test_reward_aliases_normalize_without_changing_the_visible_id(self):
         self.assertEqual('potion', canonical_reward_role({'id': 'potion-reward', 'label': 'Smoke Potion'}))
+        self.assertEqual('potion', canonical_reward_role({'id': 'colorless-potion', 'label': 'Colorless Potion'}))
+        self.assertEqual('skip', canonical_reward_role({'id': 'skip-potion', 'label': 'Skip Potion'}))
         self.assertEqual('gold', canonical_reward_role({'id': 'gold', 'label': '15 Gold'}))
         self.assertIsNone(canonical_reward_role({'id': 'relic-1', 'label': 'Potion Belt'}))
 
@@ -44,7 +46,28 @@ class LootTests(unittest.TestCase):
         self.assertTrue(result['routine']); self.assertEqual(['gold'],result['draft']['choice']['option_ids'])
         self.assertEqual('Collect available gold.',result['draft']['reasoning'])
         self.assertEqual(127,result['draft']['choice']['postconditions']['resources']['gold'])
+        self.assertEqual({'kind': 'routine_loot', 'option_id': 'gold', 'focused': True,
+                          'next_step': 'commit',
+                          'after_commit': 'inspect_one_settled_after_frame_and_continue_from_it',
+                          'decision_budget_seconds': 10}, result['fast_path'])
         self.assertEqual(original,source)
+
+    def test_unfocused_free_reward_names_focus_then_commit_fast_path(self):
+        source = snapshot()
+        source['ui']['focused_id'] = 'cards'
+        result = plan_loot(source)
+        self.assertEqual('gold', result['fast_path']['option_id'])
+        self.assertFalse(result['fast_path']['focused'])
+        self.assertEqual('focus_then_commit', result['fast_path']['next_step'])
+
+    def test_spoils_title_uses_the_same_gold_hot_path(self):
+        source = snapshot()
+        source['ui']['menu_family'] = 'Spoils!'
+        result = plan_loot(source)
+        self.assertEqual('planned', result['status'])
+        self.assertTrue(result['routine'])
+        self.assertEqual(['gold'], result['draft']['choice']['option_ids'])
+        self.assertEqual('loot_rewards', result['draft']['ui']['menu_family'])
 
     def test_card_choice_or_skip_is_made_once_and_reused_across_focus(self):
         source=snapshot(True); self.assertEqual('strategy_required',plan_loot(source)['status'])
@@ -66,6 +89,58 @@ class LootTests(unittest.TestCase):
             if mode=='sozu':source['inventory']['current']['relic'].append('Sozu')
             result=plan_loot(source)
             self.assertEqual(['potion'] if mode=='empty' else ['cards'],result['draft']['choice']['option_ids'])
+
+    def test_full_potion_belt_exposes_a_bounded_skip_fallback(self):
+        source = snapshot()
+        source['inventory']['current']['potion'] = ['Energy Potion', 'Smoke Bomb', 'Ancient Potion']
+        source['ui']['options'] = [
+            {'id': 'colorless-potion', 'label': 'Colorless Potion', 'enabled': True,
+             'costs': {}, 'role': 'potion', 'reward': {'name': 'Colorless Potion'}},
+            {'id': 'skip-potion', 'label': 'Skip Potion', 'enabled': True,
+             'costs': {}, 'role': 'skip',
+             'shortcut_hint': {'button': 'triangle', 'hint_text': 'Triangle Skip Potion'}},
+        ]
+        source['ui']['focused_id'] = 'colorless-potion'
+        source['ui']['grid']['cells'] = [
+            {'id': 'colorless-potion', 'row': 0, 'column': 0},
+            {'id': 'skip-potion', 'row': 0, 'column': 1},
+        ]
+        blocked = plan_loot(source)
+        self.assertEqual('strategy_required', blocked['status'])
+        self.assertEqual('skip-potion', blocked['fallback']['option_id'])
+        fallback = plan_loot(source, fallback=True)
+        self.assertEqual('planned', fallback['status'])
+        self.assertEqual(['skip-potion'], fallback['draft']['choice']['option_ids'])
+        self.assertEqual('map', fallback['draft']['choice']['postconditions']['screen'])
+        self.assertEqual('commit', fallback['fast_path']['next_step'])
+
+    def test_full_potion_fallback_uses_visible_triangle_without_focus_tap(self):
+        source = snapshot()
+        source['inventory']['current']['potion'] = ['Energy Potion', 'Smoke Bomb', 'Ancient Potion']
+        source['ui']['options'] = [
+            {'id': 'colorless-potion', 'label': 'Colorless Potion', 'enabled': True,
+             'costs': {}, 'role': 'potion', 'reward': {'name': 'Colorless Potion'}},
+            {'id': 'skip-potion', 'label': 'Skip Potion', 'enabled': True, 'costs': {},
+             'role': 'skip', 'shortcut_hint': {'button': 'triangle', 'hint_text': 'Triangle Skip Potion'}},
+        ]
+        source['ui'].update(focused_id='colorless-potion', choice_id='combat-spoils',
+                            grid={'complete': True, 'cells': [
+                                {'id': 'colorless-potion', 'row': 0, 'column': 0},
+                                {'id': 'skip-potion', 'row': 0, 'column': 1}]})
+        planned = plan_loot(source, fallback=True)
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            now = datetime.now(timezone.utc) - timedelta(seconds=2)
+            capture = make_capture(root, now)
+            request = root / 'action.json'
+            write_menu_request(planned['draft'], capture=capture, reviewer='Fixture',
+                               evidence_note='Visible triangle fallback.', reviewed=True,
+                               control_profile=CONTROL_PROFILE, output=request, now=now + timedelta(seconds=1))
+            packet = json.loads(request.read_text())
+            proposal = plan_choice_step(packet['observation'], packet['choice'],
+                                        now=now + timedelta(seconds=1), action_id='skip-potion')
+            self.assertEqual('commit', proposal['step_kind'])
+            self.assertEqual(['triangle'], proposal['command']['buttons'])
 
     def test_no_free_gold_assumption_for_paid_or_disabled_option(self):
         for patch in ({'costs':{'hp':10}}, {'enabled':False}):

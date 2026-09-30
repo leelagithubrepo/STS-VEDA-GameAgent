@@ -30,7 +30,7 @@ def last_result(session):
 
 
 def observed_result(session, kind, *, note, unchanged=False, focused_id=None,
-                    hint=None, ui=None, actual=None):
+                    hint=None, ui=None, actual=None, no_op_reconciliation=False):
     """Expand actual deltas, never the predicted result of a controller tap.
 
     ``unchanged`` explicitly attests to inspected resources/inventory/facts.
@@ -50,8 +50,21 @@ def observed_result(session, kind, *, note, unchanged=False, focused_id=None,
     else:
         _require(not unchanged, 'changed loot needs an observed delta, not --unchanged')
     if kind == 'focus':
-        _require(focused_id is not None and hint is None and ui is None, 'focus needs only the actual focused option')
-        result['result'] = {'kind': 'focus', 'focused_id': focused_id}
+        _require(focused_id is not None and hint is None, 'focus needs the actual focused option')
+        if ui is None:
+            result['result'] = {'kind': 'focus', 'focused_id': focused_id}
+        else:
+            # A delivered directional tap can expose a refreshed reward row
+            # (for example a card offer replaced by the live UI) without
+            # selecting anything. Preserve the pending choice while carrying
+            # the complete, freshly reviewed menu forward.
+            _require(old_ui.get('menu_family') == ui.get('menu_family') == 'loot_cards'
+                     and ui.get('focused_id') == focused_id
+                     and ui.get('screen') in {'reward', 'card_reward'}
+                     and ui.get('phase') == 'choose'
+                     and isinstance(ui.get('options'), list),
+                     'actual loot-card menu and focus required for focus reobservation')
+            result['result'] = {'kind': 'menu', 'ui': deepcopy(ui)}
     elif kind == 'confirmation':
         _require(focused_id is not None and hint is not None and ui is None,
                  'confirmation needs actual selected card and visible confirm hint')
@@ -61,6 +74,10 @@ def observed_result(session, kind, *, note, unchanged=False, focused_id=None,
         _require(isinstance(ui, dict) and ui.get('menu_family') == expected
                  and hint is None and focused_id is None, 'supply the actual new reward UI and focus')
         result['result'] = {'kind': 'menu', 'ui': deepcopy(ui)}
+        if no_op_reconciliation:
+            _require(kind == 'returned' and unchanged is True,
+                     'no-op reconciliation is only for an inspected returned menu')
+            result['no_op_reconciliation'] = True
     elif kind == 'map':
         _require(ui is None and hint is None and focused_id is None, 'map result has no reward control fields')
         result['result'] = {'kind': 'menu', 'ui': {'screen': 'map', 'phase': 'result',

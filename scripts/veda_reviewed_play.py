@@ -31,7 +31,8 @@ def terminal_response(result, *, full_timing=False):
         for name in ('move', 'floor'):
             scope = timing.get(name)
             compact[name] = None if scope is None else {k: scope[k] for k in
-                ('id', 'kind', 'active_seconds', 'target_seconds', 'over_target', 'measurement_basis') if k in scope}
+                ('id', 'kind', 'active_seconds', 'target_seconds', 'over_target', 'measurement_basis',
+                 'watchdog_due', 'watchdog_remaining_seconds', 'watchdog_class', 'watchdog_fallback') if k in scope}
         compact.update(compact=True, detail='operation summary or --verbose-timing; full history remains in timing.json')
         container['timing'] = compact
     return result
@@ -108,9 +109,15 @@ def timed_requests(stream, session, server=None):
         if not ready:
             timing = session.timing_summary(poll=True)
             if timing.get('new_alerts'):
-                print(json.dumps({'status': 'timing_overrun', 'alerts': timing['new_alerts'],
+                alerts = timing['new_alerts']
+                watchdog = next((item for item in alerts if item.get('code') == 'watchdog_due'), None)
+                print(json.dumps({'status': 'watchdog_due' if watchdog else 'timing_overrun',
+                    'alerts': alerts, 'watchdog': watchdog,
                     'phase': timing.get('phase'), 'controller_input_sent': False,
-                    'required': 'Resolve the named delay; preserve any pending input and ordinary checks.'}), flush=True)
+                    'required': ('Use the watchdog fallback once against the current inspected state, then verify; '
+                                 'preserve any pending input and never replay uncertain delivery.'
+                                 if watchdog else
+                                 'Resolve the named delay; preserve any pending input and ordinary checks.')}), flush=True)
             continue
         if server and server.listener in ready:
             submission = server.accept()

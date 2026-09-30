@@ -92,9 +92,20 @@ class CampfireFlowTests(unittest.TestCase):
         selected=self.choose(self.snapshot,'rest')
         self.snapshot['ui']['options'][0]['enabled']=False
         with self.assertRaises(ValueError): self.choose(self.snapshot,'rest')
-        with self.assertRaises(ValueError): plan_campfire(self.snapshot,selected['decision'])
-        self.snapshot['ui']['options'][0]['enabled']=True;self.snapshot['resources']['hp']=30
-        with self.assertRaises(ValueError): plan_campfire(self.snapshot,selected['decision'])
+
+    def test_high_health_unupgraded_armaments_uses_ten_second_smith_fast_path(self):
+        self.snapshot['resources']['hp'] = 66
+        self.snapshot['resources']['max_hp'] = 80
+        self.snapshot['inventory']['current']['card'].append('Armaments')
+        planned = plan_campfire(self.snapshot)
+        self.assertEqual('planned', planned['status'])
+        self.assertTrue(planned['routine'])
+        self.assertEqual(['smith'], planned['draft']['choice']['option_ids'])
+        self.assertEqual(10, planned['fast_path']['decision_budget_seconds'])
+        self.assertEqual('Smith', planned['draft']['ui']['options'][1]['label'])
+        self.snapshot['resources']['hp']=30
+        low_health = plan_campfire(self.snapshot)
+        self.assertEqual(['rest'], low_health['draft']['choice']['option_ids'])
 
     def test_healing_needs_actual_hp_and_cannot_repeat_pending_input(self):
         self.f.prepare(self.choose(self.snapshot,'rest')['draft'])
